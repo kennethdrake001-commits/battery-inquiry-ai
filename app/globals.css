@@ -313,6 +313,14 @@ nav,
   justify-content: space-between;
 }
 
+.history-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .history-head span {
   background: #e8edf5;
   border-radius: 999px;
@@ -368,8 +376,53 @@ nav,
   width: 100%;
 }
 
+.wide-modal {
+  max-height: 92vh;
+  max-width: 900px;
+  overflow: auto;
+}
+
 .modal h2 {
   margin: 0;
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.playbook-list {
+  display: grid;
+  gap: 14px;
+}
+
+.playbook-card {
+  border: 1px solid #e4eaf3;
+  border-radius: 16px;
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+}
+
+.playbook-card h4 {
+  margin: 0;
+}
+
+.playbook-card p {
+  background: #f8fafc;
+  border-radius: 12px;
+  margin: 0;
+  padding: 12px;
+  white-space: pre-wrap;
+}
+
+.case-meta {
+  color: #526070;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 14px;
 }
 
 @media (max-width: 1100px) {
@@ -396,6 +449,7 @@ nav,
 
   .form-grid,
   .result-grid,
+  .filter-grid,
   .two-col,
   .board {
     grid-template-columns: 1fr;

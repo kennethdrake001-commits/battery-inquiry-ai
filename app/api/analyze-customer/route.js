@@ -22,7 +22,8 @@ const analysisSchema = {
     "confidence",
     "reasoning",
     "needSupervisorReview",
-    "reviewReason"
+    "reviewReason",
+    "sourceReferences"
   ],
   properties: {
     customerType: {
@@ -51,9 +52,32 @@ const analysisSchema = {
     confidence: { type: "number", minimum: 0, maximum: 1 },
     reasoning: { type: "string" },
     needSupervisorReview: { type: "string", enum: ["是", "否"] },
-    reviewReason: { type: "string" }
+    reviewReason: { type: "string" },
+    sourceReferences: {
+      type: "array",
+      items: { type: "string" }
+    }
   }
 };
+
+const successfulCaseResults = ["客户已回复", "进入报价", "进入 PI", "成交"];
+const customerTypeKeywords = [
+  { type: "End User", words: ["my home", "home backup", "power outage", "refrigerator", "tv", "lights"] },
+  { type: "Installer", words: ["installation", "my client", "inverter compatibility", "wiring", "can", "rs485"] },
+  { type: "Distributor", words: ["distributor", "resale", "local market", "catalog", "marketing materials"] },
+  { type: "Wholesaler", words: ["wholesale", "bulk", "10pcs", "20pcs", "moq", "container"] },
+  { type: "EPC", words: ["project", "resort", "farm", "school", "commercial", "40kwh", "50kwh", "100kwh"] },
+  { type: "OEM", words: ["logo", "private label", "oem", "customized branding"] }
+];
+const blockerKeywords = [
+  { blocker: "价格", words: ["too expensive", "price", "how much", "target price"] },
+  { blocker: "运费", words: ["shipping", "ddp", "to door", "freight"] },
+  { blocker: "清关", words: ["customs", "clearance"] },
+  { blocker: "证书", words: ["certificate", "ce", "un38.3", "msds"] },
+  { blocker: "逆变器兼容", words: ["inverter compatibility", "brand and model", "can", "rs485"] },
+  { blocker: "技术解释太复杂", words: ["bms", "technical", "matching", "became cold", "cold"] },
+  { blocker: "需求不清", words: ["ok", "thanks anyway", "think about it", "unclear"] }
+];
 
 const systemPrompt = `
 You are an AI sales assistant for energy storage battery export inquiries.
@@ -62,12 +86,14 @@ Return only strict JSON matching the schema. Do not include markdown or extra te
 Task:
 - Analyze the customer inquiry, previous seller reply, quotation content and current status.
 - Generate customer classification, level, score, sales stage, blocker, missing information, next goal, suggested action, concise English reply, follow-up time, priority, confidence, reasoning, and supervisor review flag.
+- If matchedPlaybookCases are provided, use them as reference examples only when relevant. Do not copy blindly.
 
 Output rules:
 - customerScore is 0-100. A: 80-100, B: 60-79, C: 35-59, D: 0-34.
 - confidence is 0-1.
 - priority must be 是 for A/B or urgent PI/order/project cases; otherwise 否.
 - needSupervisorReview must be 是 if confidence < 0.65, order/PI terms are unclear, customs clearance risk is high, compatibility risk is high, or the reply may need manager approval.
+- sourceReferences must explain whether effective historical cases were referenced. If matched cases are provided, include short references like "参考有效案例：End User + 已报价未回复 + 技术解释太复杂". If no cases are provided, return ["暂无匹配历史案例"].
 - missingInformation must be an array of concrete missing items, e.g. ["country", "quantity", "application", "inverter brand and model"].
 - English reply must be short, natural, suitable for Alibaba / WhatsApp, and include one clear next action.
 - Do not overpromise customs clearance.
@@ -110,9 +136,96 @@ Return exactly one JSON object with these fields and no extra text:
   "confidence": 0,
   "reasoning": "",
   "needSupervisorReview": "是 | 否",
-  "reviewReason": ""
+  "reviewReason": "",
+  "sourceReferences": []
 }
 `;
+
+function textFromInput(customerInput) {
+  return JSON.stringify(customerInput || {}).toLowerCase();
+}
+
+function inferCustomerType(customerInput) {
+  const latest = customerInput?.customer?.latest_analysis?.customerType || customerInput?.latest_analysis?.customerType;
+  if (latest) return latest;
+  const text = textFromInput(customerInput);
+  return customerTypeKeywords.find((item) => item.words.some((word) => text.includes(word)))?.type || "";
+}
+
+function inferStage(customerInput) {
+  return customerInput?.customer?.latest_analysis?.stage
+    || customerInput?.customer?.current_status
+    || customerInput?.currentStatus
+    || customerInput?.current_status
+    || "";
+}
+
+function inferProblem(customerInput) {
+  const latest = customerInput?.customer?.latest_analysis?.mainBlocker || customerInput?.latest_analysis?.mainBlocker;
+  if (latest) return latest;
+  const text = textFromInput(customerInput);
+  return blockerKeywords.find((item) => item.words.some((word) => text.includes(word)))?.blocker || "";
+}
+
+function scoreCase(playbookCase, target) {
+  let score = 0;
+  if (target.customerType && playbookCase.customer_type === target.customerType) score += 5;
+  if (target.stage && playbookCase.stage === target.stage) score += 3;
+  if (
+    target.problem
+    && playbookCase.problem
+    && playbookCase.problem.toLowerCase().includes(target.problem.toLowerCase())
+  ) {
+    score += 2;
+  }
+  return score;
+}
+
+function sourceReferencesFor(cases) {
+  if (!cases.length) return ["暂无匹配历史案例"];
+  return cases.map((item) => (
+    `参考有效案例：${item.customer_type || "Unknown"} + ${item.stage || "未知阶段"} + ${item.problem || "未知卡点"}`
+  ));
+}
+
+async function loadMatchedPlaybookCases(customerInput, authorizationHeader) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseAnonKey || !authorizationHeader) return [];
+
+  const endpoint = new URL(`${supabaseUrl}/rest/v1/playbook_cases`);
+  endpoint.searchParams.set("select", "id,scene_name,customer_type,stage,problem,effective_reply,result,reply_tag,notes,created_at");
+  endpoint.searchParams.set("order", "created_at.desc");
+  endpoint.searchParams.set("limit", "80");
+
+  try {
+    const response = await fetch(endpoint, {
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: authorizationHeader
+      }
+    });
+    if (!response.ok) return [];
+
+    const rows = await response.json();
+    const target = {
+      customerType: inferCustomerType(customerInput),
+      stage: inferStage(customerInput),
+      problem: inferProblem(customerInput)
+    };
+
+    return (rows || [])
+      .filter((item) => successfulCaseResults.includes(item.result))
+      .map((item) => ({ item, score: scoreCase(item, target) }))
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5)
+      .map(({ item }) => item);
+  } catch (error) {
+    console.error("Load playbook cases failed:", error);
+    return [];
+  }
+}
 
 function extractOutputText(data) {
   if (typeof data.output_text === "string") return data.output_text;
@@ -257,7 +370,9 @@ async function analyzeWithProvider(customerInput) {
 export async function POST(request) {
   try {
     const customerInput = await request.json();
-    const analysis = await analyzeWithProvider(customerInput);
+    const matchedPlaybookCases = await loadMatchedPlaybookCases(customerInput, request.headers.get("authorization"));
+    const analysis = await analyzeWithProvider({ ...customerInput, matchedPlaybookCases });
+    analysis.sourceReferences = sourceReferencesFor(matchedPlaybookCases);
     return NextResponse.json({ analysis });
   } catch (error) {
     if (error.message === "provider_not_configured") {

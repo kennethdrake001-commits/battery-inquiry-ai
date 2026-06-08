@@ -59,14 +59,32 @@ create table if not exists public.interactions (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.playbook_cases (
+  id uuid primary key default gen_random_uuid(),
+  scene_name text,
+  customer_type text,
+  stage text,
+  problem text,
+  effective_reply text,
+  result text,
+  reply_tag text,
+  notes text,
+  source_customer_id uuid references public.customers(id) on delete set null,
+  source_interaction_id uuid references public.interactions(id) on delete set null,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
 alter table public.customers enable row level security;
 alter table public.customer_analyses enable row level security;
 alter table public.interactions enable row level security;
+alter table public.playbook_cases enable row level security;
 
 grant usage on schema public to anon, authenticated;
 grant select, insert, update on public.customers to authenticated;
 grant select, insert, update on public.customer_analyses to authenticated;
 grant select, insert, update on public.interactions to authenticated;
+grant select, insert, update on public.playbook_cases to authenticated;
 
 drop policy if exists "Users can read own customers" on public.customers;
 drop policy if exists "Users can insert own customers" on public.customers;
@@ -77,6 +95,9 @@ drop policy if exists "Users can update own analyses" on public.customer_analyse
 drop policy if exists "Users can read own interactions" on public.interactions;
 drop policy if exists "Users can insert own interactions" on public.interactions;
 drop policy if exists "Users can update own interactions" on public.interactions;
+drop policy if exists "Users can read own playbook cases" on public.playbook_cases;
+drop policy if exists "Users can insert own playbook cases" on public.playbook_cases;
+drop policy if exists "Users can update own playbook cases" on public.playbook_cases;
 
 create policy "Users can read own customers"
 on public.customers for select
@@ -116,3 +137,16 @@ create policy "Users can update own interactions"
 on public.interactions for update
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
+
+create policy "Users can read own playbook cases"
+on public.playbook_cases for select
+using (auth.uid() = created_by);
+
+create policy "Users can insert own playbook cases"
+on public.playbook_cases for insert
+with check (auth.uid() = created_by);
+
+create policy "Users can update own playbook cases"
+on public.playbook_cases for update
+using (auth.uid() = created_by)
+with check (auth.uid() = created_by);

@@ -6,6 +6,8 @@ import { useParams } from "next/navigation";
 import { getSupabaseBrowserClient } from "../../../lib/supabaseClient";
 
 const resultOptions = ["客户已回复", "客户未回复", "进入报价", "进入 PI", "成交", "失败", "暂不确定"];
+const playbookEligibleResults = ["客户已回复", "进入报价", "进入 PI", "成交"];
+const replyTagOptions = ["可直接用", "需要人工改", "不建议用", "成交话术", "唤醒有效"];
 const failureReasons = [
   "价格问题",
   "运费问题",
@@ -34,12 +36,28 @@ function formatTime(value) {
   return new Date(value).toLocaleString();
 }
 
-function HistoryItem({ item }) {
+const emptyPlaybookForm = {
+  scene_name: "",
+  customer_type: "",
+  stage: "",
+  problem: "",
+  effective_reply: "",
+  result: "",
+  reply_tag: "可直接用",
+  notes: ""
+};
+
+function HistoryItem({ item, onSaveAsPlaybook }) {
+  const canSaveAsPlaybook = playbookEligibleResults.includes(item.result_feedback);
+
   return (
     <article className="history-item">
       <div className="history-head">
         <strong>{new Date(item.created_at).toLocaleString()}</strong>
-        <span>{item.interaction_status || "draft"}</span>
+        <div className="history-actions">
+          {canSaveAsPlaybook && <button onClick={() => onSaveAsPlaybook(item)}>保存为有效案例</button>}
+          <span>{item.interaction_status || "draft"}</span>
+        </div>
       </div>
       <div className="two-col">
         <div>
@@ -80,11 +98,14 @@ export default function CustomerDetailPage() {
   const [analysis, setAnalysis] = useState(null);
   const [finalReply, setFinalReply] = useState("");
   const [pendingFeedbackInteraction, setPendingFeedbackInteraction] = useState(null);
+  const [playbookSourceInteraction, setPlaybookSourceInteraction] = useState(null);
+  const [playbookForm, setPlaybookForm] = useState(emptyPlaybookForm);
   const [feedbackResult, setFeedbackResult] = useState("客户已回复");
   const [failureReason, setFailureReason] = useState("");
   const [loading, setLoading] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSavingPlaybook, setIsSavingPlaybook] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -184,7 +205,10 @@ export default function CustomerDetailPage() {
     try {
       const response = await fetch("/api/analyze-customer", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`
+        },
         body: JSON.stringify({
           customer,
           customerNewReply,
@@ -204,6 +228,63 @@ export default function CustomerDetailPage() {
     } finally {
       setIsAnalyzing(false);
     }
+  }
+
+  function openPlaybookForm(item) {
+    const itemAnalysis = item.ai_analysis || {};
+    setPlaybookSourceInteraction(item);
+    setPlaybookForm({
+      scene_name: itemAnalysis.customerType && itemAnalysis.stage
+        ? `${itemAnalysis.customerType} - ${itemAnalysis.stage}`
+        : customer?.customer_name || "有效跟进案例",
+      customer_type: itemAnalysis.customerType || customer?.latest_analysis?.customerType || "Unknown",
+      stage: itemAnalysis.stage || customer?.current_status || "",
+      problem: itemAnalysis.mainBlocker || "",
+      effective_reply: item.final_sent_reply || item.ai_suggested_reply || "",
+      result: item.result_feedback || "",
+      reply_tag: item.result_feedback === "成交" ? "成交话术" : "可直接用",
+      notes: item.operator_note || ""
+    });
+  }
+
+  function updatePlaybookForm(field, value) {
+    setPlaybookForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function savePlaybookCase() {
+    if (!playbookSourceInteraction || !session) return;
+    if (!playbookForm.scene_name || !playbookForm.effective_reply) {
+      setError("请填写场景名称和有效话术。");
+      return;
+    }
+
+    setError("");
+    setSuccess("");
+    setIsSavingPlaybook(true);
+
+    const { error: insertError } = await supabase.from("playbook_cases").insert({
+      scene_name: playbookForm.scene_name,
+      customer_type: playbookForm.customer_type,
+      stage: playbookForm.stage,
+      problem: playbookForm.problem,
+      effective_reply: playbookForm.effective_reply,
+      result: playbookForm.result,
+      reply_tag: playbookForm.reply_tag,
+      notes: playbookForm.notes,
+      source_customer_id: customer.id,
+      source_interaction_id: playbookSourceInteraction.id,
+      created_by: session.user.id
+    });
+
+    setIsSavingPlaybook(false);
+    if (insertError) {
+      setError(insertError.message);
+      return;
+    }
+
+    setSuccess("已保存为有效案例。");
+    setPlaybookSourceInteraction(null);
+    setPlaybookForm(emptyPlaybookForm);
   }
 
   async function saveNextInteraction(action) {
@@ -293,6 +374,7 @@ export default function CustomerDetailPage() {
         <nav>
           <Link href="/">客户录入</Link>
           <Link href="/customers">客户列表</Link>
+          <Link href="/playbook">有效案例库</Link>
         </nav>
       </header>
 
@@ -342,7 +424,9 @@ export default function CustomerDetailPage() {
           <h2>Interactions 历史</h2>
           <span>{interactions.length} 条记录</span>
         </div>
-        {interactions.map((item) => <HistoryItem key={item.id} item={item} />)}
+        {interactions.map((item) => (
+          <HistoryItem key={item.id} item={item} onSaveAsPlaybook={openPlaybookForm} />
+        ))}
         {interactions.length === 0 && <p className="empty">暂无历史记录</p>}
       </section>
 
@@ -366,6 +450,48 @@ export default function CustomerDetailPage() {
             <div className="actions">
               <button className="primary" onClick={updatePendingFeedback}>保存反馈并继续分析</button>
               <button onClick={() => setPendingFeedbackInteraction(null)}>取消</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {playbookSourceInteraction && (
+        <div className="modal-backdrop">
+          <div className="modal wide-modal">
+            <h2>保存为有效案例</h2>
+            <div className="form-grid">
+              <Field label="场景名称 scene_name">
+                <input value={playbookForm.scene_name} onChange={(event) => updatePlaybookForm("scene_name", event.target.value)} />
+              </Field>
+              <Field label="客户类型 customer_type">
+                <input value={playbookForm.customer_type} onChange={(event) => updatePlaybookForm("customer_type", event.target.value)} />
+              </Field>
+              <Field label="当前阶段 stage">
+                <input value={playbookForm.stage} onChange={(event) => updatePlaybookForm("stage", event.target.value)} />
+              </Field>
+              <Field label="问题/卡点 problem">
+                <input value={playbookForm.problem} onChange={(event) => updatePlaybookForm("problem", event.target.value)} />
+              </Field>
+              <Field label="结果 result">
+                <input value={playbookForm.result} onChange={(event) => updatePlaybookForm("result", event.target.value)} />
+              </Field>
+              <Field label="话术标签 reply_tag">
+                <select value={playbookForm.reply_tag} onChange={(event) => updatePlaybookForm("reply_tag", event.target.value)}>
+                  {replyTagOptions.map((tag) => <option key={tag}>{tag}</option>)}
+                </select>
+              </Field>
+            </div>
+            <Field label="有效话术 effective_reply">
+              <textarea rows={5} value={playbookForm.effective_reply} onChange={(event) => updatePlaybookForm("effective_reply", event.target.value)} />
+            </Field>
+            <Field label="备注 notes">
+              <textarea rows={3} value={playbookForm.notes} onChange={(event) => updatePlaybookForm("notes", event.target.value)} />
+            </Field>
+            <div className="actions">
+              <button className="primary" onClick={savePlaybookCase} disabled={isSavingPlaybook}>
+                {isSavingPlaybook ? "保存中..." : "保存案例"}
+              </button>
+              <button onClick={() => setPlaybookSourceInteraction(null)}>取消</button>
             </div>
           </div>
         </div>

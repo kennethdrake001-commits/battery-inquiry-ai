@@ -20,7 +20,8 @@ const resultFields = [
   "confidence",
   "reasoning",
   "needSupervisorReview",
-  "reviewReason"
+  "reviewReason",
+  "sourceReferences"
 ];
 
 function Field({ label, children }) {
@@ -105,7 +106,7 @@ function AnalysisEditor({ analysis, finalReply, onFinalReplyChange, onChange }) 
   }
 
   function update(field, value) {
-    const nextValue = field === "missingInformation"
+    const nextValue = ["missingInformation", "sourceReferences"].includes(field)
       ? value.split("\n").map((item) => item.trim()).filter(Boolean)
       : field === "customerScore"
         ? Number(value)
@@ -124,7 +125,7 @@ function AnalysisEditor({ analysis, finalReply, onFinalReplyChange, onChange }) 
       <div className="result-grid">
         {resultFields.map((field) => (
           <Field key={field} label={field}>
-            {["nextGoal", "suggestedAction", "englishReply", "reasoning", "reviewReason", "missingInformation"].includes(field) ? (
+            {["nextGoal", "suggestedAction", "englishReply", "reasoning", "reviewReason", "missingInformation", "sourceReferences"].includes(field) ? (
               <textarea
                 rows={field === "englishReply" ? 5 : 3}
                 value={valueFor(field)}
@@ -177,9 +178,10 @@ export default function HomePage() {
     setSuccess("");
     setIsAnalyzing(true);
     try {
+      const authHeaders = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
       const response = await fetch("/api/analyze-customer", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify(form)
       });
       const payload = await response.json().catch(() => null);
@@ -303,6 +305,7 @@ export default function HomePage() {
         <nav>
           <Link href="/">客户录入</Link>
           <Link href="/customers">客户列表</Link>
+          <Link href="/playbook">有效案例库</Link>
         </nav>
       </header>
 
