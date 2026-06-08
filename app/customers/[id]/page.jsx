@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import { getSupabaseBrowserClient } from "../../../lib/supabaseClient";
 
 const resultOptions = ["客户已回复", "客户未回复", "进入报价", "进入 PI", "成交", "失败", "暂不确定"];
@@ -68,7 +69,8 @@ function HistoryItem({ item }) {
   );
 }
 
-export default function CustomerDetailPage({ params }) {
+export default function CustomerDetailPage() {
+  const params = useParams();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [session, setSession] = useState(null);
   const [customer, setCustomer] = useState(null);
@@ -86,9 +88,15 @@ export default function CustomerDetailPage({ params }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const customerId = params.id;
+  const customerId = params?.id;
 
   async function loadData() {
+    if (!customerId) {
+      setError("客户 ID 缺失，请从客户列表重新进入。");
+      setLoading(false);
+      return;
+    }
+
     if (!supabase) {
       setError("请先配置 Supabase 环境变量。");
       setLoading(false);
