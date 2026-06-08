@@ -88,6 +88,7 @@ export default function PlaybookPage() {
           <Link href="/">客户录入</Link>
           <Link href="/customers">客户列表</Link>
           <Link href="/playbook">有效案例库</Link>
+          <Link href="/products">产品知识库</Link>
         </nav>
       </header>
 

@@ -78,6 +78,7 @@ const blockerKeywords = [
   { blocker: "技术解释太复杂", words: ["bms", "technical", "matching", "became cold", "cold"] },
   { blocker: "需求不清", words: ["ok", "thanks anyway", "think about it", "unclear"] }
 ];
+const productKeywords = ["5kwh", "6kwh", "10kwh", "15kwh", "16kwh", "50kwh", "wall-mounted", "floor-standing", "inverter", "home backup", "lifepo4"];
 
 const systemPrompt = `
 You are an AI sales assistant for energy storage battery export inquiries.
@@ -87,6 +88,7 @@ Task:
 - Analyze the customer inquiry, previous seller reply, quotation content and current status.
 - Generate customer classification, level, score, sales stage, blocker, missing information, next goal, suggested action, concise English reply, follow-up time, priority, confidence, reasoning, and supervisor review flag.
 - If matchedPlaybookCases are provided, use them as reference examples only when relevant. Do not copy blindly.
+- If matchedProducts are provided, use product data as the only trusted source for product specifications.
 
 Output rules:
 - customerScore is 0-100. A: 80-100, B: 60-79, C: 35-59, D: 0-34.
@@ -94,11 +96,13 @@ Output rules:
 - priority must be 是 for A/B or urgent PI/order/project cases; otherwise 否.
 - needSupervisorReview must be 是 if confidence < 0.65, order/PI terms are unclear, customs clearance risk is high, compatibility risk is high, or the reply may need manager approval.
 - sourceReferences must explain whether effective historical cases were referenced. If matched cases are provided, include short references like "参考有效案例：End User + 已报价未回复 + 技术解释太复杂". If no cases are provided, return ["暂无匹配历史案例"].
+- If matchedProducts are provided, sourceReferences must also include lines like "参考产品知识库：51.2V 118Ah 6.04kWh wall-mounted battery".
 - missingInformation must be an array of concrete missing items, e.g. ["country", "quantity", "application", "inverter brand and model"].
 - English reply must be short, natural, suitable for Alibaba / WhatsApp, and include one clear next action.
 - Do not overpromise customs clearance.
 - Do not promise all inverters are compatible.
 - Any quotation-related reply must clearly mention FOB / CIF / DDP when discussing price or quotation.
+- Never invent product specifications. If the product knowledge does not contain a parameter, treat it as "待确认".
 - For end users, explain application simply and avoid complex BMS terms.
 - For B2B customers, be professional but concise.
 
@@ -188,6 +192,53 @@ function sourceReferencesFor(cases) {
   ));
 }
 
+function normalizeProductValue(value, suffix = "") {
+  if (value === null || value === undefined || value === "") return "待确认";
+  return `${value}${suffix}`;
+}
+
+function productReferenceFor(product) {
+  return `参考产品知识库：${normalizeProductValue(product.voltage)} ${normalizeProductValue(product.capacity_ah, "Ah")} ${normalizeProductValue(product.capacity_kwh, "kWh")} ${normalizeProductValue(product.common_name || product.product_name)}`;
+}
+
+function textContainsProductKeyword(text) {
+  return productKeywords.some((keyword) => text.includes(keyword));
+}
+
+function scoreProduct(product, text) {
+  let score = 0;
+  const haystacks = [
+    product.product_name,
+    product.common_name,
+    product.voltage,
+    product.battery_type,
+    product.installation_type,
+    product.suitable_customers,
+    product.suitable_scenarios,
+    product.communication
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase());
+
+  for (const keyword of productKeywords) {
+    const normalizedKeyword = keyword.toLowerCase();
+    if (text.includes(normalizedKeyword)) {
+      if (haystacks.some((value) => value.includes(normalizedKeyword))) score += 3;
+      if (normalizedKeyword.endsWith("kwh")) {
+        const numeric = Number(normalizedKeyword.replace("kwh", ""));
+        if (!Number.isNaN(numeric) && Number(product.capacity_kwh) >= numeric - 0.8 && Number(product.capacity_kwh) <= numeric + 0.8) {
+          score += 4;
+        }
+      }
+    }
+  }
+
+  if (text.includes("home backup") && String(product.suitable_scenarios || "").toLowerCase().includes("home")) score += 3;
+  if (text.includes("inverter") && String(product.suitable_scenarios || "").toLowerCase().includes("inverter")) score += 2;
+
+  return score;
+}
+
 async function loadMatchedPlaybookCases(customerInput, authorizationHeader) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -223,6 +274,63 @@ async function loadMatchedPlaybookCases(customerInput, authorizationHeader) {
       .map(({ item }) => item);
   } catch (error) {
     console.error("Load playbook cases failed:", error);
+    return [];
+  }
+}
+
+async function loadMatchedProducts(customerInput, authorizationHeader) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseAnonKey || !authorizationHeader) return [];
+
+  const text = textFromInput(customerInput);
+  if (!textContainsProductKeyword(text)) return [];
+
+  const endpoint = new URL(`${supabaseUrl}/rest/v1/products`);
+  endpoint.searchParams.set("select", "id,product_name,common_name,voltage,capacity_kwh,capacity_ah,battery_type,installation_type,bms_current,discharge_rate,communication,parallel_support,cycle_life,certifications,warranty,fob_price,fob_port,moq,lead_time,suitable_customers,suitable_scenarios,risk_notes,status");
+  endpoint.searchParams.set("order", "updated_at.desc");
+  endpoint.searchParams.set("limit", "120");
+
+  try {
+    const response = await fetch(endpoint, {
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: authorizationHeader
+      }
+    });
+    if (!response.ok) return [];
+
+    const rows = await response.json();
+    return (rows || [])
+      .filter((item) => (item.status || "active") === "active")
+      .map((item) => ({ item, score: scoreProduct(item, text) }))
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5)
+      .map(({ item }) => ({
+        ...item,
+        voltage: normalizeProductValue(item.voltage),
+        capacity_kwh: normalizeProductValue(item.capacity_kwh),
+        capacity_ah: normalizeProductValue(item.capacity_ah),
+        battery_type: normalizeProductValue(item.battery_type),
+        installation_type: normalizeProductValue(item.installation_type),
+        bms_current: normalizeProductValue(item.bms_current),
+        discharge_rate: normalizeProductValue(item.discharge_rate),
+        communication: normalizeProductValue(item.communication),
+        parallel_support: normalizeProductValue(item.parallel_support),
+        cycle_life: normalizeProductValue(item.cycle_life),
+        certifications: normalizeProductValue(item.certifications),
+        warranty: normalizeProductValue(item.warranty),
+        fob_price: normalizeProductValue(item.fob_price),
+        fob_port: normalizeProductValue(item.fob_port),
+        moq: normalizeProductValue(item.moq),
+        lead_time: normalizeProductValue(item.lead_time),
+        suitable_customers: normalizeProductValue(item.suitable_customers),
+        suitable_scenarios: normalizeProductValue(item.suitable_scenarios),
+        risk_notes: normalizeProductValue(item.risk_notes)
+      }));
+  } catch (error) {
+    console.error("Load products failed:", error);
     return [];
   }
 }
@@ -370,9 +478,14 @@ async function analyzeWithProvider(customerInput) {
 export async function POST(request) {
   try {
     const customerInput = await request.json();
-    const matchedPlaybookCases = await loadMatchedPlaybookCases(customerInput, request.headers.get("authorization"));
-    const analysis = await analyzeWithProvider({ ...customerInput, matchedPlaybookCases });
-    analysis.sourceReferences = sourceReferencesFor(matchedPlaybookCases);
+    const authorizationHeader = request.headers.get("authorization");
+    const matchedPlaybookCases = await loadMatchedPlaybookCases(customerInput, authorizationHeader);
+    const matchedProducts = await loadMatchedProducts(customerInput, authorizationHeader);
+    const analysis = await analyzeWithProvider({ ...customerInput, matchedPlaybookCases, matchedProducts });
+    analysis.sourceReferences = [
+      ...(matchedProducts.length ? matchedProducts.map(productReferenceFor) : ["暂无匹配产品知识"]),
+      ...sourceReferencesFor(matchedPlaybookCases)
+    ];
     return NextResponse.json({ analysis });
   } catch (error) {
     if (error.message === "provider_not_configured") {
