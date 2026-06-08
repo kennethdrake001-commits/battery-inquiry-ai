@@ -153,6 +153,7 @@ export default function ProductsPage() {
           <Link href="/playbook">有效案例库</Link>
           <Link href="/products">产品知识库</Link>
           <Link href="/system-checker">系统搭配校验器</Link>
+          <Link href="/tasks">今日任务</Link>
         </nav>
       </header>
 

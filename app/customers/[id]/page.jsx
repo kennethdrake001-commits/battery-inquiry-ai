@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { getSupabaseBrowserClient } from "../../../lib/supabaseClient";
+import { formatDateTime, parseFollowUpTime } from "../../../lib/followUp";
 
 const resultOptions = ["客户已回复", "客户未回复", "进入报价", "进入 PI", "成交", "失败", "暂不确定"];
 const playbookEligibleResults = ["客户已回复", "进入报价", "进入 PI", "成交"];
@@ -47,6 +48,18 @@ const emptyPlaybookForm = {
   notes: ""
 };
 
+const emptyQuoteForm = {
+  quote_version: "",
+  product: "",
+  quantity: "",
+  unit_price: "",
+  total_price: "",
+  trade_term: "FOB",
+  port_or_address: "",
+  valid_until: "",
+  quote_note: ""
+};
+
 function HistoryItem({ item, onSaveAsPlaybook }) {
   const canSaveAsPlaybook = playbookEligibleResults.includes(item.result_feedback);
 
@@ -87,12 +100,46 @@ function HistoryItem({ item, onSaveAsPlaybook }) {
   );
 }
 
+function QuoteItem({ item, onNoteChange, onSaveNote, isSaving }) {
+  return (
+    <article className="history-item">
+      <div className="history-head">
+        <strong>{item.quote_version || "未命名版本"}</strong>
+        <span>{formatDateTime(item.created_at)}</span>
+      </div>
+      <div className="two-col">
+        <div>
+          <h4>产品</h4>
+          <p>{item.product || "无"}</p>
+          <h4>数量</h4>
+          <p>{item.quantity || "无"}</p>
+          <h4>单价 / 总价</h4>
+          <p>{item.unit_price || "-"} / {item.total_price || "-"}</p>
+          <h4>贸易条款 / 港口或地址</h4>
+          <p>{item.trade_term || "-"} / {item.port_or_address || "-"}</p>
+        </div>
+        <div>
+          <h4>有效期</h4>
+          <p>{item.valid_until || "无"}</p>
+          <h4>备注</h4>
+          <textarea rows={4} value={item.quote_note || ""} onChange={(event) => onNoteChange(item.id, event.target.value)} />
+          <div className="actions compact">
+            <button onClick={() => onSaveNote(item)} disabled={isSaving}>保存报价备注</button>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 export default function CustomerDetailPage() {
   const params = useParams();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [session, setSession] = useState(null);
   const [customer, setCustomer] = useState(null);
   const [interactions, setInteractions] = useState([]);
+  const [quotes, setQuotes] = useState([]);
+  const [quoteForm, setQuoteForm] = useState(emptyQuoteForm);
   const [customerNewReply, setCustomerNewReply] = useState("");
   const [operatorNote, setOperatorNote] = useState("");
   const [analysis, setAnalysis] = useState(null);
@@ -106,6 +153,7 @@ export default function CustomerDetailPage() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSavingPlaybook, setIsSavingPlaybook] = useState(false);
+  const [isSavingQuote, setIsSavingQuote] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -154,6 +202,18 @@ export default function CustomerDetailPage() {
     } else {
       setCustomer(customerRow);
       setInteractions(historyRows || []);
+    }
+
+    const { data: quoteRows, error: quoteError } = await supabase
+      .from("quotes")
+      .select("*")
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false });
+
+    if (quoteError) {
+      setError(quoteError.message);
+    } else {
+      setQuotes(quoteRows || []);
     }
     setLoading(false);
   }
@@ -340,6 +400,10 @@ export default function CustomerDetailPage() {
         .update({
           latest_analysis: analysis,
           current_status: analysis.stage || customer.current_status,
+          current_next_action: analysis.suggestedAction || null,
+          next_follow_up_at: parseFollowUpTime(analysis.followUpTime),
+          last_contacted_at: sentAt || customer.last_contacted_at,
+          last_customer_reply_at: customerNewReply ? new Date().toISOString() : customer.last_customer_reply_at,
           updated_at: new Date().toISOString()
         })
         .eq("id", customer.id);
@@ -361,6 +425,75 @@ export default function CustomerDetailPage() {
     }
   }
 
+  function updateQuoteForm(field, value) {
+    setQuoteForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function saveQuote() {
+    if (!session || !customer) return;
+
+    setError("");
+    setSuccess("");
+    setIsSavingQuote(true);
+
+    const now = new Date().toISOString();
+    const { error: quoteError } = await supabase.from("quotes").insert({
+      customer_id: customer.id,
+      quote_version: quoteForm.quote_version,
+      product: quoteForm.product,
+      quantity: quoteForm.quantity,
+      unit_price: quoteForm.unit_price,
+      total_price: quoteForm.total_price,
+      trade_term: quoteForm.trade_term,
+      port_or_address: quoteForm.port_or_address,
+      valid_until: quoteForm.valid_until || null,
+      quote_note: quoteForm.quote_note,
+      created_by: session.user.id
+    });
+
+    if (!quoteError) {
+      await supabase
+        .from("customers")
+        .update({
+          last_quote_at: now,
+          current_status: customer.current_status === "待报价" || customer.current_status === "新询盘" ? "已报价未回复" : customer.current_status,
+          updated_at: now
+        })
+        .eq("id", customer.id);
+    }
+
+    setIsSavingQuote(false);
+    if (quoteError) {
+      setError(quoteError.message);
+      return;
+    }
+
+    setQuoteForm(emptyQuoteForm);
+    setSuccess("报价版本已保存。");
+    await loadData();
+  }
+
+  function updateQuoteNote(id, value) {
+    setQuotes((current) => current.map((item) => (item.id === id ? { ...item, quote_note: value } : item)));
+  }
+
+  async function saveQuoteNote(item) {
+    setIsSavingQuote(true);
+    const { error: updateError } = await supabase
+      .from("quotes")
+      .update({ quote_note: item.quote_note })
+      .eq("id", item.id);
+    setIsSavingQuote(false);
+
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+
+    setSuccess("报价备注已更新。");
+    await loadData();
+  }
+
   if (loading) return <main className="app"><section className="panel">加载中...</section></main>;
 
   return (
@@ -377,6 +510,7 @@ export default function CustomerDetailPage() {
           <Link href="/playbook">有效案例库</Link>
           <Link href="/products">产品知识库</Link>
           <Link href="/system-checker">系统搭配校验器</Link>
+          <Link href="/tasks">今日任务</Link>
         </nav>
       </header>
 
@@ -420,6 +554,53 @@ export default function CustomerDetailPage() {
           </div>
         </section>
       )}
+
+      <section className="panel">
+        <div className="section-title">
+          <h2>报价记录</h2>
+          <span>{quotes.length} 个报价版本</span>
+        </div>
+        <div className="form-grid">
+          <Field label="quote_version">
+            <input value={quoteForm.quote_version} onChange={(event) => updateQuoteForm("quote_version", event.target.value)} />
+          </Field>
+          <Field label="product 产品">
+            <input value={quoteForm.product} onChange={(event) => updateQuoteForm("product", event.target.value)} />
+          </Field>
+          <Field label="quantity 数量">
+            <input value={quoteForm.quantity} onChange={(event) => updateQuoteForm("quantity", event.target.value)} />
+          </Field>
+          <Field label="unit_price 单价">
+            <input value={quoteForm.unit_price} onChange={(event) => updateQuoteForm("unit_price", event.target.value)} />
+          </Field>
+          <Field label="total_price 总价">
+            <input value={quoteForm.total_price} onChange={(event) => updateQuoteForm("total_price", event.target.value)} />
+          </Field>
+          <Field label="trade_term">
+            <select value={quoteForm.trade_term} onChange={(event) => updateQuoteForm("trade_term", event.target.value)}>
+              {["FOB", "CIF", "DDP", "EXW", "Other"].map((term) => <option key={term}>{term}</option>)}
+            </select>
+          </Field>
+          <Field label="port_or_address">
+            <input value={quoteForm.port_or_address} onChange={(event) => updateQuoteForm("port_or_address", event.target.value)} />
+          </Field>
+          <Field label="valid_until">
+            <input type="date" value={quoteForm.valid_until} onChange={(event) => updateQuoteForm("valid_until", event.target.value)} />
+          </Field>
+          <Field label="quote_note">
+            <textarea rows={3} value={quoteForm.quote_note} onChange={(event) => updateQuoteForm("quote_note", event.target.value)} />
+          </Field>
+        </div>
+        <div className="actions">
+          <button className="primary" onClick={saveQuote} disabled={isSavingQuote}>新增报价</button>
+        </div>
+        <div className="history">
+          {quotes.map((item) => (
+            <QuoteItem key={item.id} item={item} onNoteChange={updateQuoteNote} onSaveNote={saveQuoteNote} isSaving={isSavingQuote} />
+          ))}
+          {quotes.length === 0 && <p className="empty">暂无报价记录</p>}
+        </div>
+      </section>
 
       <section className="panel history">
         <div className="section-title">

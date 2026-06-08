@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getSupabaseBrowserClient } from "../lib/supabaseClient";
 import { emptyCustomerForm, sourceOptions, statusOptions } from "../lib/options";
+import { parseFollowUpTime } from "../lib/followUp";
 
 const resultFields = [
   "customerType",
@@ -232,6 +233,10 @@ export default function HomePage() {
         current_status: analysis.stage || form.currentStatus,
         question: form.question,
         latest_analysis: analysis,
+        current_next_action: analysis.suggestedAction || null,
+        next_follow_up_at: parseFollowUpTime(analysis.followUpTime),
+        last_contacted_at: sentAt,
+        last_quote_at: form.quoted === "yes" ? new Date().toISOString() : null,
         updated_at: new Date().toISOString()
       };
 
@@ -308,6 +313,7 @@ export default function HomePage() {
           <Link href="/playbook">有效案例库</Link>
           <Link href="/products">产品知识库</Link>
           <Link href="/system-checker">系统搭配校验器</Link>
+          <Link href="/tasks">今日任务</Link>
         </nav>
       </header>
 

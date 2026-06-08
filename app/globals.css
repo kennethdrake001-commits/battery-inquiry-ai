@@ -242,6 +242,31 @@ nav,
   text-align: left;
 }
 
+.task-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #d9e2f0;
+  border-radius: 16px;
+  background: #fbfcff;
+  padding: 16px;
+  text-align: left;
+}
+
+.task-card p {
+  margin: 0;
+}
+
+.task-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.task-reason {
+  color: #155eef;
+  font-weight: 700;
+}
+
 .customer-card p {
   margin: 0;
 }

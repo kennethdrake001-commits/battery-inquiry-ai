@@ -11,6 +11,11 @@ create table if not exists public.customers (
   current_status text,
   question text,
   latest_analysis jsonb,
+  current_next_action text,
+  next_follow_up_at timestamptz,
+  last_contacted_at timestamptz,
+  last_customer_reply_at timestamptz,
+  last_quote_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -104,11 +109,34 @@ create table if not exists public.products (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.quotes (
+  id uuid primary key default gen_random_uuid(),
+  customer_id uuid not null references public.customers(id) on delete cascade,
+  quote_version text,
+  product text,
+  quantity text,
+  unit_price text,
+  total_price text,
+  trade_term text,
+  port_or_address text,
+  valid_until date,
+  quote_note text,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.customers add column if not exists current_next_action text;
+alter table public.customers add column if not exists next_follow_up_at timestamptz;
+alter table public.customers add column if not exists last_contacted_at timestamptz;
+alter table public.customers add column if not exists last_customer_reply_at timestamptz;
+alter table public.customers add column if not exists last_quote_at timestamptz;
+
 alter table public.customers enable row level security;
 alter table public.customer_analyses enable row level security;
 alter table public.interactions enable row level security;
 alter table public.playbook_cases enable row level security;
 alter table public.products enable row level security;
+alter table public.quotes enable row level security;
 
 grant usage on schema public to anon, authenticated;
 grant select, insert, update on public.customers to authenticated;
@@ -116,6 +144,7 @@ grant select, insert, update on public.customer_analyses to authenticated;
 grant select, insert, update on public.interactions to authenticated;
 grant select, insert, update on public.playbook_cases to authenticated;
 grant select, insert, update on public.products to authenticated;
+grant select, insert, update on public.quotes to authenticated;
 
 drop policy if exists "Users can read own customers" on public.customers;
 drop policy if exists "Users can insert own customers" on public.customers;
@@ -132,6 +161,9 @@ drop policy if exists "Users can update own playbook cases" on public.playbook_c
 drop policy if exists "Users can read own products" on public.products;
 drop policy if exists "Users can insert own products" on public.products;
 drop policy if exists "Users can update own products" on public.products;
+drop policy if exists "Users can read own quotes" on public.quotes;
+drop policy if exists "Users can insert own quotes" on public.quotes;
+drop policy if exists "Users can update own quotes" on public.quotes;
 
 create policy "Users can read own customers"
 on public.customers for select
@@ -197,3 +229,41 @@ create policy "Users can update own products"
 on public.products for update
 using (auth.uid() = created_by)
 with check (auth.uid() = created_by);
+
+create policy "Users can read own quotes"
+on public.quotes for select
+using (
+  exists (
+    select 1 from public.customers
+    where public.customers.id = public.quotes.customer_id
+    and public.customers.user_id = auth.uid()
+  )
+);
+
+create policy "Users can insert own quotes"
+on public.quotes for insert
+with check (
+  auth.uid() = created_by
+  and exists (
+    select 1 from public.customers
+    where public.customers.id = public.quotes.customer_id
+    and public.customers.user_id = auth.uid()
+  )
+);
+
+create policy "Users can update own quotes"
+on public.quotes for update
+using (
+  exists (
+    select 1 from public.customers
+    where public.customers.id = public.quotes.customer_id
+    and public.customers.user_id = auth.uid()
+  )
+)
+with check (
+  exists (
+    select 1 from public.customers
+    where public.customers.id = public.quotes.customer_id
+    and public.customers.user_id = auth.uid()
+  )
+);
