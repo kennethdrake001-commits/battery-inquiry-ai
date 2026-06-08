@@ -475,6 +475,53 @@ nav,
   white-space: pre-wrap;
 }
 
+.notice-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.notice-panel strong {
+  color: #b54708;
+}
+
+.notice-panel p {
+  color: #526070;
+  margin: 0;
+}
+
+.checker-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.checker-sections {
+  margin-top: 18px;
+}
+
+.checker-sections h3 {
+  margin: 0 0 8px;
+}
+
+.checker-list {
+  background: #f8fafc;
+  border-radius: 12px;
+  margin: 0 0 18px;
+  padding: 14px 14px 14px 28px;
+}
+
+.checker-box {
+  background: #f8fafc;
+  border-radius: 12px;
+  margin: 0 0 18px;
+  padding: 12px;
+  white-space: pre-wrap;
+}
+
+.reply-panel {
+  margin-top: 18px;
+}
+
 @media (max-width: 1100px) {
   .board {
     grid-template-columns: repeat(2, minmax(240px, 1fr));
@@ -485,7 +532,8 @@ nav,
   }
 
   .product-grid,
-  .detail-grid {
+  .detail-grid,
+  .checker-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -508,7 +556,8 @@ nav,
   .two-col,
   .board,
   .product-grid,
-  .detail-grid {
+  .detail-grid,
+  .checker-grid {
     grid-template-columns: 1fr;
   }
 
