@@ -14,7 +14,7 @@ function CustomerCard({ customer }) {
   const analysis = customer.latest_analysis || {};
 
   return (
-    <article className="customer-card">
+    <Link className="customer-card" href={`/customers/${customer.id}`}>
       <div className="card-title">
         <strong>{customer.customer_name || "未命名客户"}</strong>
         <span className={`level level-${analysis.customerLevel || "D"}`}>{analysis.customerLevel || "-"}</span>
@@ -26,7 +26,7 @@ function CustomerCard({ customer }) {
       <p>下次跟进：{analysis.followUpTime || "-"}</p>
       <p className="action-text">{analysis.suggestedAction || "暂无建议动作"}</p>
       {analysis.needSupervisorReview === "是" && <p className="review">需主管复核：{analysis.reviewReason || "AI 建议复核"}</p>}
-    </article>
+    </Link>
   );
 }
 

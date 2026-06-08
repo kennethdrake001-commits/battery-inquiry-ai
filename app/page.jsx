@@ -96,7 +96,7 @@ function AuthPanel({ session, onSessionChange }) {
   );
 }
 
-function AnalysisEditor({ analysis, onChange }) {
+function AnalysisEditor({ analysis, finalReply, onFinalReplyChange, onChange }) {
   if (!analysis) return null;
 
   function valueFor(field) {
@@ -136,6 +136,13 @@ function AnalysisEditor({ analysis, onChange }) {
           </Field>
         ))}
       </div>
+      <Field label="final_sent_reply 运营最终发送话术">
+        <textarea
+          rows={5}
+          value={finalReply}
+          onChange={(event) => onFinalReplyChange(event.target.value)}
+        />
+      </Field>
       <pre className="json-box">{JSON.stringify(analysis, null, 2)}</pre>
     </section>
   );
@@ -146,6 +153,7 @@ export default function HomePage() {
   const [session, setSession] = useState(null);
   const [form, setForm] = useState(emptyCustomerForm);
   const [analysis, setAnalysis] = useState(null);
+  const [finalReply, setFinalReply] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
@@ -179,6 +187,7 @@ export default function HomePage() {
         throw new Error(payload?.error || "AI分析失败，请稍后重试");
       }
       setAnalysis(payload.analysis);
+      setFinalReply(payload.analysis.englishReply || "");
     } catch (analyzeError) {
       setError(analyzeError.message || "AI分析失败，请稍后重试");
     } finally {
@@ -186,7 +195,7 @@ export default function HomePage() {
     }
   }
 
-  async function saveCustomer() {
+  async function saveInteraction(action) {
     if (!supabase) {
       setError("请先配置 Supabase 环境变量。");
       return;
@@ -205,6 +214,10 @@ export default function HomePage() {
     setIsSaving(true);
 
     try {
+      const sentAt = action === "sent" ? new Date().toISOString() : null;
+      const aiSuggestedReply = analysis.englishReply || "";
+      const finalSentReply = finalReply || aiSuggestedReply;
+      const replyModified = finalSentReply.trim() !== aiSuggestedReply.trim();
       const customerPayload = {
         user_id: session.user.id,
         customer_name: form.customerName,
@@ -228,19 +241,50 @@ export default function HomePage() {
 
       if (customerError) throw customerError;
 
-      const { error: analysisError } = await supabase.from("customer_analyses").insert({
+      const { data: analysisRow, error: analysisError } = await supabase.from("customer_analyses").insert({
         user_id: session.user.id,
         customer_id: customer.id,
         input_snapshot: form,
         analysis,
-        final_english_reply: analysis.englishReply
-      });
+        ai_suggested_reply: aiSuggestedReply,
+        final_english_reply: finalSentReply,
+        final_sent_reply: action === "sent" ? finalSentReply : null,
+        reply_modified: replyModified
+      }).select("id").single();
 
       if (analysisError) throw analysisError;
 
-      setSuccess("客户和本次 AI 分析已保存到 Supabase。");
+      const { error: interactionError } = await supabase.from("interactions").insert({
+        user_id: session.user.id,
+        customer_id: customer.id,
+        related_ai_analysis_id: analysisRow.id,
+        original_message: form.originalMessage,
+        our_reply: form.ourReply,
+        ai_analysis: analysis,
+        ai_suggested_reply: aiSuggestedReply,
+        final_sent_reply: action === "sent" ? finalSentReply : null,
+        reply_modified: replyModified,
+        interaction_status: action,
+        sent_at: sentAt,
+        sent_by: action === "sent" ? session.user.id : null,
+        operator_note: action === "inappropriate" ? "话术不合适" : null
+      });
+
+      if (interactionError) throw interactionError;
+
+      if (action === "sent" && aiSuggestedReply) {
+        await navigator.clipboard.writeText(aiSuggestedReply);
+      }
+
+      const messageMap = {
+        sent: "已复制 AI 建议话术，并保存最终发送记录。",
+        draft: "草稿已保存。",
+        inappropriate: "已记录：话术不合适。"
+      };
+      setSuccess(messageMap[action] || "已保存。");
       setForm(emptyCustomerForm);
       setAnalysis(null);
+      setFinalReply("");
     } catch (saveError) {
       setError(saveError.message || "保存失败，请检查 Supabase 配置。");
     } finally {
@@ -309,15 +353,29 @@ export default function HomePage() {
           <button className="primary" onClick={analyzeCustomer} disabled={isAnalyzing}>
             {isAnalyzing ? "AI 分析中..." : "AI 生成跟进方案"}
           </button>
-          <button onClick={saveCustomer} disabled={isSaving || !analysis}>
-            {isSaving ? "保存中..." : "保存客户和 AI 分析"}
+          <button onClick={() => saveInteraction("sent")} disabled={isSaving || !analysis}>
+            {isSaving ? "保存中..." : "复制并标记已发送"}
+          </button>
+          <button onClick={() => saveInteraction("draft")} disabled={isSaving || !analysis}>
+            仅保存草稿
+          </button>
+          <button onClick={() => saveInteraction("inappropriate")} disabled={isSaving || !analysis}>
+            话术不合适
           </button>
         </div>
         {error && <div className="error">{error}</div>}
         {success && <div className="success">{success}</div>}
       </section>
 
-      <AnalysisEditor analysis={analysis} onChange={setAnalysis} />
+      <AnalysisEditor
+        analysis={analysis}
+        finalReply={finalReply}
+        onFinalReplyChange={setFinalReply}
+        onChange={(nextAnalysis) => {
+          setAnalysis(nextAnalysis);
+          if (!finalReply) setFinalReply(nextAnalysis.englishReply || "");
+        }}
+      />
     </main>
   );
 }

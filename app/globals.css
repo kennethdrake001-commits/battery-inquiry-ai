@@ -291,6 +291,87 @@ nav,
   padding: 8px;
 }
 
+.history {
+  display: grid;
+  gap: 14px;
+}
+
+.history-item {
+  border: 1px solid #e4eaf3;
+  border-radius: 16px;
+  padding: 18px;
+}
+
+.history-head,
+.two-col {
+  display: flex;
+  gap: 16px;
+}
+
+.history-head {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.history-head span {
+  background: #e8edf5;
+  border-radius: 999px;
+  color: #344054;
+  padding: 4px 10px;
+}
+
+.two-col {
+  align-items: flex-start;
+}
+
+.two-col > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-item h4 {
+  margin: 16px 0 6px;
+}
+
+.history-item p {
+  background: #f8fafc;
+  border-radius: 12px;
+  margin: 0;
+  padding: 12px;
+  white-space: pre-wrap;
+}
+
+.compact-json {
+  max-height: 260px;
+  margin-top: 0;
+}
+
+.modal-backdrop {
+  align-items: center;
+  background: rgba(15, 23, 42, 0.52);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 18px;
+  position: fixed;
+  z-index: 20;
+}
+
+.modal {
+  background: white;
+  border-radius: 20px;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.22);
+  display: grid;
+  gap: 16px;
+  max-width: 520px;
+  padding: 24px;
+  width: 100%;
+}
+
+.modal h2 {
+  margin: 0;
+}
+
 @media (max-width: 1100px) {
   .board {
     grid-template-columns: repeat(2, minmax(240px, 1fr));
@@ -315,7 +396,12 @@ nav,
 
   .form-grid,
   .result-grid,
+  .two-col,
   .board {
     grid-template-columns: 1fr;
+  }
+
+  .two-col {
+    flex-direction: column;
   }
 }
