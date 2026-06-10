@@ -421,7 +421,7 @@ export default function CustomerDetailPage() {
 
       if (interactionError) throw interactionError;
 
-      await supabase
+      const { error: customerUpdateError } = await supabase
         .from("customers")
         .update({
           latest_analysis: analysis,
@@ -442,6 +442,7 @@ export default function CustomerDetailPage() {
           updated_at: new Date().toISOString()
         })
         .eq("id", customer.id);
+      if (customerUpdateError) throw customerUpdateError;
 
       if (action === "sent" && aiSuggestedReply) {
         await navigator.clipboard.writeText(aiSuggestedReply);
@@ -482,7 +483,8 @@ export default function CustomerDetailPage() {
       ...current,
       nextAction: recommendation.nextAction,
       missingInfo: recommendation.missingInfo.join("\n"),
-      followUpDate: recommendation.followUpDate || current.followUpDate
+      followUpDate: recommendation.followUpDate || current.followUpDate,
+      leadLevel: recommendation.leadLevel || current.leadLevel
     }));
     setSuccess("已生成规则版 Recommended Next Action。");
     setError("");
@@ -490,6 +492,11 @@ export default function CustomerDetailPage() {
 
   async function saveWorkflow() {
     if (!customer) return;
+    if (!session?.user) {
+      setError("Please log in before saving workflow updates.");
+      setSuccess("");
+      return;
+    }
 
     setError("");
     setSuccess("");
