@@ -3,8 +3,17 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getSupabaseBrowserClient } from "../lib/supabaseClient";
-import { emptyCustomerForm, sourceOptions, statusOptions } from "../lib/options";
-import { parseFollowUpTime } from "../lib/followUp";
+import {
+  customerTypeOptions,
+  emptyCustomerForm,
+  leadLevelOptions,
+  shippingTermOptions,
+  sourceOptions,
+  statusOptions,
+  workflowStageOptions
+} from "../lib/options";
+import { dateToFollowUpAt, parseFollowUpTime } from "../lib/followUp";
+import { generateCustomerWorkflow, mapAnalysisCustomerType, mapAnalysisLeadLevel } from "../lib/customerWorkflow";
 
 const resultFields = [
   "customerType",
@@ -183,6 +192,18 @@ export default function HomePage() {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
+  function generateNextAction() {
+    const recommendation = generateCustomerWorkflow(form);
+    setForm((current) => ({
+      ...current,
+      nextAction: recommendation.nextAction,
+      missingInfo: recommendation.missingInfo.join("\n"),
+      followUpDate: recommendation.followUpDate || current.followUpDate
+    }));
+    setSuccess("已生成规则版下一步动作建议。");
+    setError("");
+  }
+
   async function analyzeCustomer() {
     setError("");
     setSuccess("");
@@ -200,6 +221,14 @@ export default function HomePage() {
       }
       setAnalysis(payload.analysis);
       setFinalReply(payload.analysis.englishReply || "");
+      setForm((current) => ({
+        ...current,
+        customerType:
+          current.customerType === "Unknown"
+            ? mapAnalysisCustomerType(payload.analysis.customerType)
+            : current.customerType,
+        leadLevel: current.leadLevel || mapAnalysisLeadLevel(payload.analysis.customerLevel)
+      }));
     } catch (analyzeError) {
       setError(analyzeError.message || "AI分析失败，请稍后重试");
     } finally {
@@ -241,9 +270,18 @@ export default function HomePage() {
         quote_content: form.quoteContent,
         current_status: analysis.stage || form.currentStatus,
         question: form.question,
+        customer_type: form.customerType,
+        stage: form.stage,
+        lead_level: form.leadLevel,
+        next_action: form.nextAction || analysis.suggestedAction || null,
+        missing_info: form.missingInfo || null,
+        follow_up_date: form.followUpDate || null,
+        quantity: form.quantity || null,
+        destination_city: form.destinationCity || null,
+        shipping_term: form.shippingTerm || null,
         latest_analysis: analysis,
-        current_next_action: analysis.suggestedAction || null,
-        next_follow_up_at: parseFollowUpTime(analysis.followUpTime),
+        current_next_action: form.nextAction || analysis.suggestedAction || null,
+        next_follow_up_at: form.followUpDate ? dateToFollowUpAt(form.followUpDate) : parseFollowUpTime(analysis.followUpTime),
         last_contacted_at: sentAt,
         last_quote_at: form.quoted === "yes" ? new Date().toISOString() : null,
         updated_at: new Date().toISOString()
@@ -368,8 +406,44 @@ export default function HomePage() {
           <Field label="question 我的困惑">
             <textarea rows={3} value={form.question} onChange={(event) => updateForm("question", event.target.value)} />
           </Field>
+          <Field label="customerType">
+            <select value={form.customerType} onChange={(event) => updateForm("customerType", event.target.value)}>
+              {customerTypeOptions.map((option) => <option key={option}>{option}</option>)}
+            </select>
+          </Field>
+          <Field label="stage">
+            <select value={form.stage} onChange={(event) => updateForm("stage", event.target.value)}>
+              {workflowStageOptions.map((option) => <option key={option}>{option}</option>)}
+            </select>
+          </Field>
+          <Field label="leadLevel">
+            <select value={form.leadLevel} onChange={(event) => updateForm("leadLevel", event.target.value)}>
+              {leadLevelOptions.map((option) => <option key={option}>{option}</option>)}
+            </select>
+          </Field>
+          <Field label="quantity">
+            <input value={form.quantity} onChange={(event) => updateForm("quantity", event.target.value)} />
+          </Field>
+          <Field label="shippingTerm">
+            <select value={form.shippingTerm} onChange={(event) => updateForm("shippingTerm", event.target.value)}>
+              {shippingTermOptions.map((option) => <option key={option}>{option}</option>)}
+            </select>
+          </Field>
+          <Field label="destinationCity">
+            <input value={form.destinationCity} onChange={(event) => updateForm("destinationCity", event.target.value)} />
+          </Field>
+          <Field label="nextAction">
+            <textarea rows={3} value={form.nextAction} onChange={(event) => updateForm("nextAction", event.target.value)} />
+          </Field>
+          <Field label="missingInfo">
+            <textarea rows={3} value={form.missingInfo} onChange={(event) => updateForm("missingInfo", event.target.value)} />
+          </Field>
+          <Field label="followUpDate">
+            <input type="date" value={form.followUpDate} onChange={(event) => updateForm("followUpDate", event.target.value)} />
+          </Field>
         </div>
         <div className="actions">
+          <button onClick={generateNextAction}>Generate Next Action</button>
           <button className="primary" onClick={analyzeCustomer} disabled={isAnalyzing}>
             {isAnalyzing ? "AI 分析中..." : "AI 生成跟进方案"}
           </button>

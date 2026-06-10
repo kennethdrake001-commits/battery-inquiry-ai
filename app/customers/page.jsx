@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getSupabaseBrowserClient } from "../../lib/supabaseClient";
 import { boardStages } from "../../lib/options";
+import { formatDateTime } from "../../lib/followUp";
 
 function AuthNotice({ session }) {
   if (session) return <div className="auth-card">已登录：{session.user.email}</div>;
@@ -12,19 +13,27 @@ function AuthNotice({ session }) {
 
 function CustomerCard({ customer }) {
   const analysis = customer.latest_analysis || {};
+  const stage = customer.stage || analysis.stage || customer.current_status || "New Inquiry";
+  const leadLevel = customer.lead_level || analysis.customerLevel || "C";
+  const nextAction = customer.next_action || customer.current_next_action || analysis.suggestedAction || "暂无建议动作";
+  const missingInfo = customer.missing_info || (Array.isArray(analysis.missingInformation) ? analysis.missingInformation.join(", ") : "");
+  const followUpDate = customer.follow_up_date || customer.next_follow_up_at || analysis.followUpTime || "";
+  const customerType = customer.customer_type || analysis.customerType || "Unknown";
 
   return (
     <Link className="customer-card" href={`/customers/${customer.id}`}>
       <div className="card-title">
         <strong>{customer.customer_name || "未命名客户"}</strong>
-        <span className={`level level-${analysis.customerLevel || "D"}`}>{analysis.customerLevel || "-"}</span>
+        <span className={`level level-${leadLevel || "C"}`}>{leadLevel || "-"}</span>
       </div>
       <p className="muted">{customer.country || "未知国家"} · {customer.source || "Unknown"}</p>
-      <p>身份：{analysis.customerType || "Unknown"}</p>
-      <p>评分：{analysis.customerScore ?? "-"}</p>
+      <p>身份：{customerType}</p>
+      <p>Stage：{stage}</p>
+      <p>Lead Level：{leadLevel}</p>
       <p>卡点：{analysis.mainBlocker || "其他"}</p>
-      <p>下次跟进：{analysis.followUpTime || "-"}</p>
-      <p className="action-text">{analysis.suggestedAction || "暂无建议动作"}</p>
+      <p>Missing Info：{missingInfo || "-"}</p>
+      <p>Follow-up Date：{followUpDate ? formatDateTime(followUpDate) : "-"}</p>
+      <p className="action-text">{nextAction}</p>
       {analysis.needSupervisorReview === "是" && <p className="review">需主管复核：{analysis.reviewReason || "AI 建议复核"}</p>}
     </Link>
   );

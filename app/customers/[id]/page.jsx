@@ -4,7 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { getSupabaseBrowserClient } from "../../../lib/supabaseClient";
-import { formatDateTime, parseFollowUpTime } from "../../../lib/followUp";
+import { dateToFollowUpAt, formatDateTime, parseFollowUpTime } from "../../../lib/followUp";
+import {
+  customerTypeOptions,
+  leadLevelOptions,
+  shippingTermOptions,
+  workflowStageOptions
+} from "../../../lib/options";
+import { generateCustomerWorkflow } from "../../../lib/customerWorkflow";
 
 const resultOptions = ["客户已回复", "客户未回复", "进入报价", "进入 PI", "成交", "失败", "暂不确定"];
 const playbookEligibleResults = ["客户已回复", "进入报价", "进入 PI", "成交"];
@@ -58,6 +65,18 @@ const emptyQuoteForm = {
   port_or_address: "",
   valid_until: "",
   quote_note: ""
+};
+
+const emptyWorkflowForm = {
+  customerType: "Unknown",
+  stage: "New Inquiry",
+  leadLevel: "C",
+  quantity: "",
+  destinationCity: "",
+  shippingTerm: "Unknown",
+  nextAction: "",
+  missingInfo: "",
+  followUpDate: ""
 };
 
 function HistoryItem({ item, onSaveAsPlaybook }) {
@@ -140,6 +159,7 @@ export default function CustomerDetailPage() {
   const [interactions, setInteractions] = useState([]);
   const [quotes, setQuotes] = useState([]);
   const [quoteForm, setQuoteForm] = useState(emptyQuoteForm);
+  const [workflowForm, setWorkflowForm] = useState(emptyWorkflowForm);
   const [customerNewReply, setCustomerNewReply] = useState("");
   const [operatorNote, setOperatorNote] = useState("");
   const [analysis, setAnalysis] = useState(null);
@@ -201,6 +221,17 @@ export default function CustomerDetailPage() {
       setError(historyError.message);
     } else {
       setCustomer(customerRow);
+      setWorkflowForm({
+        customerType: customerRow.customer_type || "Unknown",
+        stage: customerRow.stage || "New Inquiry",
+        leadLevel: customerRow.lead_level || "C",
+        quantity: customerRow.quantity || "",
+        destinationCity: customerRow.destination_city || "",
+        shippingTerm: customerRow.shipping_term || "Unknown",
+        nextAction: customerRow.next_action || customerRow.current_next_action || "",
+        missingInfo: customerRow.missing_info || "",
+        followUpDate: customerRow.follow_up_date || ""
+      });
       setInteractions(historyRows || []);
     }
 
@@ -400,8 +431,17 @@ export default function CustomerDetailPage() {
         .update({
           latest_analysis: analysis,
           current_status: analysis.stage || customer.current_status,
-          current_next_action: analysis.suggestedAction || null,
-          next_follow_up_at: parseFollowUpTime(analysis.followUpTime),
+          customer_type: workflowForm.customerType || customer.customer_type || null,
+          stage: workflowForm.stage || customer.stage || null,
+          lead_level: workflowForm.leadLevel || customer.lead_level || null,
+          next_action: workflowForm.nextAction || analysis.suggestedAction || null,
+          missing_info: workflowForm.missingInfo || null,
+          follow_up_date: workflowForm.followUpDate || null,
+          quantity: workflowForm.quantity || customer.quantity || null,
+          destination_city: workflowForm.destinationCity || customer.destination_city || null,
+          shipping_term: workflowForm.shippingTerm || customer.shipping_term || null,
+          current_next_action: workflowForm.nextAction || analysis.suggestedAction || null,
+          next_follow_up_at: workflowForm.followUpDate ? dateToFollowUpAt(workflowForm.followUpDate) : parseFollowUpTime(analysis.followUpTime),
           last_contacted_at: sentAt || customer.last_contacted_at,
           last_customer_reply_at: customerNewReply ? new Date().toISOString() : customer.last_customer_reply_at,
           updated_at: new Date().toISOString()
@@ -427,6 +467,66 @@ export default function CustomerDetailPage() {
 
   function updateQuoteForm(field, value) {
     setQuoteForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateWorkflowForm(field, value) {
+    setWorkflowForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function generateWorkflowRecommendation() {
+    if (!customer) return;
+    const recommendation = generateCustomerWorkflow({
+      ...workflowForm,
+      country: customer.country,
+      originalMessage: customer.original_message,
+      question: customer.question,
+      quoteContent: customer.quote_content
+    });
+
+    setWorkflowForm((current) => ({
+      ...current,
+      nextAction: recommendation.nextAction,
+      missingInfo: recommendation.missingInfo.join("\n"),
+      followUpDate: recommendation.followUpDate || current.followUpDate
+    }));
+    setSuccess("已生成规则版 Recommended Next Action。");
+    setError("");
+  }
+
+  async function saveWorkflow() {
+    if (!customer) return;
+
+    setError("");
+    setSuccess("");
+    setIsSaving(true);
+
+    const nextFollowUpAt = workflowForm.followUpDate ? dateToFollowUpAt(workflowForm.followUpDate) : customer.next_follow_up_at;
+    const { error: updateError } = await supabase
+      .from("customers")
+      .update({
+        customer_type: workflowForm.customerType,
+        stage: workflowForm.stage,
+        lead_level: workflowForm.leadLevel,
+        next_action: workflowForm.nextAction || null,
+        missing_info: workflowForm.missingInfo || null,
+        follow_up_date: workflowForm.followUpDate || null,
+        quantity: workflowForm.quantity || null,
+        destination_city: workflowForm.destinationCity || null,
+        shipping_term: workflowForm.shippingTerm || null,
+        current_next_action: workflowForm.nextAction || null,
+        next_follow_up_at: nextFollowUpAt,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", customer.id);
+
+    setIsSaving(false);
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+
+    setSuccess("客户 workflow 已保存。");
+    await loadData();
   }
 
   async function saveQuote() {
@@ -456,6 +556,7 @@ export default function CustomerDetailPage() {
         .from("customers")
         .update({
           last_quote_at: now,
+          stage: customer.stage === "Need Quotation" || !customer.stage ? "Quoted" : customer.stage,
           current_status: customer.current_status === "待报价" || customer.current_status === "新询盘" ? "已报价未回复" : customer.current_status,
           updated_at: now
         })
@@ -517,6 +618,66 @@ export default function CustomerDetailPage() {
       {session ? <div className="auth-card">已登录：{session.user.email}</div> : <div className="auth-card">请先登录。</div>}
       {error && <div className="error">{error}</div>}
       {success && <div className="success">{success}</div>}
+
+      <section className="panel">
+        <div className="section-title">
+          <h2>Recommended Next Action</h2>
+          <span>内部建议，可人工修改后保存</span>
+        </div>
+        <div className="notice-panel">
+          <strong>{workflowForm.nextAction || "还没有规则建议，先点击 Generate Next Action。"}</strong>
+          <p>Missing Info: {workflowForm.missingInfo || "-"}</p>
+          <p>Follow-up Date: {workflowForm.followUpDate || "-"}</p>
+        </div>
+        <div className="actions">
+          <button onClick={generateWorkflowRecommendation}>Generate Next Action</button>
+          <button className="primary" onClick={saveWorkflow} disabled={isSaving}>Save Workflow</button>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="section-title">
+          <h2>Customer Workflow</h2>
+          <span>维护阶段、客户类型、缺失信息和跟进日期。</span>
+        </div>
+        <div className="form-grid">
+          <Field label="customerType">
+            <select value={workflowForm.customerType} onChange={(event) => updateWorkflowForm("customerType", event.target.value)}>
+              {customerTypeOptions.map((option) => <option key={option}>{option}</option>)}
+            </select>
+          </Field>
+          <Field label="stage">
+            <select value={workflowForm.stage} onChange={(event) => updateWorkflowForm("stage", event.target.value)}>
+              {workflowStageOptions.map((option) => <option key={option}>{option}</option>)}
+            </select>
+          </Field>
+          <Field label="leadLevel">
+            <select value={workflowForm.leadLevel} onChange={(event) => updateWorkflowForm("leadLevel", event.target.value)}>
+              {leadLevelOptions.map((option) => <option key={option}>{option}</option>)}
+            </select>
+          </Field>
+          <Field label="quantity">
+            <input value={workflowForm.quantity} onChange={(event) => updateWorkflowForm("quantity", event.target.value)} />
+          </Field>
+          <Field label="shippingTerm">
+            <select value={workflowForm.shippingTerm} onChange={(event) => updateWorkflowForm("shippingTerm", event.target.value)}>
+              {shippingTermOptions.map((option) => <option key={option}>{option}</option>)}
+            </select>
+          </Field>
+          <Field label="destinationCity">
+            <input value={workflowForm.destinationCity} onChange={(event) => updateWorkflowForm("destinationCity", event.target.value)} />
+          </Field>
+          <Field label="nextAction">
+            <textarea rows={3} value={workflowForm.nextAction} onChange={(event) => updateWorkflowForm("nextAction", event.target.value)} />
+          </Field>
+          <Field label="missingInfo">
+            <textarea rows={3} value={workflowForm.missingInfo} onChange={(event) => updateWorkflowForm("missingInfo", event.target.value)} />
+          </Field>
+          <Field label="followUpDate">
+            <input type="date" value={workflowForm.followUpDate} onChange={(event) => updateWorkflowForm("followUpDate", event.target.value)} />
+          </Field>
+        </div>
+      </section>
 
       <section className="panel">
         <div className="section-title">

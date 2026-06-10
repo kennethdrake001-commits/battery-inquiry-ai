@@ -10,6 +10,15 @@ create table if not exists public.customers (
   quote_content text,
   current_status text,
   question text,
+  customer_type text,
+  stage text,
+  lead_level text,
+  next_action text,
+  missing_info text,
+  follow_up_date date,
+  quantity text,
+  destination_city text,
+  shipping_term text,
   latest_analysis jsonb,
   current_next_action text,
   next_follow_up_at timestamptz,
@@ -130,6 +139,15 @@ alter table public.customers add column if not exists next_follow_up_at timestam
 alter table public.customers add column if not exists last_contacted_at timestamptz;
 alter table public.customers add column if not exists last_customer_reply_at timestamptz;
 alter table public.customers add column if not exists last_quote_at timestamptz;
+alter table public.customers add column if not exists customer_type text;
+alter table public.customers add column if not exists stage text;
+alter table public.customers add column if not exists lead_level text;
+alter table public.customers add column if not exists next_action text;
+alter table public.customers add column if not exists missing_info text;
+alter table public.customers add column if not exists follow_up_date date;
+alter table public.customers add column if not exists quantity text;
+alter table public.customers add column if not exists destination_city text;
+alter table public.customers add column if not exists shipping_term text;
 
 alter table public.customers enable row level security;
 alter table public.customer_analyses enable row level security;

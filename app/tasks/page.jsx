@@ -20,11 +20,15 @@ function buildTaskRows(customers) {
   return customers
     .map((customer) => {
       const analysis = customer.latest_analysis || {};
-      const stage = analysis.stage || customer.current_status || "新询盘";
-      const customerLevel = analysis.customerLevel || "D";
+      const stage = customer.stage || analysis.stage || customer.current_status || "新询盘";
+      const customerLevel = customer.lead_level || analysis.customerLevel || "C";
       const reasons = [];
 
-      const nextFollowUpAt = customer.next_follow_up_at ? new Date(customer.next_follow_up_at) : null;
+      const nextFollowUpAt = customer.next_follow_up_at
+        ? new Date(customer.next_follow_up_at)
+        : customer.follow_up_date
+          ? new Date(`${customer.follow_up_date}T09:00:00.000Z`)
+          : null;
       if (nextFollowUpAt && nextFollowUpAt <= now) {
         reasons.push("今天到期跟进");
       }
@@ -35,7 +39,7 @@ function buildTaskRows(customers) {
         customer.last_customer_reply_at &&
         new Date(customer.last_customer_reply_at).getTime() >= new Date(customer.last_quote_at).getTime();
       if (
-        stage === "已报价未回复" &&
+        (stage === "已报价未回复" || stage === "Quoted" || stage === "Waiting Reply") &&
         quoteDays !== null &&
         quoteDays >= 2 &&
         quoteDays <= 4 &&
@@ -44,7 +48,7 @@ function buildTaskRows(customers) {
         reasons.push("已报价 2-4 天未回复");
       }
 
-      if (stage === "PI付款") {
+      if (stage === "PI付款" || stage === "Trial Order") {
         reasons.push("PI 发出但未付款");
       }
 
@@ -62,7 +66,7 @@ function buildTaskRows(customers) {
       }
 
       const newInquiryHours = hoursSince(customer.created_at, now);
-      if (stage === "新询盘" && !customer.last_contacted_at && newInquiryHours !== null && newInquiryHours > 2) {
+      if ((stage === "新询盘" || stage === "New Inquiry") && !customer.last_contacted_at && newInquiryHours !== null && newInquiryHours > 2) {
         reasons.push("新询盘超过 2 小时未处理");
       }
 
@@ -72,12 +76,12 @@ function buildTaskRows(customers) {
         id: customer.id,
         customer_name: customer.customer_name || "未命名客户",
         country: customer.country || "未知国家",
-        customer_type: analysis.customerType || "Unknown",
+        customer_type: customer.customer_type || analysis.customerType || "Unknown",
         customer_level: customerLevel,
         stage,
         main_blocker: analysis.mainBlocker || "其他",
-        current_next_action: customer.current_next_action || analysis.suggestedAction || "暂无动作",
-        next_follow_up_at: customer.next_follow_up_at,
+        current_next_action: customer.next_action || customer.current_next_action || analysis.suggestedAction || "暂无动作",
+        next_follow_up_at: customer.next_follow_up_at || (customer.follow_up_date ? `${customer.follow_up_date}T09:00:00.000Z` : null),
         task_reason: formatTaskReason(reasons)
       };
     })
