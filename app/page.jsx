@@ -181,6 +181,7 @@ export default function HomePage() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [session, setSession] = useState(null);
   const [customers, setCustomers] = useState([]);
+  const [activeSummaryKey, setActiveSummaryKey] = useState("current_pending");
   const [form, setForm] = useState(emptyCustomerForm);
   const [analysis, setAnalysis] = useState(null);
   const [finalReply, setFinalReply] = useState("");
@@ -227,11 +228,13 @@ export default function HomePage() {
 
     return [
       {
-        title: "今日跟进",
+        key: "current_pending",
+        title: "当前待处理",
         count: tasks.length,
         description: "根据当前客户流程自动生成的任务"
       },
       {
+        key: "need_quotation",
         title: "待报价",
         count: customers.filter((customer) => (
           customer.stage === "Need Quotation" || customer.current_status === "待报价"
@@ -239,6 +242,7 @@ export default function HomePage() {
         description: "需要准备报价的客户"
       },
       {
+        key: "quoted_waiting_reply",
         title: "已报价待回复",
         count: customers.filter((customer) => (
           customer.stage === "Quoted"
@@ -248,6 +252,7 @@ export default function HomePage() {
         description: "报价后还未收到明确回复"
       },
       {
+        key: "need_qualification",
         title: "待补信息",
         count: customers.filter((customer) => {
           const missingInfo = String(customer.missing_info || "").trim();
@@ -258,6 +263,7 @@ export default function HomePage() {
         description: "资料不完整，需要继续确认"
       },
       {
+        key: "ddp_check",
         title: "DDP 核算",
         count: customers.filter((customer) => (
           customer.shipping_term === "DDP"
@@ -267,12 +273,93 @@ export default function HomePage() {
         description: "可进入 DDP 运费核算的客户"
       },
       {
+        key: "high_priority",
         title: "高优先级客户",
         count: customers.filter((customer) => customer.lead_level === "A").length,
         description: "A 级客户需要优先跟进"
       }
     ];
   }, [customers]);
+
+  const selectedSummary = useMemo(
+    () => summaryCards.find((card) => card.key === activeSummaryKey) || summaryCards[0] || null,
+    [summaryCards, activeSummaryKey]
+  );
+
+  const selectedSummaryRows = useMemo(() => {
+    const normalizeMissingInfo = (customer) => {
+      const raw = customer.missing_info || customer.missingInfo || "";
+      if (Array.isArray(raw)) return raw.join("、");
+      return `${raw}`.trim();
+    };
+
+    const customerStage = (customer) => customer.stage || customer.current_status || "待确认";
+    const customerAction = (customer) => customer.current_next_action || customer.next_action || customer.nextAction || "待确认";
+    const customerFollowUp = (customer) => customer.follow_up_date || customer.next_follow_up_at || "";
+
+    if (activeSummaryKey === "current_pending") {
+      const tasks = buildTaskRows(customers);
+      return tasks.map((task) => {
+        const matchedCustomer = customers.find((customer) => customer.id === task.id);
+        return {
+          id: task.id,
+          customerName: task.customer_name,
+          country: task.country || matchedCustomer?.country || "未知国家",
+          source: matchedCustomer?.source || "未知来源",
+          stage: task.stage || customerStage(matchedCustomer || {}),
+          nextAction: task.current_next_action || customerAction(matchedCustomer || {}),
+          missingInfo: matchedCustomer ? normalizeMissingInfo(matchedCustomer) : "",
+          followUpDate: task.next_follow_up_at || customerFollowUp(matchedCustomer || {}),
+          taskReason: task.task_reason || ""
+        };
+      });
+    }
+
+    return customers
+      .filter((customer) => {
+        if (activeSummaryKey === "need_quotation") {
+          return customer.stage === "Need Quotation" || customer.current_status === "待报价";
+        }
+        if (activeSummaryKey === "quoted_waiting_reply") {
+          return customer.stage === "Quoted" || customer.stage === "Waiting Reply" || customer.current_status === "已报价未回复";
+        }
+        if (activeSummaryKey === "need_qualification") {
+          return Boolean(normalizeMissingInfo(customer)) || customer.stage === "Need Qualification" || customer.current_status === "待补信息";
+        }
+        if (activeSummaryKey === "ddp_check") {
+          return customer.shipping_term === "DDP"
+            && String(customer.quantity || "").trim()
+            && String(customer.destination_city || "").trim();
+        }
+        if (activeSummaryKey === "high_priority") {
+          return customer.lead_level === "A";
+        }
+        return false;
+      })
+      .map((customer) => ({
+        id: customer.id,
+        customerName: customer.customer_name || customer.customerName || "未命名客户",
+        country: customer.country || "未知国家",
+        source: customer.source || "未知来源",
+        stage: customerStage(customer),
+        nextAction: customerAction(customer),
+        missingInfo: normalizeMissingInfo(customer),
+        followUpDate: customerFollowUp(customer),
+        taskReason: ""
+      }));
+  }, [activeSummaryKey, customers]);
+
+  const selectedSummaryTitle = useMemo(() => {
+    const titleMap = {
+      current_pending: "当前待处理客户",
+      need_quotation: "待报价客户",
+      quoted_waiting_reply: "已报价待回复客户",
+      need_qualification: "待补信息客户",
+      ddp_check: "DDP 核算客户",
+      high_priority: "高优先级客户"
+    };
+    return titleMap[activeSummaryKey] || "客户列表";
+  }, [activeSummaryKey]);
 
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -504,10 +591,44 @@ export default function HomePage() {
           <SectionTitle title="今日工作台" subtitle="实时汇总当前客户进展与待处理事项" />
           <div className="form-grid">
             {summaryCards.map((card) => (
-              <article key={card.title} className="notice-panel">
+              <button
+                key={card.key}
+                type="button"
+                className="notice-panel"
+                onClick={() => setActiveSummaryKey(card.key)}
+                style={{
+                  textAlign: "left",
+                  border: activeSummaryKey === card.key ? "2px solid #2563eb" : "1px solid #dbe5f1",
+                  background: activeSummaryKey === card.key ? "#eff6ff" : "#fff"
+                }}
+              >
                 <strong>{card.title}</strong>
                 <div style={{ fontSize: 32, fontWeight: 700, lineHeight: 1.2, marginTop: 8 }}>{card.count}</div>
                 <p>{card.description}</p>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {session && (
+        <section className="panel">
+          <SectionTitle title={selectedSummaryTitle} subtitle="点击客户可继续进入详情页处理" />
+          <div className="detail-grid">
+            {selectedSummaryRows.length === 0 && <p className="empty">暂无客户</p>}
+            {selectedSummaryRows.map((item) => (
+              <article key={`${activeSummaryKey}-${item.id}`} className="detail-item">
+                <strong>{item.customerName}</strong>
+                <p>国家：{item.country}</p>
+                <p>来源：{item.source}</p>
+                <p>当前阶段：{item.stage}</p>
+                <p>下一步动作：{item.nextAction || "待确认"}</p>
+                {item.missingInfo ? <p>缺失信息：{item.missingInfo}</p> : null}
+                {item.followUpDate ? <p>跟进日期：{item.followUpDate}</p> : null}
+                {item.taskReason ? <p>任务原因：{item.taskReason}</p> : null}
+                <div className="actions compact">
+                  <Link href={`/customers/${item.id}`}>查看客户</Link>
+                </div>
               </article>
             ))}
           </div>
