@@ -330,6 +330,17 @@ nav,
   background: #667085;
 }
 
+.stage-badge {
+  background: #eef4ff;
+  border: 1px solid #c7d7fe;
+  border-radius: 999px;
+  color: #155eef;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+}
+
 .action-text {
   color: #344054;
   font-size: 13px;
@@ -574,6 +585,22 @@ nav,
   margin-top: 18px;
 }
 
+.demo-customer-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.demo-customer-card {
+  min-height: 180px;
+}
+
+.workflow-warning {
+  background: #fffaeb;
+  border: 1px solid #fedf89;
+  border-radius: 16px;
+  margin-bottom: 18px;
+  padding: 16px;
+}
+
 @media (max-width: 1100px) {
   .board {
     grid-template-columns: repeat(2, minmax(240px, 1fr));
@@ -586,6 +613,10 @@ nav,
   .product-grid,
   .detail-grid,
   .checker-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .demo-customer-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -609,7 +640,8 @@ nav,
   .board,
   .product-grid,
   .detail-grid,
-  .checker-grid {
+  .checker-grid,
+  .demo-customer-grid {
     grid-template-columns: 1fr;
   }
 

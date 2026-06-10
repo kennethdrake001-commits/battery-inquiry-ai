@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import CustomerStageBadge from "../../components/workflow/CustomerStageBadge";
+import LeadLevelBadge from "../../components/workflow/LeadLevelBadge";
 import { getSupabaseBrowserClient } from "../../lib/supabaseClient";
 import { daysSince, formatDateTime, hoursSince } from "../../lib/followUp";
 
@@ -98,11 +100,11 @@ function TaskCard({ task }) {
     <Link className="task-card" href={`/customers/${task.id}`}>
       <div className="card-title">
         <strong>{task.customer_name}</strong>
-        <span className={`level level-${task.customer_level || "D"}`}>{task.customer_level || "-"}</span>
+        <LeadLevelBadge level={task.customer_level || "D"} />
       </div>
       <p className="muted">{task.country}</p>
       <p>客户类型：{task.customer_type}</p>
-      <p>当前阶段：{task.stage}</p>
+      <p>当前阶段：<CustomerStageBadge stage={task.stage} /></p>
       <p>主要卡点：{task.main_blocker}</p>
       <p>当前动作：{task.current_next_action}</p>
       <p>下次跟进：{formatDateTime(task.next_follow_up_at)}</p>

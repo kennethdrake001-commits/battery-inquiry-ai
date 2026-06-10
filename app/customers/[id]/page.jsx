@@ -3,14 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import CustomerWorkflowCard from "../../../components/workflow/CustomerWorkflowCard";
 import { getSupabaseBrowserClient } from "../../../lib/supabaseClient";
 import { dateToFollowUpAt, formatDateTime, parseFollowUpTime } from "../../../lib/followUp";
-import {
-  customerTypeOptions,
-  leadLevelOptions,
-  shippingTermOptions,
-  workflowStageOptions
-} from "../../../lib/options";
 import { generateCustomerWorkflow } from "../../../lib/customerWorkflow";
 
 const resultOptions = ["客户已回复", "客户未回复", "进入报价", "进入 PI", "成交", "失败", "暂不确定"];
@@ -619,65 +614,12 @@ export default function CustomerDetailPage() {
       {error && <div className="error">{error}</div>}
       {success && <div className="success">{success}</div>}
 
-      <section className="panel">
-        <div className="section-title">
-          <h2>Recommended Next Action</h2>
-          <span>内部建议，可人工修改后保存</span>
-        </div>
-        <div className="notice-panel">
-          <strong>{workflowForm.nextAction || "还没有规则建议，先点击 Generate Next Action。"}</strong>
-          <p>Missing Info: {workflowForm.missingInfo || "-"}</p>
-          <p>Follow-up Date: {workflowForm.followUpDate || "-"}</p>
-        </div>
-        <div className="actions">
-          <button onClick={generateWorkflowRecommendation}>Generate Next Action</button>
-          <button className="primary" onClick={saveWorkflow} disabled={isSaving}>Save Workflow</button>
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="section-title">
-          <h2>Customer Workflow</h2>
-          <span>维护阶段、客户类型、缺失信息和跟进日期。</span>
-        </div>
-        <div className="form-grid">
-          <Field label="customerType">
-            <select value={workflowForm.customerType} onChange={(event) => updateWorkflowForm("customerType", event.target.value)}>
-              {customerTypeOptions.map((option) => <option key={option}>{option}</option>)}
-            </select>
-          </Field>
-          <Field label="stage">
-            <select value={workflowForm.stage} onChange={(event) => updateWorkflowForm("stage", event.target.value)}>
-              {workflowStageOptions.map((option) => <option key={option}>{option}</option>)}
-            </select>
-          </Field>
-          <Field label="leadLevel">
-            <select value={workflowForm.leadLevel} onChange={(event) => updateWorkflowForm("leadLevel", event.target.value)}>
-              {leadLevelOptions.map((option) => <option key={option}>{option}</option>)}
-            </select>
-          </Field>
-          <Field label="quantity">
-            <input value={workflowForm.quantity} onChange={(event) => updateWorkflowForm("quantity", event.target.value)} />
-          </Field>
-          <Field label="shippingTerm">
-            <select value={workflowForm.shippingTerm} onChange={(event) => updateWorkflowForm("shippingTerm", event.target.value)}>
-              {shippingTermOptions.map((option) => <option key={option}>{option}</option>)}
-            </select>
-          </Field>
-          <Field label="destinationCity">
-            <input value={workflowForm.destinationCity} onChange={(event) => updateWorkflowForm("destinationCity", event.target.value)} />
-          </Field>
-          <Field label="nextAction">
-            <textarea rows={3} value={workflowForm.nextAction} onChange={(event) => updateWorkflowForm("nextAction", event.target.value)} />
-          </Field>
-          <Field label="missingInfo">
-            <textarea rows={3} value={workflowForm.missingInfo} onChange={(event) => updateWorkflowForm("missingInfo", event.target.value)} />
-          </Field>
-          <Field label="followUpDate">
-            <input type="date" value={workflowForm.followUpDate} onChange={(event) => updateWorkflowForm("followUpDate", event.target.value)} />
-          </Field>
-        </div>
-      </section>
+      <CustomerWorkflowCard
+        form={workflowForm}
+        onChange={updateWorkflowForm}
+        onGenerate={generateWorkflowRecommendation}
+        actions={<button onClick={saveWorkflow} disabled={isSaving}>Save Workflow</button>}
+      />
 
       <section className="panel">
         <div className="section-title">

@@ -103,7 +103,7 @@ function AuthPanel({ session, onSessionChange }) {
         <button onClick={signUp}>注册</button>
       </div>
       <div className="demo-entry">
-        <Link className="primary demo-entry-button" href="/demo/tasks">
+        <Link className="primary demo-entry-button" href="/demo/workflow">
           Try Demo Without Login
           <span>免登录体验 Demo</span>
         </Link>

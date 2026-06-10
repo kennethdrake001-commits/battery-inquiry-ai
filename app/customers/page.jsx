@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import CustomerStageBadge from "../../components/workflow/CustomerStageBadge";
+import LeadLevelBadge from "../../components/workflow/LeadLevelBadge";
 import { getSupabaseBrowserClient } from "../../lib/supabaseClient";
 import { boardStages } from "../../lib/options";
 import { formatDateTime } from "../../lib/followUp";
@@ -24,11 +26,11 @@ function CustomerCard({ customer }) {
     <Link className="customer-card" href={`/customers/${customer.id}`}>
       <div className="card-title">
         <strong>{customer.customer_name || "未命名客户"}</strong>
-        <span className={`level level-${leadLevel || "C"}`}>{leadLevel || "-"}</span>
+        <LeadLevelBadge level={leadLevel} />
       </div>
       <p className="muted">{customer.country || "未知国家"} · {customer.source || "Unknown"}</p>
       <p>身份：{customerType}</p>
-      <p>Stage：{stage}</p>
+      <p>Stage：<CustomerStageBadge stage={stage} /></p>
       <p>Lead Level：{leadLevel}</p>
       <p>卡点：{analysis.mainBlocker || "其他"}</p>
       <p>Missing Info：{missingInfo || "-"}</p>
