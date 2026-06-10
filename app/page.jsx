@@ -10,6 +10,7 @@ import {
 } from "../lib/options";
 import { dateToFollowUpAt, parseFollowUpTime } from "../lib/followUp";
 import { generateCustomerWorkflow, mapAnalysisCustomerType, mapAnalysisLeadLevel } from "../lib/customerWorkflow";
+import { buildTaskRows } from "../lib/taskWorkflow";
 
 const resultFields = [
   "customerType",
@@ -167,6 +168,7 @@ function AnalysisEditor({ analysis, finalReply, onFinalReplyChange, onChange }) 
 export default function HomePage() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [session, setSession] = useState(null);
+  const [customers, setCustomers] = useState([]);
   const [form, setForm] = useState(emptyCustomerForm);
   const [analysis, setAnalysis] = useState(null);
   const [finalReply, setFinalReply] = useState("");
@@ -184,6 +186,81 @@ export default function HomePage() {
     });
     return () => listener.subscription.unsubscribe();
   }, [supabase]);
+
+  useEffect(() => {
+    async function loadCustomers() {
+      if (!supabase || !session) {
+        setCustomers([]);
+        return;
+      }
+
+      const { data: rows, error: queryError } = await supabase
+        .from("customers")
+        .select("*")
+        .order("updated_at", { ascending: false });
+
+      if (queryError) {
+        setCustomers([]);
+        return;
+      }
+
+      setCustomers(rows || []);
+    }
+
+    loadCustomers();
+  }, [supabase, session]);
+
+  const summaryCards = useMemo(() => {
+    const tasks = buildTaskRows(customers);
+
+    return [
+      {
+        title: "Today Follow-up",
+        count: tasks.length,
+        description: "Tasks generated from current customer workflow"
+      },
+      {
+        title: "Need Quotation",
+        count: customers.filter((customer) => (
+          customer.stage === "Need Quotation" || customer.current_status === "待报价"
+        )).length,
+        description: "Customers waiting for quotation preparation"
+      },
+      {
+        title: "Quoted Waiting Reply",
+        count: customers.filter((customer) => (
+          customer.stage === "Quoted"
+          || customer.stage === "Waiting Reply"
+          || customer.current_status === "已报价未回复"
+        )).length,
+        description: "Quoted customers still waiting for response"
+      },
+      {
+        title: "Need Qualification",
+        count: customers.filter((customer) => {
+          const missingInfo = String(customer.missing_info || "").trim();
+          return Boolean(missingInfo)
+            || customer.stage === "Need Qualification"
+            || customer.current_status === "待补信息";
+        }).length,
+        description: "Customers missing key info or qualification"
+      },
+      {
+        title: "DDP Shipping Check",
+        count: customers.filter((customer) => (
+          customer.shipping_term === "DDP"
+          && String(customer.quantity || "").trim()
+          && String(customer.destination_city || "").trim()
+        )).length,
+        description: "DDP inquiries ready for shipping cost check"
+      },
+      {
+        title: "High Priority Leads",
+        count: customers.filter((customer) => customer.lead_level === "A").length,
+        description: "A-level leads requiring close attention"
+      }
+    ];
+  }, [customers]);
 
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -407,6 +484,24 @@ export default function HomePage() {
       </header>
 
       <AuthPanel session={session} onSessionChange={setSession} />
+
+      {session && (
+        <section className="panel">
+          <div className="section-title">
+            <h2>Sales Operation Summary</h2>
+            <span>实时汇总当前客户 workflow</span>
+          </div>
+          <div className="form-grid">
+            {summaryCards.map((card) => (
+              <article key={card.title} className="notice-panel">
+                <strong>{card.title}</strong>
+                <div style={{ fontSize: 32, fontWeight: 700, lineHeight: 1.2, marginTop: 8 }}>{card.count}</div>
+                <p>{card.description}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       <CustomerIntakeForm
         title="客户录入页"
