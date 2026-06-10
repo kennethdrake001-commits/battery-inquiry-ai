@@ -2,33 +2,23 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import CustomerIntakeForm from "../components/customers/CustomerIntakeForm";
-import CustomerWorkflowCard from "../components/workflow/CustomerWorkflowCard";
 import { getSupabaseBrowserClient } from "../lib/supabaseClient";
-import {
-  emptyCustomerForm,
-} from "../lib/options";
+import { emptyCustomerForm, customerTypeOptions, leadLevelOptions, shippingTermOptions, workflowStageOptions, sourceOptions, statusOptions } from "../lib/options";
 import { dateToFollowUpAt, parseFollowUpTime } from "../lib/followUp";
 import { generateCustomerWorkflow, mapAnalysisCustomerType, mapAnalysisLeadLevel } from "../lib/customerWorkflow";
 import { buildTaskRows } from "../lib/taskWorkflow";
 
-const resultFields = [
-  "customerType",
-  "customerLevel",
-  "customerScore",
-  "stage",
-  "mainBlocker",
-  "missingInformation",
-  "nextGoal",
-  "suggestedAction",
-  "englishReply",
-  "followUpTime",
-  "priority",
-  "confidence",
-  "reasoning",
-  "needSupervisorReview",
-  "reviewReason",
-  "sourceReferences"
+const resultFieldMeta = [
+  { key: "customerType", label: "客户类型" },
+  { key: "stage", label: "当前阶段" },
+  { key: "customerLevel", label: "客户等级" },
+  { key: "missingInformation", label: "缺失信息", textarea: true },
+  { key: "suggestedAction", label: "下一步动作", textarea: true },
+  { key: "followUpTime", label: "建议跟进时间" },
+  { key: "englishReply", label: "推荐英文话术", textarea: true, rows: 5 },
+  { key: "mainBlocker", label: "主要卡点" },
+  { key: "reasoning", label: "判断依据", textarea: true },
+  { key: "sourceReferences", label: "参考来源", textarea: true }
 ];
 
 function Field({ label, children }) {
@@ -37,6 +27,15 @@ function Field({ label, children }) {
       <span>{label}</span>
       {children}
     </label>
+  );
+}
+
+function SectionTitle({ title, subtitle }) {
+  return (
+    <div className="section-title">
+      <h2>{title}</h2>
+      {subtitle ? <span>{subtitle}</span> : null}
+    </div>
   );
 }
 
@@ -88,9 +87,9 @@ function AuthPanel({ session, onSessionChange }) {
   return (
     <div className="auth-card auth-form">
       <strong>邮箱登录</strong>
-      <input placeholder="Email" value={email} onChange={(event) => setEmail(event.target.value)} />
+      <input placeholder="邮箱" value={email} onChange={(event) => setEmail(event.target.value)} />
       <input
-        placeholder="Password"
+        placeholder="密码"
         type="password"
         value={password}
         onChange={(event) => setPassword(event.target.value)}
@@ -134,33 +133,46 @@ function AnalysisEditor({ analysis, finalReply, onFinalReplyChange, onChange }) 
 
   return (
     <section className="panel result-panel">
-      <div className="section-title">
-        <h2>AI 分析结果</h2>
-        <span>可人工修改后保存到 Supabase</span>
+      <SectionTitle title="系统判断结果" subtitle="这里是给运营看的内部判断，可人工调整后再保存。" />
+
+      <div className="notice-panel" style={{ marginBottom: 16 }}>
+        <strong>重点结论</strong>
+        <p>客户类型：{analysis.customerType || "待判断"}</p>
+        <p>当前阶段：{analysis.stage || "待判断"}</p>
+        <p>客户等级：{analysis.customerLevel || "待判断"}</p>
+        <p>缺失信息：{Array.isArray(analysis.missingInformation) ? analysis.missingInformation.join("、") || "无" : analysis.missingInformation || "无"}</p>
+        <p>下一步动作：{analysis.suggestedAction || "待补充"}</p>
+        <p>跟进日期：{analysis.followUpTime || "待确认"}</p>
       </div>
+
       <div className="result-grid">
-        {resultFields.map((field) => (
-          <Field key={field} label={field}>
-            {["nextGoal", "suggestedAction", "englishReply", "reasoning", "reviewReason", "missingInformation", "sourceReferences"].includes(field) ? (
+        {resultFieldMeta.map((field) => (
+          <Field key={field.key} label={field.label}>
+            {field.textarea ? (
               <textarea
-                rows={field === "englishReply" ? 5 : 3}
-                value={valueFor(field)}
-                onChange={(event) => update(field, event.target.value)}
+                rows={field.rows || 3}
+                value={valueFor(field.key)}
+                onChange={(event) => update(field.key, event.target.value)}
               />
             ) : (
-              <input value={valueFor(field)} onChange={(event) => update(field, event.target.value)} />
+              <input value={valueFor(field.key)} onChange={(event) => update(field.key, event.target.value)} />
             )}
           </Field>
         ))}
       </div>
-      <Field label="final_sent_reply 运营最终发送话术">
+
+      <Field label="最终发送英文话术">
         <textarea
           rows={5}
           value={finalReply}
           onChange={(event) => onFinalReplyChange(event.target.value)}
         />
       </Field>
-      <pre className="json-box">{JSON.stringify(analysis, null, 2)}</pre>
+
+      <details style={{ marginTop: 16 }}>
+        <summary>查看完整 AI JSON</summary>
+        <pre className="json-box">{JSON.stringify(analysis, null, 2)}</pre>
+      </details>
     </section>
   );
 }
@@ -215,55 +227,64 @@ export default function HomePage() {
 
     return [
       {
-        title: "Today Follow-up",
+        title: "今日跟进",
         count: tasks.length,
-        description: "Tasks generated from current customer workflow"
+        description: "根据当前客户流程自动生成的任务"
       },
       {
-        title: "Need Quotation",
+        title: "待报价",
         count: customers.filter((customer) => (
           customer.stage === "Need Quotation" || customer.current_status === "待报价"
         )).length,
-        description: "Customers waiting for quotation preparation"
+        description: "需要准备报价的客户"
       },
       {
-        title: "Quoted Waiting Reply",
+        title: "已报价待回复",
         count: customers.filter((customer) => (
           customer.stage === "Quoted"
           || customer.stage === "Waiting Reply"
           || customer.current_status === "已报价未回复"
         )).length,
-        description: "Quoted customers still waiting for response"
+        description: "报价后还未收到明确回复"
       },
       {
-        title: "Need Qualification",
+        title: "待补信息",
         count: customers.filter((customer) => {
           const missingInfo = String(customer.missing_info || "").trim();
           return Boolean(missingInfo)
             || customer.stage === "Need Qualification"
             || customer.current_status === "待补信息";
         }).length,
-        description: "Customers missing key info or qualification"
+        description: "资料不完整，需要继续确认"
       },
       {
-        title: "DDP Shipping Check",
+        title: "DDP 核算",
         count: customers.filter((customer) => (
           customer.shipping_term === "DDP"
           && String(customer.quantity || "").trim()
           && String(customer.destination_city || "").trim()
         )).length,
-        description: "DDP inquiries ready for shipping cost check"
+        description: "可进入 DDP 运费核算的客户"
       },
       {
-        title: "High Priority Leads",
+        title: "高优先级客户",
         count: customers.filter((customer) => customer.lead_level === "A").length,
-        description: "A-level leads requiring close attention"
+        description: "A 级客户需要优先跟进"
       }
     ];
   }, [customers]);
 
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function resetIntake() {
+    setForm(emptyCustomerForm);
+    setAnalysis(null);
+    setFinalReply("");
+    setSavedCustomerId(null);
+    setError("");
+    setSuccess("");
   }
 
   function generateNextAction() {
@@ -277,10 +298,6 @@ export default function HomePage() {
     }));
     setSuccess("已生成规则版下一步动作建议。");
     setError("");
-  }
-
-  function updateWorkflowField(field, value) {
-    setForm((current) => ({ ...current, [field]: value }));
   }
 
   function buildCustomerPayload({ sentAt = null, currentAnalysis = null } = {}) {
@@ -453,11 +470,8 @@ export default function HomePage() {
         draft: "草稿已保存。",
         inappropriate: "已记录：话术不合适。"
       };
+      setSavedCustomerId(customer.id);
       setSuccess(messageMap[action] || "已保存。");
-      setForm(emptyCustomerForm);
-      setAnalysis(null);
-      setFinalReply("");
-      setSavedCustomerId(null);
     } catch (saveError) {
       setError(saveError.message || "保存失败，请检查 Supabase 配置。");
     } finally {
@@ -471,7 +485,7 @@ export default function HomePage() {
         <div>
           <p className="eyebrow">Next.js + Supabase + OpenAI</p>
           <h1>储能电池询盘成交 AI 助手</h1>
-          <p>邮箱登录后录入客户，调用后端 AI 分析，并保存到 Supabase。</p>
+          <p>把客户原始消息和你的疑问交给系统，先判断，再决定怎么跟进。</p>
         </div>
         <nav>
           <Link href="/">客户录入</Link>
@@ -487,10 +501,7 @@ export default function HomePage() {
 
       {session && (
         <section className="panel">
-          <div className="section-title">
-            <h2>Sales Operation Summary</h2>
-            <span>实时汇总当前客户 workflow</span>
-          </div>
+          <SectionTitle title="今日工作台" subtitle="实时汇总当前客户进展与待处理事项" />
           <div className="form-grid">
             {summaryCards.map((card) => (
               <article key={card.title} className="notice-panel">
@@ -503,51 +514,162 @@ export default function HomePage() {
         </section>
       )}
 
-      <CustomerIntakeForm
-        title="客户录入页"
-        subtitle="OpenAI API Key 只在后端 route 使用"
-        form={form}
-        onChange={updateForm}
-        primaryAction={
-          <button className="primary" onClick={analyzeCustomer} disabled={isAnalyzing} type="button">
-            {isAnalyzing ? "AI 分析中..." : "AI 生成跟进方案"}
-          </button>
-        }
-        secondaryActions={[
-          {
-            label: isSaving ? "保存中..." : "保存客户 / Save Customer",
-            onClick: saveCustomer,
-            disabled: isSaving
-          },
-          {
-            label: isSaving ? "保存中..." : "复制并标记已发送",
-            onClick: () => saveInteraction("sent"),
-            disabled: isSaving || !analysis
-          },
-          {
-            label: "仅保存草稿",
-            onClick: () => saveInteraction("draft"),
-            disabled: isSaving || !analysis
-          },
-          {
-            label: "话术不合适",
-            onClick: () => saveInteraction("inappropriate"),
-            disabled: isSaving || !analysis
-          }
-        ]}
-        footer={
-          <>
-            {error && <div className="error">{error}</div>}
-            {success && <div className="success">{success}</div>}
-          </>
-        }
-      />
+      <section className="panel">
+        <SectionTitle title="快速操作" subtitle="先从最常用的动作开始" />
+        <div className="actions">
+          <button className="primary" type="button" onClick={resetIntake}>新增客户</button>
+          <Link href="/tasks">今日任务</Link>
+          <Link href="/customers">客户列表</Link>
+        </div>
+      </section>
 
-      <CustomerWorkflowCard
-        form={form}
-        onChange={updateWorkflowField}
-        onGenerate={generateNextAction}
-      />
+      <section className="panel">
+        <SectionTitle title="客户录入说明" subtitle="首页现在作为询盘分析入口，先抓核心信息，再让系统给出下一步建议。" />
+        <div className="notice-panel">
+          <p>1. 先填写客户基础信息和客户原始消息。</p>
+          <p>2. 再补充你的疑问和已知关键信息。</p>
+          <p>3. 点击“分析询盘并生成下一步”，得到内部判断和推荐英文话术。</p>
+          <p>4. 确认无误后再保存客户，或复制话术继续跟进。</p>
+        </div>
+      </section>
+
+      <section className="panel">
+        <SectionTitle title="询盘分析入口" subtitle="系统内部界面全部中文；只有给客户的话术保持英文。" />
+
+        <h3>客户基础信息</h3>
+        <div className="form-grid">
+          <Field label="客户姓名">
+            <input value={form.customerName} onChange={(event) => updateForm("customerName", event.target.value)} />
+          </Field>
+          <Field label="国家">
+            <input value={form.country} onChange={(event) => updateForm("country", event.target.value)} />
+          </Field>
+          <Field label="客户来源">
+            <select value={form.source} onChange={(event) => updateForm("source", event.target.value)}>
+              {sourceOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="公司 / 联系方式">
+            <input
+              placeholder="当前版本不单独入库，可先写在客户原始消息里"
+              value=""
+              readOnly
+            />
+          </Field>
+        </div>
+
+        <h3>客户原始消息</h3>
+        <Field label="请尽量粘贴完整原文，这是系统判断的核心输入">
+          <textarea rows={8} value={form.originalMessage} onChange={(event) => updateForm("originalMessage", event.target.value)} />
+        </Field>
+
+        <h3>我的疑问</h3>
+        <Field label="你最想让系统帮你判断什么">
+          <textarea rows={5} value={form.question} onChange={(event) => updateForm("question", event.target.value)} />
+        </Field>
+
+        <h3>关键信息补充</h3>
+        <div className="form-grid">
+          <Field label="客户类型">
+            <select value={form.customerType} onChange={(event) => updateForm("customerType", event.target.value)}>
+              {customerTypeOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="感兴趣产品">
+            <input placeholder="例如：5kWh 壁挂电池 / 10kWh 套装" />
+          </Field>
+          <Field label="数量">
+            <input value={form.quantity} onChange={(event) => updateForm("quantity", event.target.value)} />
+          </Field>
+          <Field label="贸易方式">
+            <select value={form.shippingTerm} onChange={(event) => updateForm("shippingTerm", event.target.value)}>
+              {shippingTermOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="目的地">
+            <input value={form.destinationCity} onChange={(event) => updateForm("destinationCity", event.target.value)} />
+          </Field>
+          <Field label="使用场景">
+            <input placeholder="例如：家庭备电 / 安装商项目 / 分销渠道" />
+          </Field>
+        </div>
+
+        <div className="actions">
+          <button className="primary" onClick={analyzeCustomer} disabled={isAnalyzing} type="button">
+            {isAnalyzing ? "分析中..." : "分析询盘并生成下一步"}
+          </button>
+          <button type="button" onClick={generateNextAction}>仅生成规则版下一步动作</button>
+        </div>
+
+        <details style={{ marginTop: 16 }}>
+          <summary>历史 / 已处理信息</summary>
+          <div className="form-grid" style={{ marginTop: 16 }}>
+            <Field label="当前阶段">
+              <select value={form.stage} onChange={(event) => updateForm("stage", event.target.value)}>
+                {workflowStageOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="内部状态（低优先级）">
+              <select value={form.currentStatus} onChange={(event) => updateForm("currentStatus", event.target.value)}>
+                {statusOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="是否已报价">
+              <select value={form.quoted} onChange={(event) => updateForm("quoted", event.target.value)}>
+                <option value="no">否</option>
+                <option value="yes">是</option>
+              </select>
+            </Field>
+            <Field label="客户等级">
+              <select value={form.leadLevel} onChange={(event) => updateForm("leadLevel", event.target.value)}>
+                {leadLevelOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="报价内容">
+              <textarea rows={4} value={form.quoteContent} onChange={(event) => updateForm("quoteContent", event.target.value)} />
+            </Field>
+            <Field label="我方已回复">
+              <textarea rows={4} value={form.ourReply} onChange={(event) => updateForm("ourReply", event.target.value)} />
+            </Field>
+            <Field label="缺失信息">
+              <textarea rows={3} value={form.missingInfo} onChange={(event) => updateForm("missingInfo", event.target.value)} />
+            </Field>
+            <Field label="下一步动作">
+              <textarea rows={3} value={form.nextAction} onChange={(event) => updateForm("nextAction", event.target.value)} />
+            </Field>
+            <Field label="跟进日期">
+              <input type="date" value={form.followUpDate} onChange={(event) => updateForm("followUpDate", event.target.value)} />
+            </Field>
+          </div>
+        </details>
+
+        {error && <div className="error">{error}</div>}
+        {success && <div className="success">{success}</div>}
+      </section>
 
       <AnalysisEditor
         analysis={analysis}
@@ -558,6 +680,37 @@ export default function HomePage() {
           if (!finalReply) setFinalReply(nextAnalysis.englishReply || "");
         }}
       />
+
+      {analysis && (
+        <section className="panel">
+          <SectionTitle title="保存客户" subtitle="确认判断结果后，再决定保存、发出话术或先存草稿。" />
+          <div className="actions">
+            <button className="primary" onClick={saveCustomer} disabled={isSaving} type="button">
+              {isSaving ? "保存中..." : "保存客户"}
+            </button>
+            <button onClick={() => saveInteraction("sent")} disabled={isSaving} type="button">
+              复制并标记已发送
+            </button>
+            <button onClick={() => saveInteraction("draft")} disabled={isSaving} type="button">
+              仅保存草稿
+            </button>
+            <button onClick={() => saveInteraction("inappropriate")} disabled={isSaving} type="button">
+              话术不合适
+            </button>
+          </div>
+        </section>
+      )}
+
+      {success && savedCustomerId && (
+        <section className="panel">
+          <SectionTitle title="下一步" subtitle="客户记录已经保存，你可以继续进入后续动作。" />
+          <div className="actions">
+            <Link href={`/customers/${savedCustomerId}`}>查看客户详情</Link>
+            <Link href="/tasks">进入今日任务</Link>
+            <button type="button" onClick={resetIntake}>继续录入新客户</button>
+          </div>
+        </section>
+      )}
     </main>
   );
 }
