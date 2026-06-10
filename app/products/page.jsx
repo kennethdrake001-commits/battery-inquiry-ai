@@ -180,6 +180,7 @@ export default function ProductsPage() {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [form, setForm] = useState(emptyProductForm);
   const [assets, setAssets] = useState([]);
+  const [coverImageMap, setCoverImageMap] = useState({});
   const [uploadQueue, setUploadQueue] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -191,15 +192,6 @@ export default function ProductsPage() {
   const mainImage = productImages.find((asset) => asset.asset_type === "main_image") || productImages[0] || null;
   const galleryImages = productImages.filter((asset) => asset.asset_type === "gallery_image");
   const fileAssets = assets.filter((asset) => !isImageAsset(asset));
-  const productImageMap = useMemo(() => {
-    const map = {};
-    for (const asset of assets) {
-      if (asset.product_id && isImageAsset(asset) && !map[asset.product_id]) {
-        map[asset.product_id] = asset.signed_url || asset.file_url || "";
-      }
-    }
-    return map;
-  }, [assets]);
 
   async function hydrateAssetUrls(rows) {
     if (!supabase || !rows?.length) return [];
@@ -212,6 +204,25 @@ export default function ProductsPage() {
       };
     }));
     return resolved;
+  }
+
+  async function loadCoverImages(productRows) {
+    if (!supabase || !productRows?.length) return;
+    const ids = productRows.map((p) => p.id);
+    const { data: coverRows } = await supabase
+      .from("product_assets")
+      .select("product_id, storage_path")
+      .in("product_id", ids)
+      .eq("asset_type", "main_image");
+    if (!coverRows?.length) return;
+    const map = {};
+    await Promise.all(coverRows.map(async (row) => {
+      const { data } = await supabase.storage
+        .from("product-images")
+        .createSignedUrl(row.storage_path, 3600);
+      if (data?.signedUrl) map[row.product_id] = data.signedUrl;
+    }));
+    setCoverImageMap(map);
   }
 
   async function loadProducts(preferredId = null) {
@@ -240,6 +251,7 @@ export default function ProductsPage() {
     }
 
     setProducts(rows || []);
+    loadCoverImages(rows || []);
     const nextSelected =
       (preferredId && rows?.find((item) => item.id === preferredId))
       || (selectedProduct?.id && rows?.find((item) => item.id === selectedProduct.id))
@@ -272,6 +284,10 @@ export default function ProductsPage() {
 
     const resolved = await hydrateAssetUrls(rows || []);
     setAssets(resolved);
+    const cover = resolved.find((a) => a.asset_type === "main_image");
+    if (cover?.signed_url) {
+      setCoverImageMap((current) => ({ ...current, [productId]: cover.signed_url }));
+    }
   }
 
   useEffect(() => {
@@ -369,13 +385,12 @@ export default function ProductsPage() {
 
         if (uploadError) throw uploadError;
 
-        const { data: publicData } = supabase.storage.from(bucket).getPublicUrl(storagePath);
         const { error: assetError } = await supabase.from("product_assets").insert({
           product_id: selectedProduct.id,
           asset_type: config.type,
           file_type: file.type || "application/octet-stream",
           file_name: file.name,
-          file_url: publicData?.publicUrl || "",
+          file_url: null,
           storage_path: storagePath
         });
 
@@ -392,17 +407,18 @@ export default function ProductsPage() {
     }
   }
 
-  async function downloadAsset(asset) {
-    const bucket = bucketForAssetType(asset.asset_type);
-    const existingUrl = asset.signed_url || asset.file_url;
-    if (existingUrl) {
-      window.open(existingUrl, "_blank", "noopener,noreferrer");
-      return;
-    }
+  function isPdfAsset(asset) {
+    return asset.file_type === "application/pdf"
+      || String(asset.file_name || "").toLowerCase().endsWith(".pdf");
+  }
 
-    const { data, error: signedUrlError } = await supabase.storage.from(bucket).createSignedUrl(asset.storage_path, 3600);
-    if (signedUrlError) {
-      setError(signedUrlError.message);
+  async function openAsset(asset) {
+    const bucket = bucketForAssetType(asset.asset_type);
+    const { data, error: urlError } = await supabase.storage
+      .from(bucket)
+      .createSignedUrl(asset.storage_path, 3600);
+    if (urlError || !data?.signedUrl) {
+      setError(urlError?.message || "无法生成预览链接。");
       return;
     }
     window.open(data.signedUrl, "_blank", "noopener,noreferrer");
@@ -496,7 +512,7 @@ export default function ProductsPage() {
                   product={product}
                   selected={selectedProduct?.id === product.id}
                   onSelect={startEditProduct}
-                  mainImageUrl={productImageMap[product.id]}
+                  mainImageUrl={coverImageMap[product.id]}
                 />
               ))}
               {products.length === 0 && <p className="empty">暂无产品</p>}
@@ -616,11 +632,17 @@ export default function ProductsPage() {
                   <span>{productImages.length} 张</span>
                 </div>
                 {mainImage && (
-                  <img
-                    src={mainImage.signed_url || mainImage.file_url}
-                    alt={selectedProduct.product_name || "product"}
-                    style={{ width: "100%", maxHeight: 420, objectFit: "cover", borderRadius: 16, marginBottom: 16 }}
-                  />
+                  <>
+                    <img
+                      src={mainImage.signed_url || mainImage.file_url}
+                      alt={selectedProduct.product_name || "product"}
+                      style={{ width: "100%", maxHeight: 420, objectFit: "cover", borderRadius: 16, marginBottom: 16 }}
+                    />
+                    <div className="actions compact" style={{ marginBottom: 16 }}>
+                      <button type="button" onClick={() => openAsset(mainImage)}>Open</button>
+                      <button type="button" onClick={() => deleteAsset(mainImage)}>Delete</button>
+                    </div>
+                  </>
                 )}
                 <div className="product-grid">
                   {galleryImages.map((asset) => (
@@ -633,7 +655,7 @@ export default function ProductsPage() {
                       <strong>{asset.file_name}</strong>
                       <p>{asset.file_type || "-"}</p>
                       <div className="actions compact">
-                        <button type="button" onClick={() => downloadAsset(asset)}>Download</button>
+                        <button type="button" onClick={() => openAsset(asset)}>Preview</button>
                         <button type="button" onClick={() => deleteAsset(asset)}>Delete</button>
                       </div>
                     </article>
@@ -655,7 +677,10 @@ export default function ProductsPage() {
                       <p>文件格式：{asset.file_type || "-"}</p>
                       <p>上传时间：{formatTime(asset.created_at)}</p>
                       <div className="actions compact">
-                        <button type="button" onClick={() => downloadAsset(asset)}>Download</button>
+                        <button type="button" onClick={() => openAsset(asset)}>
+                          {isPdfAsset(asset) ? "Preview" : "Open"}
+                        </button>
+                        <button type="button" onClick={() => openAsset(asset)}>Download</button>
                         <button type="button" onClick={() => deleteAsset(asset)}>Delete</button>
                       </div>
                     </div>

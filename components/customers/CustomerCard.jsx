@@ -9,7 +9,7 @@ export default function CustomerCard({ customer, href = null }) {
   const leadLevel = customer.lead_level || analysis.customerLevel || customer.leadLevel || "C";
   const nextAction = customer.next_action || customer.current_next_action || analysis.suggestedAction || customer.nextAction || "暂无建议动作";
   const missingInfo = customer.missing_info || customer.missingInfo || (Array.isArray(analysis.missingInformation) ? analysis.missingInformation.join(", ") : "");
-  const followUpDate = customer.follow_up_date || customer.next_follow_up_at || customer.followUpDate || analysis.followUpTime || "";
+  const followUpDate = customer.follow_up_date || customer.next_follow_up_at || customer.followUpDate || "";
   const customerType = customer.customer_type || analysis.customerType || customer.customerType || "Unknown";
 
   const content = (

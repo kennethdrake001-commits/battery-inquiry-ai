@@ -312,7 +312,7 @@ export default function HomePage() {
           ? parseFollowUpTime(currentAnalysis.followUpTime)
           : null,
       last_contacted_at: sentAt,
-      last_quote_at: form.quoted === "yes" ? new Date().toISOString() : null,
+      ...(form.quoted === "yes" ? { last_quote_at: new Date().toISOString() } : {}),
       updated_at: new Date().toISOString()
     };
   }
