@@ -2,15 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import CustomerWorkflowCard from "../components/workflow/CustomerWorkflowCard";
 import { getSupabaseBrowserClient } from "../lib/supabaseClient";
 import {
-  customerTypeOptions,
   emptyCustomerForm,
-  leadLevelOptions,
-  shippingTermOptions,
   sourceOptions,
-  statusOptions,
-  workflowStageOptions
+  statusOptions
 } from "../lib/options";
 import { dateToFollowUpAt, parseFollowUpTime } from "../lib/followUp";
 import { generateCustomerWorkflow, mapAnalysisCustomerType, mapAnalysisLeadLevel } from "../lib/customerWorkflow";
@@ -176,6 +173,7 @@ export default function HomePage() {
   const [finalReply, setFinalReply] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [savedCustomerId, setSavedCustomerId] = useState(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -198,10 +196,81 @@ export default function HomePage() {
       ...current,
       nextAction: recommendation.nextAction,
       missingInfo: recommendation.missingInfo.join("\n"),
-      followUpDate: recommendation.followUpDate || current.followUpDate
+      followUpDate: recommendation.followUpDate || current.followUpDate,
+      leadLevel: recommendation.leadLevel || current.leadLevel
     }));
     setSuccess("已生成规则版下一步动作建议。");
     setError("");
+  }
+
+  function updateWorkflowField(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function buildCustomerPayload({ sentAt = null, currentAnalysis = null } = {}) {
+    return {
+      user_id: session.user.id,
+      customer_name: form.customerName,
+      country: form.country,
+      source: form.source,
+      original_message: form.originalMessage,
+      our_reply: form.ourReply,
+      quoted: form.quoted === "yes",
+      quote_content: form.quoteContent,
+      current_status: currentAnalysis?.stage || form.currentStatus,
+      question: form.question,
+      customer_type: form.customerType,
+      stage: form.stage,
+      lead_level: form.leadLevel,
+      next_action: form.nextAction || currentAnalysis?.suggestedAction || null,
+      missing_info: form.missingInfo || null,
+      follow_up_date: form.followUpDate || null,
+      quantity: form.quantity || null,
+      destination_city: form.destinationCity || null,
+      shipping_term: form.shippingTerm || null,
+      latest_analysis: currentAnalysis,
+      current_next_action: form.nextAction || currentAnalysis?.suggestedAction || null,
+      next_follow_up_at: form.followUpDate
+        ? dateToFollowUpAt(form.followUpDate)
+        : currentAnalysis
+          ? parseFollowUpTime(currentAnalysis.followUpTime)
+          : null,
+      last_contacted_at: sentAt,
+      last_quote_at: form.quoted === "yes" ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString()
+    };
+  }
+
+  async function saveCustomer() {
+    if (!supabase) {
+      setError("请先配置 Supabase 环境变量。");
+      return;
+    }
+    if (!session) {
+      setError("请先登录后再保存客户。");
+      return;
+    }
+
+    setError("");
+    setSuccess("");
+    setIsSaving(true);
+
+    try {
+      const customerPayload = buildCustomerPayload({ currentAnalysis: analysis });
+      const query = savedCustomerId
+        ? supabase.from("customers").update(customerPayload).eq("id", savedCustomerId).select("id").single()
+        : supabase.from("customers").insert(customerPayload).select("id").single();
+
+      const { data: customerRow, error: customerError } = await query;
+      if (customerError) throw customerError;
+
+      setSavedCustomerId(customerRow.id);
+      setSuccess("客户已保存到 Supabase。");
+    } catch (saveError) {
+      setError(saveError.message || "保存失败，请检查 Supabase 配置。");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   async function analyzeCustomer() {
@@ -259,39 +328,12 @@ export default function HomePage() {
       const aiSuggestedReply = analysis.englishReply || "";
       const finalSentReply = finalReply || aiSuggestedReply;
       const replyModified = finalSentReply.trim() !== aiSuggestedReply.trim();
-      const customerPayload = {
-        user_id: session.user.id,
-        customer_name: form.customerName,
-        country: form.country,
-        source: form.source,
-        original_message: form.originalMessage,
-        our_reply: form.ourReply,
-        quoted: form.quoted === "yes",
-        quote_content: form.quoteContent,
-        current_status: analysis.stage || form.currentStatus,
-        question: form.question,
-        customer_type: form.customerType,
-        stage: form.stage,
-        lead_level: form.leadLevel,
-        next_action: form.nextAction || analysis.suggestedAction || null,
-        missing_info: form.missingInfo || null,
-        follow_up_date: form.followUpDate || null,
-        quantity: form.quantity || null,
-        destination_city: form.destinationCity || null,
-        shipping_term: form.shippingTerm || null,
-        latest_analysis: analysis,
-        current_next_action: form.nextAction || analysis.suggestedAction || null,
-        next_follow_up_at: form.followUpDate ? dateToFollowUpAt(form.followUpDate) : parseFollowUpTime(analysis.followUpTime),
-        last_contacted_at: sentAt,
-        last_quote_at: form.quoted === "yes" ? new Date().toISOString() : null,
-        updated_at: new Date().toISOString()
-      };
+      const customerPayload = buildCustomerPayload({ sentAt, currentAnalysis: analysis });
+      const customerQuery = savedCustomerId
+        ? supabase.from("customers").update(customerPayload).eq("id", savedCustomerId).select("id").single()
+        : supabase.from("customers").insert(customerPayload).select("id").single();
 
-      const { data: customer, error: customerError } = await supabase
-        .from("customers")
-        .insert(customerPayload)
-        .select("id")
-        .single();
+      const { data: customer, error: customerError } = await customerQuery;
 
       if (customerError) throw customerError;
 
@@ -339,6 +381,7 @@ export default function HomePage() {
       setForm(emptyCustomerForm);
       setAnalysis(null);
       setFinalReply("");
+      setSavedCustomerId(null);
     } catch (saveError) {
       setError(saveError.message || "保存失败，请检查 Supabase 配置。");
     } finally {
@@ -406,46 +449,13 @@ export default function HomePage() {
           <Field label="question 我的困惑">
             <textarea rows={3} value={form.question} onChange={(event) => updateForm("question", event.target.value)} />
           </Field>
-          <Field label="customerType">
-            <select value={form.customerType} onChange={(event) => updateForm("customerType", event.target.value)}>
-              {customerTypeOptions.map((option) => <option key={option}>{option}</option>)}
-            </select>
-          </Field>
-          <Field label="stage">
-            <select value={form.stage} onChange={(event) => updateForm("stage", event.target.value)}>
-              {workflowStageOptions.map((option) => <option key={option}>{option}</option>)}
-            </select>
-          </Field>
-          <Field label="leadLevel">
-            <select value={form.leadLevel} onChange={(event) => updateForm("leadLevel", event.target.value)}>
-              {leadLevelOptions.map((option) => <option key={option}>{option}</option>)}
-            </select>
-          </Field>
-          <Field label="quantity">
-            <input value={form.quantity} onChange={(event) => updateForm("quantity", event.target.value)} />
-          </Field>
-          <Field label="shippingTerm">
-            <select value={form.shippingTerm} onChange={(event) => updateForm("shippingTerm", event.target.value)}>
-              {shippingTermOptions.map((option) => <option key={option}>{option}</option>)}
-            </select>
-          </Field>
-          <Field label="destinationCity">
-            <input value={form.destinationCity} onChange={(event) => updateForm("destinationCity", event.target.value)} />
-          </Field>
-          <Field label="nextAction">
-            <textarea rows={3} value={form.nextAction} onChange={(event) => updateForm("nextAction", event.target.value)} />
-          </Field>
-          <Field label="missingInfo">
-            <textarea rows={3} value={form.missingInfo} onChange={(event) => updateForm("missingInfo", event.target.value)} />
-          </Field>
-          <Field label="followUpDate">
-            <input type="date" value={form.followUpDate} onChange={(event) => updateForm("followUpDate", event.target.value)} />
-          </Field>
         </div>
         <div className="actions">
-          <button onClick={generateNextAction}>Generate Next Action</button>
           <button className="primary" onClick={analyzeCustomer} disabled={isAnalyzing}>
             {isAnalyzing ? "AI 分析中..." : "AI 生成跟进方案"}
+          </button>
+          <button onClick={saveCustomer} disabled={isSaving}>
+            {isSaving ? "保存中..." : "保存客户 / Save Customer"}
           </button>
           <button onClick={() => saveInteraction("sent")} disabled={isSaving || !analysis}>
             {isSaving ? "保存中..." : "复制并标记已发送"}
@@ -460,6 +470,12 @@ export default function HomePage() {
         {error && <div className="error">{error}</div>}
         {success && <div className="success">{success}</div>}
       </section>
+
+      <CustomerWorkflowCard
+        form={form}
+        onChange={updateWorkflowField}
+        onGenerate={generateNextAction}
+      />
 
       <AnalysisEditor
         analysis={analysis}
