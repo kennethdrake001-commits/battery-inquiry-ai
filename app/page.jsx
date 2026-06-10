@@ -30,6 +30,15 @@ const resultFields = [
   "sourceReferences"
 ];
 
+function Field({ label, children }) {
+  return (
+    <label className="field">
+      <span>{label}</span>
+      {children}
+    </label>
+  );
+}
+
 function AuthPanel({ session, onSessionChange }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -90,7 +99,7 @@ function AuthPanel({ session, onSessionChange }) {
         <button onClick={signUp}>注册</button>
       </div>
       <div className="demo-entry">
-        <Link className="primary demo-entry-button" href="/demo/workflow">
+        <Link className="primary demo-entry-button" href="/test/workflow">
           Try Demo Without Login
           <span>免登录体验 Demo</span>
         </Link>
