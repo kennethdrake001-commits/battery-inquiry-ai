@@ -2,12 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import CustomerIntakeForm from "../components/customers/CustomerIntakeForm";
 import CustomerWorkflowCard from "../components/workflow/CustomerWorkflowCard";
 import { getSupabaseBrowserClient } from "../lib/supabaseClient";
 import {
   emptyCustomerForm,
-  sourceOptions,
-  statusOptions
 } from "../lib/options";
 import { dateToFollowUpAt, parseFollowUpTime } from "../lib/followUp";
 import { generateCustomerWorkflow, mapAnalysisCustomerType, mapAnalysisLeadLevel } from "../lib/customerWorkflow";
@@ -30,15 +29,6 @@ const resultFields = [
   "reviewReason",
   "sourceReferences"
 ];
-
-function Field({ label, children }) {
-  return (
-    <label className="field">
-      <span>{label}</span>
-      {children}
-    </label>
-  );
-}
 
 function AuthPanel({ session, onSessionChange }) {
   const [email, setEmail] = useState("");
@@ -409,67 +399,45 @@ export default function HomePage() {
 
       <AuthPanel session={session} onSessionChange={setSession} />
 
-      <section className="panel">
-        <div className="section-title">
-          <h2>客户录入页</h2>
-          <span>OpenAI API Key 只在后端 route 使用</span>
-        </div>
-        <div className="form-grid">
-          <Field label="customerName 客户姓名">
-            <input value={form.customerName} onChange={(event) => updateForm("customerName", event.target.value)} />
-          </Field>
-          <Field label="country 国家">
-            <input value={form.country} onChange={(event) => updateForm("country", event.target.value)} />
-          </Field>
-          <Field label="source 客户来源">
-            <select value={form.source} onChange={(event) => updateForm("source", event.target.value)}>
-              {sourceOptions.map((option) => <option key={option}>{option}</option>)}
-            </select>
-          </Field>
-          <Field label="quoted 是否已报价">
-            <select value={form.quoted} onChange={(event) => updateForm("quoted", event.target.value)}>
-              <option value="no">no</option>
-              <option value="yes">yes</option>
-            </select>
-          </Field>
-          <Field label="currentStatus 当前状态">
-            <select value={form.currentStatus} onChange={(event) => updateForm("currentStatus", event.target.value)}>
-              {statusOptions.map((option) => <option key={option}>{option}</option>)}
-            </select>
-          </Field>
-          <Field label="quoteContent 报价内容">
-            <textarea rows={4} value={form.quoteContent} onChange={(event) => updateForm("quoteContent", event.target.value)} />
-          </Field>
-          <Field label="originalMessage 客户原始消息">
-            <textarea rows={5} value={form.originalMessage} onChange={(event) => updateForm("originalMessage", event.target.value)} />
-          </Field>
-          <Field label="ourReply 我方已回复内容">
-            <textarea rows={5} value={form.ourReply} onChange={(event) => updateForm("ourReply", event.target.value)} />
-          </Field>
-          <Field label="question 我的困惑">
-            <textarea rows={3} value={form.question} onChange={(event) => updateForm("question", event.target.value)} />
-          </Field>
-        </div>
-        <div className="actions">
-          <button className="primary" onClick={analyzeCustomer} disabled={isAnalyzing}>
+      <CustomerIntakeForm
+        title="客户录入页"
+        subtitle="OpenAI API Key 只在后端 route 使用"
+        form={form}
+        onChange={updateForm}
+        primaryAction={
+          <button className="primary" onClick={analyzeCustomer} disabled={isAnalyzing} type="button">
             {isAnalyzing ? "AI 分析中..." : "AI 生成跟进方案"}
           </button>
-          <button onClick={saveCustomer} disabled={isSaving}>
-            {isSaving ? "保存中..." : "保存客户 / Save Customer"}
-          </button>
-          <button onClick={() => saveInteraction("sent")} disabled={isSaving || !analysis}>
-            {isSaving ? "保存中..." : "复制并标记已发送"}
-          </button>
-          <button onClick={() => saveInteraction("draft")} disabled={isSaving || !analysis}>
-            仅保存草稿
-          </button>
-          <button onClick={() => saveInteraction("inappropriate")} disabled={isSaving || !analysis}>
-            话术不合适
-          </button>
-        </div>
-        {error && <div className="error">{error}</div>}
-        {success && <div className="success">{success}</div>}
-      </section>
+        }
+        secondaryActions={[
+          {
+            label: isSaving ? "保存中..." : "保存客户 / Save Customer",
+            onClick: saveCustomer,
+            disabled: isSaving
+          },
+          {
+            label: isSaving ? "保存中..." : "复制并标记已发送",
+            onClick: () => saveInteraction("sent"),
+            disabled: isSaving || !analysis
+          },
+          {
+            label: "仅保存草稿",
+            onClick: () => saveInteraction("draft"),
+            disabled: isSaving || !analysis
+          },
+          {
+            label: "话术不合适",
+            onClick: () => saveInteraction("inappropriate"),
+            disabled: isSaving || !analysis
+          }
+        ]}
+        footer={
+          <>
+            {error && <div className="error">{error}</div>}
+            {success && <div className="success">{success}</div>}
+          </>
+        }
+      />
 
       <CustomerWorkflowCard
         form={form}

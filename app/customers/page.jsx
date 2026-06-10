@@ -2,43 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import CustomerStageBadge from "../../components/workflow/CustomerStageBadge";
-import LeadLevelBadge from "../../components/workflow/LeadLevelBadge";
+import CustomerBoard from "../../components/customers/CustomerBoard";
 import { getSupabaseBrowserClient } from "../../lib/supabaseClient";
-import { boardStages } from "../../lib/options";
-import { formatDateTime } from "../../lib/followUp";
 
 function AuthNotice({ session }) {
   if (session) return <div className="auth-card">已登录：{session.user.email}</div>;
   return <div className="auth-card">请先回到客户录入页登录邮箱账号。</div>;
-}
-
-function CustomerCard({ customer }) {
-  const analysis = customer.latest_analysis || {};
-  const stage = customer.stage || analysis.stage || customer.current_status || "New Inquiry";
-  const leadLevel = customer.lead_level || analysis.customerLevel || "C";
-  const nextAction = customer.next_action || customer.current_next_action || analysis.suggestedAction || "暂无建议动作";
-  const missingInfo = customer.missing_info || (Array.isArray(analysis.missingInformation) ? analysis.missingInformation.join(", ") : "");
-  const followUpDate = customer.follow_up_date || customer.next_follow_up_at || analysis.followUpTime || "";
-  const customerType = customer.customer_type || analysis.customerType || "Unknown";
-
-  return (
-    <Link className="customer-card" href={`/customers/${customer.id}`}>
-      <div className="card-title">
-        <strong>{customer.customer_name || "未命名客户"}</strong>
-        <LeadLevelBadge level={leadLevel} />
-      </div>
-      <p className="muted">{customer.country || "未知国家"} · {customer.source || "Unknown"}</p>
-      <p>身份：{customerType}</p>
-      <p>Stage：<CustomerStageBadge stage={stage} /></p>
-      <p>Lead Level：{leadLevel}</p>
-      <p>卡点：{analysis.mainBlocker || "其他"}</p>
-      <p>Missing Info：{missingInfo || "-"}</p>
-      <p>Follow-up Date：{followUpDate ? formatDateTime(followUpDate) : "-"}</p>
-      <p className="action-text">{nextAction}</p>
-      {analysis.needSupervisorReview === "是" && <p className="review">需主管复核：{analysis.reviewReason || "AI 建议复核"}</p>}
-    </Link>
-  );
 }
 
 export default function CustomersPage() {
@@ -79,16 +48,6 @@ export default function CustomersPage() {
     init();
   }, [supabase]);
 
-  const grouped = useMemo(() => {
-    const groups = Object.fromEntries(boardStages.map((stage) => [stage, []]));
-    customers.forEach((customer) => {
-      const stage = customer.latest_analysis?.stage || customer.current_status || "新询盘";
-      if (!groups[stage]) groups[stage] = [];
-      groups[stage].push(customer);
-    });
-    return groups;
-  }, [customers]);
-
   return (
     <main className="app">
       <header className="hero">
@@ -113,19 +72,7 @@ export default function CustomersPage() {
       {error && <div className="error">{error}</div>}
 
       {!loading && session && (
-        <section className="board">
-          {boardStages.map((stage) => (
-            <div className="stage-column" key={stage}>
-              <h2>{stage}</h2>
-              <div className="card-list">
-                {(grouped[stage] || []).map((customer) => (
-                  <CustomerCard key={customer.id} customer={customer} />
-                ))}
-                {(grouped[stage] || []).length === 0 && <p className="empty">暂无客户</p>}
-              </div>
-            </div>
-          ))}
-        </section>
+        <CustomerBoard customers={customers} hrefForCustomer={(customer) => `/customers/${customer.id}`} />
       )}
     </main>
   );
