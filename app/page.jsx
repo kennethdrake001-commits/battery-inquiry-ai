@@ -93,6 +93,15 @@ function AuthPanel({ session, onSessionChange }) {
         <button className="primary" onClick={signIn}>登录</button>
         <button onClick={signUp}>注册</button>
       </div>
+      <div className="demo-entry">
+        <Link className="primary demo-entry-button" href="/demo/tasks">
+          Try Demo Without Login
+          <span>免登录体验 Demo</span>
+        </Link>
+        <p className="notice">
+          View sample customers and today&apos;s follow-up workflow without logging in.
+        </p>
+      </div>
       {message && <p className="notice">{message}</p>}
     </div>
   );

@@ -132,7 +132,27 @@ nav,
 
 .auth-form {
   display: grid;
-  grid-template-columns: 1fr 2fr 2fr auto;
+  grid-template-columns: 1fr 2fr 2fr auto minmax(260px, 1.2fr);
+  align-items: start;
+}
+
+.demo-entry {
+  display: grid;
+  gap: 8px;
+}
+
+.demo-entry-button {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  min-height: 48px;
+}
+
+.demo-entry-button span {
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.92;
 }
 
 .section-title {
