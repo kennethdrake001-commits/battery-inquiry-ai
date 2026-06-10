@@ -532,13 +532,21 @@ export default function CustomerDetailPage() {
   }
 
   async function saveQuote() {
-    if (!session || !customer) return;
+    if (!session?.user || !customer) {
+      setError("Please log in before saving quote.");
+      setSuccess("");
+      return;
+    }
 
     setError("");
     setSuccess("");
     setIsSavingQuote(true);
 
     const now = new Date().toISOString();
+    const followUpDate = new Date();
+    followUpDate.setDate(followUpDate.getDate() + 2);
+    const followUpDateText = followUpDate.toISOString().slice(0, 10);
+    const nextFollowUpAt = dateToFollowUpAt(followUpDateText);
     const { error: quoteError } = await supabase.from("quotes").insert({
       customer_id: customer.id,
       quote_version: quoteForm.quote_version,
@@ -553,21 +561,32 @@ export default function CustomerDetailPage() {
       created_by: session.user.id
     });
 
+    let customerUpdateError = null;
     if (!quoteError) {
-      await supabase
+      const { error } = await supabase
         .from("customers")
         .update({
           last_quote_at: now,
-          stage: customer.stage === "Need Quotation" || !customer.stage ? "Quoted" : customer.stage,
+          stage: "Quoted",
           current_status: customer.current_status === "待报价" || customer.current_status === "新询盘" ? "已报价未回复" : customer.current_status,
+          follow_up_date: followUpDateText,
+          next_follow_up_at: nextFollowUpAt,
+          current_next_action: "Follow up quotation after 2 days",
           updated_at: now
         })
         .eq("id", customer.id);
+      customerUpdateError = error;
     }
 
     setIsSavingQuote(false);
     if (quoteError) {
       setError(quoteError.message);
+      return;
+    }
+
+    if (customerUpdateError) {
+      setError("Quote was saved, but customer workflow update failed.");
+      await loadData();
       return;
     }
 
