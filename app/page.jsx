@@ -361,6 +361,18 @@ export default function HomePage() {
     return titleMap[activeSummaryKey] || "客户列表";
   }, [activeSummaryKey]);
 
+  const selectedSummaryPreviewRows = useMemo(
+    () => selectedSummaryRows.slice(0, 3),
+    [selectedSummaryRows]
+  );
+
+  const selectedSummaryRemainingCount = Math.max(selectedSummaryRows.length - 3, 0);
+
+  const selectedSummaryViewAllHref = useMemo(
+    () => (activeSummaryKey === "current_pending" ? "/tasks" : "/customers"),
+    [activeSummaryKey]
+  );
+
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
   }
@@ -616,55 +628,43 @@ export default function HomePage() {
           <SectionTitle title={selectedSummaryTitle} subtitle="点击客户可继续进入详情页处理" />
           <div className="detail-grid">
             {selectedSummaryRows.length === 0 && <p className="empty">暂无客户</p>}
-            {selectedSummaryRows.map((item) => (
+            {selectedSummaryPreviewRows.map((item) => (
               <article key={`${activeSummaryKey}-${item.id}`} className="detail-item">
                 <strong>{item.customerName}</strong>
-                <p>国家：{item.country}</p>
-                <p>来源：{item.source}</p>
                 <p>当前阶段：{item.stage}</p>
                 <p>下一步动作：{item.nextAction || "待确认"}</p>
-                {item.missingInfo ? <p>缺失信息：{item.missingInfo}</p> : null}
-                {item.followUpDate ? <p>跟进日期：{item.followUpDate}</p> : null}
-                {item.taskReason ? <p>任务原因：{item.taskReason}</p> : null}
                 <div className="actions compact">
                   <Link href={`/customers/${item.id}`}>查看客户</Link>
                 </div>
               </article>
             ))}
           </div>
+          {selectedSummaryRemainingCount > 0 && (
+            <div className="actions" style={{ marginTop: 16, justifyContent: "space-between", alignItems: "center" }}>
+              <span className="notice">还有 {selectedSummaryRemainingCount} 个客户</span>
+              <Link href={selectedSummaryViewAllHref}>查看全部</Link>
+            </div>
+          )}
         </section>
       )}
 
       <section className="panel">
-        <SectionTitle title="快速操作" subtitle="先从最常用的动作开始" />
-        <div className="actions">
-          <button className="primary" type="button" onClick={resetIntake}>新增客户</button>
-          <Link href="/tasks">今日任务</Link>
-          <Link href="/customers">客户列表</Link>
-        </div>
-      </section>
+        <SectionTitle title="新询盘分析" subtitle="把客户原话粘贴进来，系统会判断客户类型、缺失信息、下一步动作，并生成英文回复。" />
 
-      <section className="panel">
-        <SectionTitle title="客户录入说明" subtitle="首页现在作为询盘分析入口，先抓核心信息，再让系统给出下一步建议。" />
-        <div className="notice-panel">
-          <p>1. 先填写客户基础信息和客户原始消息。</p>
-          <p>2. 再补充你的疑问和已知关键信息。</p>
-          <p>3. 点击“分析询盘并生成下一步”，得到内部判断和推荐英文话术。</p>
-          <p>4. 确认无误后再保存客户，或复制话术继续跟进。</p>
-          <p>建议分析后保存，但也可以先保存客户，稍后再处理。</p>
-        </div>
-      </section>
-
-      <section className="panel">
-        <SectionTitle title="询盘分析入口" subtitle="系统内部界面全部中文；只有给客户的话术保持英文。" />
-
-        <h3>客户基础信息</h3>
         <div className="form-grid">
           <Field label="客户姓名">
-            <input value={form.customerName} onChange={(event) => updateForm("customerName", event.target.value)} />
+            <input
+              placeholder="例如：Ahmed / Mary / 公司联系人"
+              value={form.customerName}
+              onChange={(event) => updateForm("customerName", event.target.value)}
+            />
           </Field>
           <Field label="国家">
-            <input value={form.country} onChange={(event) => updateForm("country", event.target.value)} />
+            <input
+              placeholder="例如：Nigeria / Kenya / UAE"
+              value={form.country}
+              onChange={(event) => updateForm("country", event.target.value)}
+            />
           </Field>
           <Field label="客户来源">
             <select value={form.source} onChange={(event) => updateForm("source", event.target.value)}>
@@ -675,58 +675,61 @@ export default function HomePage() {
               ))}
             </select>
           </Field>
-          <Field label="公司 / 联系方式">
-            <input
-              placeholder="当前版本不单独入库，可先写在客户原始消息里"
-              value=""
-              readOnly
-            />
-          </Field>
         </div>
 
-        <h3>客户原始消息</h3>
-        <Field label="请尽量粘贴完整原文，这是系统判断的核心输入">
-          <textarea rows={8} value={form.originalMessage} onChange={(event) => updateForm("originalMessage", event.target.value)} />
+        <Field label="客户原始消息">
+          <textarea
+            rows={10}
+            placeholder="把客户在阿里、WhatsApp、邮件里的原话粘贴到这里。"
+            value={form.originalMessage}
+            onChange={(event) => updateForm("originalMessage", event.target.value)}
+          />
         </Field>
 
-        <h3>我的疑问</h3>
-        <Field label="你最想让系统帮你判断什么">
-          <textarea rows={5} value={form.question} onChange={(event) => updateForm("question", event.target.value)} />
+        <Field label="我不确定的问题">
+          <textarea
+            rows={5}
+            placeholder="例如：客户要 DDP 但没有城市和数量，我应该怎么问？"
+            value={form.question}
+            onChange={(event) => updateForm("question", event.target.value)}
+          />
         </Field>
 
-        <h3>关键信息补充</h3>
-        <div className="form-grid">
-          <Field label="客户类型">
-            <select value={form.customerType} onChange={(event) => updateForm("customerType", event.target.value)}>
-              {customerTypeOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="感兴趣产品">
-            <input placeholder="例如：5kWh 壁挂电池 / 10kWh 套装" />
-          </Field>
-          <Field label="数量">
-            <input value={form.quantity} onChange={(event) => updateForm("quantity", event.target.value)} />
-          </Field>
-          <Field label="贸易方式">
-            <select value={form.shippingTerm} onChange={(event) => updateForm("shippingTerm", event.target.value)}>
-              {shippingTermOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="目的地">
-            <input value={form.destinationCity} onChange={(event) => updateForm("destinationCity", event.target.value)} />
-          </Field>
-          <Field label="使用场景">
-            <input placeholder="例如：家庭备电 / 安装商项目 / 分销渠道" />
-          </Field>
-        </div>
+        <details style={{ marginTop: 16 }}>
+          <summary>关键信息补充</summary>
+          <div className="form-grid" style={{ marginTop: 16 }}>
+            <Field label="客户类型">
+              <select value={form.customerType} onChange={(event) => updateForm("customerType", event.target.value)}>
+                {customerTypeOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="感兴趣产品">
+              <input placeholder="例如：5kWh 壁挂电池 / 10kWh 套装" />
+            </Field>
+            <Field label="数量">
+              <input value={form.quantity} onChange={(event) => updateForm("quantity", event.target.value)} />
+            </Field>
+            <Field label="贸易方式">
+              <select value={form.shippingTerm} onChange={(event) => updateForm("shippingTerm", event.target.value)}>
+                {shippingTermOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="目的地">
+              <input value={form.destinationCity} onChange={(event) => updateForm("destinationCity", event.target.value)} />
+            </Field>
+            <Field label="使用场景">
+              <input placeholder="例如：家庭备电 / 安装商项目 / 分销渠道" />
+            </Field>
+          </div>
+        </details>
 
         <div className="actions">
           <button className="primary" onClick={analyzeCustomer} disabled={isAnalyzing} type="button">
