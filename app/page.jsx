@@ -98,15 +98,15 @@ function AuthPanel({ session, onSessionChange }) {
         <button className="primary" onClick={signIn}>登录</button>
         <button onClick={signUp}>注册</button>
       </div>
-      <div className="demo-entry">
-        <Link className="primary demo-entry-button" href="/test/workflow">
-          Try Demo Without Login
-          <span>免登录体验 Demo</span>
-        </Link>
-        <p className="notice">
-          View sample customers and today&apos;s follow-up workflow without logging in.
-        </p>
-      </div>
+        <div className="demo-entry">
+          <Link className="primary demo-entry-button" href="/test/workflow">
+          免登录体验 Demo
+          <span>直接查看公开测试页面</span>
+          </Link>
+          <p className="notice">
+          无需登录即可查看示例客户和今日跟进流程。
+          </p>
+        </div>
       {message && <p className="notice">{message}</p>}
     </div>
   );
@@ -570,7 +570,7 @@ export default function HomePage() {
     <main className="app">
       <header className="hero">
         <div>
-          <p className="eyebrow">Next.js + Supabase + OpenAI</p>
+          <p className="eyebrow">询盘成交系统</p>
           <h1>储能电池询盘成交 AI 助手</h1>
           <p>把客户原始消息和你的疑问交给系统，先判断，再决定怎么跟进。</p>
         </div>

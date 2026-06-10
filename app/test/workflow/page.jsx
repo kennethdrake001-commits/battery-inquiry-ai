@@ -123,28 +123,28 @@ export default function TestWorkflowPage() {
     <main className="app">
       <header className="hero">
         <div>
-          <p className="eyebrow">Testing Mode</p>
-          <h1>Workflow Test Route</h1>
-          <p>Testing Mode - mock data only</p>
+          <p className="eyebrow">测试模式</p>
+          <h1>流程测试页</h1>
+          <p>测试模式，仅使用模拟数据</p>
         </div>
         <nav>
           <Link href="/">客户录入</Link>
-          <Link href="/demo/workflow">Workflow Demo</Link>
-          <Link href="/demo/tasks">Demo Tasks</Link>
-          <Link href="/test/workflow">Test Workflow</Link>
+          <Link href="/demo/workflow">流程演示</Link>
+          <Link href="/demo/tasks">演示任务</Link>
+          <Link href="/test/workflow">流程测试</Link>
         </nav>
       </header>
 
-      <div className="auth-card demo-banner">Testing Mode - mock data only</div>
+      <div className="auth-card demo-banner">测试模式，仅使用模拟数据</div>
 
       <CustomerIntakeForm
-        title="Customer Intake Form"
+        title="客户录入表单"
         subtitle="公开测试页：使用真实共享组件，但只保存到本地状态。"
         form={form}
         onChange={updateForm}
         primaryAction={
           <button className="primary" onClick={saveCustomer} type="button">
-            保存客户 / Save Customer
+            保存客户
           </button>
         }
         secondaryActions={[
@@ -160,12 +160,12 @@ export default function TestWorkflowPage() {
         form={form}
         onChange={updateForm}
         onGenerate={generateNextAction}
-        title="Recommended Next Action"
+        title="推荐下一步动作"
         subtitle="与真实登录页共用同一套 workflow 组件和逻辑。"
       />
 
       <CustomerBoard customers={customers} />
-      <TaskListPanel tasks={tasks} title="Today Follow-up Tasks" subtitle="测试模式下基于本地客户数据生成" />
+      <TaskListPanel tasks={tasks} title="今日跟进任务" subtitle="测试模式下基于本地客户数据生成" />
     </main>
   );
 }

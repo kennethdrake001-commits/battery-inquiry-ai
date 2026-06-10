@@ -85,7 +85,7 @@ function HistoryItem({ item, onSaveAsPlaybook }) {
         <strong>{new Date(item.created_at).toLocaleString()}</strong>
         <div className="history-actions">
           {canSaveAsPlaybook && <button onClick={() => onSaveAsPlaybook(item)}>保存为有效案例</button>}
-          <span>{item.interaction_status || "draft"}</span>
+          <span>{item.interaction_status || "草稿"}</span>
         </div>
       </div>
       <div className="two-col">
@@ -502,14 +502,14 @@ export default function CustomerDetailPage() {
       followUpDate: recommendation.followUpDate || current.followUpDate,
       leadLevel: recommendation.leadLevel || current.leadLevel
     }));
-    setSuccess("已生成规则版 Recommended Next Action。");
+    setSuccess("已生成推荐下一步动作。");
     setError("");
   }
 
   async function saveWorkflow() {
     if (!customer) return;
     if (!session?.user) {
-      setError("Please log in before saving workflow updates.");
+      setError("请先登录后再保存流程更新。");
       setSuccess("");
       return;
     }
@@ -543,13 +543,13 @@ export default function CustomerDetailPage() {
       return;
     }
 
-    setSuccess("客户 workflow 已保存。");
+    setSuccess("客户流程已保存。");
     await loadData();
   }
 
   async function saveQuote() {
     if (!session?.user || !customer) {
-      setError("Please log in before saving quote.");
+      setError("请先登录后再保存报价。");
       setSuccess("");
       return;
     }
@@ -601,7 +601,7 @@ export default function CustomerDetailPage() {
     }
 
     if (customerUpdateError) {
-      setError("Quote was saved, but customer workflow update failed.");
+      setError("报价已保存，但客户流程更新失败。");
       await loadData();
       return;
     }
@@ -638,9 +638,9 @@ export default function CustomerDetailPage() {
     <main className="app">
       <header className="hero">
         <div>
-          <p className="eyebrow">Customer Detail</p>
+          <p className="eyebrow">客户详情</p>
           <h1>{customer?.customer_name || "客户详情"}</h1>
-          <p>{customer?.country || "未知国家"} · {customer?.source || "Unknown"}</p>
+          <p>{customer?.country || "未知国家"} · {customer?.source || "未知来源"}</p>
         </div>
         <nav>
           <Link href="/">客户录入</Link>
@@ -660,11 +660,11 @@ export default function CustomerDetailPage() {
         form={workflowForm}
         onChange={updateWorkflowForm}
         onGenerate={generateWorkflowRecommendation}
-        actions={<button onClick={saveWorkflow} disabled={isSaving}>Save Workflow</button>}
+        actions={<button onClick={saveWorkflow} disabled={isSaving}>保存客户流程</button>}
       />
       <section className="panel">
         <div className="section-title">
-          <h2>Recommended Script</h2>
+          <h2>推荐英文回复</h2>
           <span>根据当前 workflow 自动生成，可直接复制</span>
         </div>
         <RecommendedScriptCard
@@ -680,10 +680,10 @@ export default function CustomerDetailPage() {
           <span>会结合该客户历史 interactions</span>
         </div>
         <div className="form-grid">
-          <Field label="customer_new_reply 客户新回复">
+          <Field label="客户新回复">
             <textarea rows={5} value={customerNewReply} onChange={(event) => setCustomerNewReply(event.target.value)} />
           </Field>
-          <Field label="operator_note 人工备注">
+          <Field label="人工备注">
             <textarea rows={5} value={operatorNote} onChange={(event) => setOperatorNote(event.target.value)} />
           </Field>
         </div>
@@ -701,7 +701,7 @@ export default function CustomerDetailPage() {
             <span>可保存草稿或标记已发送</span>
           </div>
           <pre className="json-box">{JSON.stringify(analysis, null, 2)}</pre>
-          <Field label="final_sent_reply 运营最终发送话术">
+          <Field label="运营最终发送话术">
             <textarea rows={5} value={finalReply} onChange={(event) => setFinalReply(event.target.value)} />
           </Field>
           <div className="actions">
@@ -717,7 +717,7 @@ export default function CustomerDetailPage() {
           <span>{quotes.length} 个报价版本</span>
         </div>
         <div className="form-grid">
-          <Field label="quote_version">
+          <Field label="报价版本">
             <input value={quoteForm.quote_version} onChange={(event) => updateQuoteForm("quote_version", event.target.value)} />
           </Field>
           <Field label="product 产品">
@@ -732,18 +732,18 @@ export default function CustomerDetailPage() {
           <Field label="total_price 总价">
             <input value={quoteForm.total_price} onChange={(event) => updateQuoteForm("total_price", event.target.value)} />
           </Field>
-          <Field label="trade_term">
+          <Field label="贸易条款">
             <select value={quoteForm.trade_term} onChange={(event) => updateQuoteForm("trade_term", event.target.value)}>
               {["FOB", "CIF", "DDP", "EXW", "Other"].map((term) => <option key={term}>{term}</option>)}
             </select>
           </Field>
-          <Field label="port_or_address">
+          <Field label="港口或地址">
             <input value={quoteForm.port_or_address} onChange={(event) => updateQuoteForm("port_or_address", event.target.value)} />
           </Field>
-          <Field label="valid_until">
+          <Field label="报价有效期">
             <input type="date" value={quoteForm.valid_until} onChange={(event) => updateQuoteForm("valid_until", event.target.value)} />
           </Field>
-          <Field label="quote_note">
+          <Field label="报价备注">
             <textarea rows={3} value={quoteForm.quote_note} onChange={(event) => updateQuoteForm("quote_note", event.target.value)} />
           </Field>
         </div>
@@ -760,7 +760,7 @@ export default function CustomerDetailPage() {
 
       <section className="panel history">
         <div className="section-title">
-          <h2>Interactions 历史</h2>
+          <h2>跟进历史</h2>
           <span>{interactions.length} 条记录</span>
         </div>
         {interactions.map((item) => (
@@ -779,7 +779,7 @@ export default function CustomerDetailPage() {
               </select>
             </Field>
             {feedbackResult === "失败" && (
-              <Field label="failure_reason 失败原因">
+              <Field label="失败原因">
                 <select value={failureReason} onChange={(event) => setFailureReason(event.target.value)}>
                   <option value="">请选择失败原因</option>
                   {failureReasons.map((reason) => <option key={reason}>{reason}</option>)}
@@ -799,31 +799,31 @@ export default function CustomerDetailPage() {
           <div className="modal wide-modal">
             <h2>保存为有效案例</h2>
             <div className="form-grid">
-              <Field label="场景名称 scene_name">
+              <Field label="场景名称">
                 <input value={playbookForm.scene_name} onChange={(event) => updatePlaybookForm("scene_name", event.target.value)} />
               </Field>
-              <Field label="客户类型 customer_type">
+              <Field label="客户类型">
                 <input value={playbookForm.customer_type} onChange={(event) => updatePlaybookForm("customer_type", event.target.value)} />
               </Field>
-              <Field label="当前阶段 stage">
+              <Field label="当前阶段">
                 <input value={playbookForm.stage} onChange={(event) => updatePlaybookForm("stage", event.target.value)} />
               </Field>
-              <Field label="问题/卡点 problem">
+              <Field label="问题/卡点">
                 <input value={playbookForm.problem} onChange={(event) => updatePlaybookForm("problem", event.target.value)} />
               </Field>
-              <Field label="结果 result">
+              <Field label="结果">
                 <input value={playbookForm.result} onChange={(event) => updatePlaybookForm("result", event.target.value)} />
               </Field>
-              <Field label="话术标签 reply_tag">
+              <Field label="话术标签">
                 <select value={playbookForm.reply_tag} onChange={(event) => updatePlaybookForm("reply_tag", event.target.value)}>
                   {replyTagOptions.map((tag) => <option key={tag}>{tag}</option>)}
                 </select>
               </Field>
             </div>
-            <Field label="有效话术 effective_reply">
+            <Field label="有效话术">
               <textarea rows={5} value={playbookForm.effective_reply} onChange={(event) => updatePlaybookForm("effective_reply", event.target.value)} />
             </Field>
-            <Field label="备注 notes">
+            <Field label="备注">
               <textarea rows={3} value={playbookForm.notes} onChange={(event) => updatePlaybookForm("notes", event.target.value)} />
             </Field>
             <div className="actions">

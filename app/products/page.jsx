@@ -7,51 +7,51 @@ import { emptyProductForm, productStatusOptions } from "../../lib/options";
 
 const basicFields = [
   ["product_name", "产品名称"],
-  ["model", "型号 / Model"],
-  ["category", "分类 / Category"],
-  ["application", "应用场景 / Application"],
-  ["short_description", "简短描述 / Short Description", "textarea"],
-  ["status", "状态 / Status", "select"]
+  ["model", "产品型号"],
+  ["category", "产品分类"],
+  ["application", "应用场景"],
+  ["short_description", "简短描述", "textarea"],
+  ["status", "状态", "select"]
 ];
 
 const technicalFields = [
-  ["voltage", "电压 / Voltage"],
+  ["voltage", "电压"],
   ["capacity_ah", "容量 Ah"],
   ["energy_kwh", "能量 kWh"],
-  ["cell_type", "电芯类型 / Cell Type"],
+  ["cell_type", "电芯类型"],
   ["bms", "BMS"],
-  ["cycle_life", "循环寿命 / Cycle Life"],
-  ["max_charge_current", "最大充电电流 / Max Charge Current"],
-  ["max_discharge_current", "最大放电电流 / Max Discharge Current"],
-  ["communication", "通信 / Communication"],
-  ["parallel_support", "并联支持 / Parallel Support"],
-  ["dimensions", "尺寸 / Dimensions"],
-  ["weight", "重量 / Weight"],
+  ["cycle_life", "循环寿命"],
+  ["max_charge_current", "最大充电电流"],
+  ["max_discharge_current", "最大放电电流"],
+  ["communication", "通信方式"],
+  ["parallel_support", "并联支持"],
+  ["dimensions", "尺寸"],
+  ["weight", "重量"],
   ["ip_rating", "IP 等级 / IP Rating"],
-  ["warranty", "质保 / Warranty"],
-  ["certifications", "认证 / Certifications", "textarea"],
-  ["compatible_inverters", "兼容逆变器 / Compatible Inverters", "textarea"]
+  ["warranty", "质保"],
+  ["certifications", "认证", "textarea"],
+  ["compatible_inverters", "兼容逆变器", "textarea"]
 ];
 
 const priceFields = [
-  ["currency", "币种 / Currency"],
-  ["base_price", "基础价格 / Base Price"],
-  ["price_term", "价格条款 / Price Term"],
-  ["port", "港口 / Port"],
+  ["currency", "币种"],
+  ["base_price", "基础价格"],
+  ["price_term", "价格条款"],
+  ["port", "港口"],
   ["moq", "MOQ"],
-  ["price_note", "价格备注 / Price Note", "textarea"],
-  ["lead_time", "交期 / Lead Time"]
+  ["price_note", "价格备注", "textarea"],
+  ["lead_time", "交期"]
 ];
 
 const assetGroups = [
-  { type: "main_image", label: "主图 / Main Product Image", accept: "image/*", multiple: false },
-  { type: "gallery_image", label: "图库图片 / Gallery Images", accept: "image/*", multiple: true },
-  { type: "datasheet", label: "Datasheet", accept: ".pdf,.doc,.docx,.xls,.xlsx,.zip,.rar", multiple: false },
-  { type: "user_manual", label: "User Manual", accept: ".pdf,.doc,.docx,.zip,.rar", multiple: false },
-  { type: "certificate", label: "Certificate", accept: ".pdf,.jpg,.jpeg,.png,.zip,.rar", multiple: false },
-  { type: "test_report", label: "Test Report", accept: ".pdf,.doc,.docx,.zip,.rar", multiple: false },
-  { type: "product_catalog", label: "Product Catalog", accept: ".pdf,.doc,.docx,.xls,.xlsx,.zip,.rar", multiple: false },
-  { type: "installation_guide", label: "Installation Guide", accept: ".pdf,.doc,.docx,.zip,.rar", multiple: false }
+  { type: "main_image", label: "主图", accept: "image/*", multiple: false },
+  { type: "gallery_image", label: "图库图片", accept: "image/*", multiple: true },
+  { type: "datasheet", label: "产品规格书", accept: ".pdf,.doc,.docx,.xls,.xlsx,.zip,.rar", multiple: false },
+  { type: "user_manual", label: "用户手册", accept: ".pdf,.doc,.docx,.zip,.rar", multiple: false },
+  { type: "certificate", label: "认证文件", accept: ".pdf,.jpg,.jpeg,.png,.zip,.rar", multiple: false },
+  { type: "test_report", label: "测试报告", accept: ".pdf,.doc,.docx,.zip,.rar", multiple: false },
+  { type: "product_catalog", label: "产品目录", accept: ".pdf,.doc,.docx,.xls,.xlsx,.zip,.rar", multiple: false },
+  { type: "installation_guide", label: "安装指南", accept: ".pdf,.doc,.docx,.zip,.rar", multiple: false }
 ];
 
 function Field({ label, children }) {
@@ -477,7 +477,7 @@ export default function ProductsPage() {
     <main className="app">
       <header className="hero">
         <div>
-          <p className="eyebrow">Product Knowledge</p>
+          <p className="eyebrow">产品知识库</p>
           <h1>产品知识库</h1>
           <p>维护产品参数、价格、图片和文件资料，供业务团队和 AI 安全调用。</p>
         </div>
@@ -639,8 +639,8 @@ export default function ProductsPage() {
                       style={{ width: "100%", maxHeight: 420, objectFit: "cover", borderRadius: 16, marginBottom: 16 }}
                     />
                     <div className="actions compact" style={{ marginBottom: 16 }}>
-                      <button type="button" onClick={() => openAsset(mainImage)}>Open</button>
-                      <button type="button" onClick={() => deleteAsset(mainImage)}>Delete</button>
+                      <button type="button" onClick={() => openAsset(mainImage)}>预览</button>
+                      <button type="button" onClick={() => deleteAsset(mainImage)}>删除</button>
                     </div>
                   </>
                 )}
@@ -655,8 +655,8 @@ export default function ProductsPage() {
                       <strong>{asset.file_name}</strong>
                       <p>{asset.file_type || "-"}</p>
                       <div className="actions compact">
-                        <button type="button" onClick={() => openAsset(asset)}>Preview</button>
-                        <button type="button" onClick={() => deleteAsset(asset)}>Delete</button>
+                        <button type="button" onClick={() => openAsset(asset)}>预览</button>
+                        <button type="button" onClick={() => deleteAsset(asset)}>删除</button>
                       </div>
                     </article>
                   ))}
@@ -678,10 +678,10 @@ export default function ProductsPage() {
                       <p>上传时间：{formatTime(asset.created_at)}</p>
                       <div className="actions compact">
                         <button type="button" onClick={() => openAsset(asset)}>
-                          {isPdfAsset(asset) ? "Preview" : "Open"}
+                          {isPdfAsset(asset) ? "预览" : "打开"}
                         </button>
-                        <button type="button" onClick={() => openAsset(asset)}>Download</button>
-                        <button type="button" onClick={() => deleteAsset(asset)}>Delete</button>
+                        <button type="button" onClick={() => openAsset(asset)}>下载</button>
+                        <button type="button" onClick={() => deleteAsset(asset)}>删除</button>
                       </div>
                     </div>
                   ))}

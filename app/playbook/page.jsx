@@ -80,7 +80,7 @@ export default function PlaybookPage() {
     <main className="app">
       <header className="hero">
         <div>
-          <p className="eyebrow">Playbook Cases</p>
+          <p className="eyebrow">有效案例库</p>
           <h1>有效案例库</h1>
           <p>沉淀有效话术，后续 AI 分析会自动参考相似案例。</p>
         </div>

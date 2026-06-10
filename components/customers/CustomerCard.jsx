@@ -18,13 +18,13 @@ export default function CustomerCard({ customer, href = null }) {
         <strong>{customer.customer_name || customer.customerName || "未命名客户"}</strong>
         <LeadLevelBadge level={leadLevel} />
       </div>
-      <p className="muted">{customer.country || "未知国家"} · {customer.source || "Unknown"}</p>
-      <p>身份：{customerType}</p>
-      <p>Stage：<CustomerStageBadge stage={stage} /></p>
-      <p>Lead Level：{leadLevel}</p>
+      <p className="muted">{customer.country || "未知国家"} · {customer.source || "未知来源"}</p>
+      <p>客户类型：{customerType}</p>
+      <p>当前阶段：<CustomerStageBadge stage={stage} /></p>
+      <p>客户等级：{leadLevel}</p>
       <p>卡点：{analysis.mainBlocker || customer.main_blocker || "其他"}</p>
-      <p>Missing Info：{missingInfo || "-"}</p>
-      <p>Follow-up Date：{followUpDate ? formatDateTime(followUpDate) : "-"}</p>
+      <p>缺失信息：{missingInfo || "-"}</p>
+      <p>跟进日期：{followUpDate ? formatDateTime(followUpDate) : "-"}</p>
       <p className="action-text">{nextAction}</p>
       {analysis.needSupervisorReview === "是" && <p className="review">需主管复核：{analysis.reviewReason || "AI 建议复核"}</p>}
     </>

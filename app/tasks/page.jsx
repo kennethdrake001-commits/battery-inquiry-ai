@@ -55,7 +55,7 @@ export default function TasksPage() {
     <main className="app">
       <header className="hero">
         <div>
-          <p className="eyebrow">Today Follow-up Tasks</p>
+          <p className="eyebrow">今日任务</p>
           <h1>今日跟进任务</h1>
           <p>集中查看今天优先需要处理的客户。</p>
         </div>

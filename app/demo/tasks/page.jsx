@@ -91,23 +91,23 @@ export default function DemoTasksPage() {
     <main className="app">
       <header className="hero">
         <div>
-          <p className="eyebrow">Demo Tasks</p>
+          <p className="eyebrow">演示任务</p>
           <h1>今日跟进任务 Demo</h1>
           <p>只用于测试 UI 和逻辑展示，不会读取或保存真实客户数据。</p>
         </div>
         <nav>
           <Link href="/">客户录入</Link>
-          <Link href="/demo/workflow">Workflow Demo</Link>
+          <Link href="/demo/workflow">流程演示</Link>
           <Link href="/customers">客户列表</Link>
           <Link href="/playbook">有效案例库</Link>
           <Link href="/products">产品知识库</Link>
           <Link href="/system-checker">系统搭配校验器</Link>
           <Link href="/tasks">今日任务</Link>
-          <Link href="/demo/tasks">Demo Tasks</Link>
+          <Link href="/demo/tasks">演示任务</Link>
         </nav>
       </header>
 
-      <div className="auth-card demo-banner">Demo mode, using sample data only.</div>
+      <div className="auth-card demo-banner">演示模式，仅使用示例数据。</div>
 
       <section className="panel">
         <div className="section-title">

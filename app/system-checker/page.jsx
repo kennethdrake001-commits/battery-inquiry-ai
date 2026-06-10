@@ -26,6 +26,25 @@ const scenarioOptions = ["Home Backup", "Residential Solar", "Small Business", "
 const inverterTypeOptions = ["Hybrid", "Off-grid", "On-grid", "Unknown"];
 const yesNoUnknownOptions = ["Yes", "No", "Unknown"];
 const dischargeRateOptions = ["0.5C", "1C", "Unknown"];
+const scenarioLabelMap = {
+  "Home Backup": "家庭备电",
+  "Residential Solar": "户用光伏",
+  "Small Business": "小型商用",
+  Project: "项目",
+  Resale: "转售",
+  Unknown: "待确认"
+};
+const inverterTypeLabelMap = {
+  Hybrid: "混合型",
+  "Off-grid": "离网型",
+  "On-grid": "并网型",
+  Unknown: "待确认"
+};
+const yesNoUnknownLabelMap = {
+  Yes: "是",
+  No: "否",
+  Unknown: "待确认"
+};
 
 function Field({ label, children }) {
   return (
@@ -47,10 +66,10 @@ function round(value) {
 }
 
 function estimateOverallResult(signals) {
-  if (signals.notRecommended) return "Not recommended";
-  if (signals.risky) return "Risky";
-  if (signals.needConfirmation) return "Basically suitable but need confirmation";
-  return "Suitable";
+  if (signals.notRecommended) return "不建议";
+  if (signals.risky) return "有风险";
+  if (signals.needConfirmation) return "基本可行，但需确认";
+  return "适合";
 }
 
 function buildCustomerReply(form, output) {
@@ -250,7 +269,7 @@ export default function SystemCheckerPage() {
     <main className="app">
       <header className="hero">
         <div>
-          <p className="eyebrow">System Compatibility Checker</p>
+          <p className="eyebrow">系统搭配校验器</p>
           <h1>系统搭配校验器</h1>
           <p>用于内部判断客户的电池、逆变器、太阳能板搭配是否合理。</p>
         </div>
@@ -271,7 +290,7 @@ export default function SystemCheckerPage() {
 
       <section className="panel">
         <div className="section-title">
-          <h2>Check Compatibility</h2>
+          <h2>开始校验</h2>
           <span>先录入客户提供的系统参数</span>
         </div>
         <div className="form-grid">
@@ -280,7 +299,7 @@ export default function SystemCheckerPage() {
           </Field>
           <Field label="useScenario 使用场景">
             <select value={form.useScenario} onChange={(event) => update("useScenario", event.target.value)}>
-              {scenarioOptions.map((option) => <option key={option}>{option}</option>)}
+              {scenarioOptions.map((option) => <option key={option}>{scenarioLabelMap[option] || option}</option>)}
             </select>
           </Field>
           <Field label="dailyConsumptionKwh 每日用电量">
@@ -300,7 +319,7 @@ export default function SystemCheckerPage() {
           </Field>
           <Field label="dischargeRate 放电倍率">
             <select value={form.dischargeRate} onChange={(event) => update("dischargeRate", event.target.value)}>
-              {dischargeRateOptions.map((option) => <option key={option}>{option}</option>)}
+              {dischargeRateOptions.map((option) => <option key={option}>{yesNoUnknownLabelMap[option] || option}</option>)}
             </select>
           </Field>
           <Field label="inverterPowerKw 逆变器功率">
@@ -308,12 +327,12 @@ export default function SystemCheckerPage() {
           </Field>
           <Field label="inverterType 逆变器类型">
             <select value={form.inverterType} onChange={(event) => update("inverterType", event.target.value)}>
-              {inverterTypeOptions.map((option) => <option key={option}>{option}</option>)}
+              {inverterTypeOptions.map((option) => <option key={option}>{inverterTypeLabelMap[option] || option}</option>)}
             </select>
           </Field>
           <Field label="hasMppt 是否带 MPPT">
             <select value={form.hasMppt} onChange={(event) => update("hasMppt", event.target.value)}>
-              {yesNoUnknownOptions.map((option) => <option key={option}>{option}</option>)}
+              {yesNoUnknownOptions.map((option) => <option key={option}>{yesNoUnknownLabelMap[option] || option}</option>)}
             </select>
           </Field>
           <Field label="solarPanelPowerKw 太阳能板功率">
@@ -324,7 +343,7 @@ export default function SystemCheckerPage() {
           </Field>
           <Field label="hasHighStartupLoad 是否有高启动负载">
             <select value={form.hasHighStartupLoad} onChange={(event) => update("hasHighStartupLoad", event.target.value)}>
-              {yesNoUnknownOptions.map((option) => <option key={option}>{option}</option>)}
+              {yesNoUnknownOptions.map((option) => <option key={option}>{yesNoUnknownLabelMap[option] || option}</option>)}
             </select>
           </Field>
           <Field label="inverterBrandModel 逆变器品牌型号">
@@ -335,7 +354,7 @@ export default function SystemCheckerPage() {
           </Field>
         </div>
         <div className="actions">
-          <button className="primary" onClick={() => setResult(runCompatibilityCheck(form))}>Check Compatibility</button>
+          <button className="primary" onClick={() => setResult(runCompatibilityCheck(form))}>校验系统搭配</button>
         </div>
       </section>
 
@@ -349,53 +368,53 @@ export default function SystemCheckerPage() {
             <Field label="overallResult">
               <input value={result.overallResult} readOnly />
             </Field>
-            <Field label="batteryRuntimeEstimate">
+            <Field label="电池可用时间估算">
               <textarea rows={4} value={result.batteryRuntimeEstimate} readOnly />
             </Field>
-            <Field label="inverterMatch">
+            <Field label="逆变器匹配判断">
               <textarea rows={4} value={result.inverterMatch} readOnly />
             </Field>
-            <Field label="batteryDischargeMatch">
+            <Field label="电池放电匹配判断">
               <textarea rows={4} value={result.batteryDischargeMatch} readOnly />
             </Field>
-            <Field label="pvMatch">
+            <Field label="光伏匹配判断">
               <textarea rows={4} value={result.pvMatch} readOnly />
             </Field>
-            <Field label="communicationCheck">
+            <Field label="通信兼容判断">
               <textarea rows={4} value={result.communicationCheck} readOnly />
             </Field>
           </div>
 
           <div className="two-col checker-sections">
             <div>
-              <h3>risks</h3>
+              <h3>风险提示</h3>
               <ul className="checker-list">
                 {result.risks.map((item) => <li key={item}>{item}</li>)}
               </ul>
 
-              <h3>mustConfirmQuestions</h3>
+              <h3>必须确认的问题</h3>
               <ul className="checker-list">
                 {result.mustConfirmQuestions.map((item) => <li key={item}>{item}</li>)}
               </ul>
             </div>
             <div>
-              <h3>internalSuggestion</h3>
+              <h3>内部建议</h3>
               <p className="checker-box">{result.internalSuggestion}</p>
 
-              <h3>nextAction</h3>
+              <h3>下一步动作</h3>
               <p className="checker-box">{result.nextAction}</p>
             </div>
           </div>
 
           <div className="reply-panel">
             <div className="section-title">
-              <h2>customerReply</h2>
+              <h2>客户英文回复</h2>
               <div className="actions compact">
-                <button onClick={copyReply}>复制 customerReply</button>
+                <button onClick={copyReply}>复制客户英文回复</button>
               </div>
             </div>
             <textarea rows={6} value={result.customerReply} readOnly />
-            {copied && <p className="notice">已复制 customerReply。</p>}
+            {copied && <p className="notice">已复制客户英文回复。</p>}
           </div>
         </section>
       )}

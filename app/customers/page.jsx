@@ -52,7 +52,7 @@ export default function CustomersPage() {
     <main className="app">
       <header className="hero">
         <div>
-          <p className="eyebrow">Supabase Customers</p>
+          <p className="eyebrow">客户管理</p>
           <h1>客户列表页</h1>
           <p>按 AI 判断的当前阶段展示客户。</p>
         </div>

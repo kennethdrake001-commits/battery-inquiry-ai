@@ -44,8 +44,8 @@ export default function CustomerIntakeForm({
         </Field>
         <Field label="quoted 是否已报价">
           <select value={form.quoted} onChange={(event) => onChange("quoted", event.target.value)}>
-            <option value="no">no</option>
-            <option value="yes">yes</option>
+            <option value="no">否</option>
+            <option value="yes">是</option>
           </select>
         </Field>
         <Field label="currentStatus 当前状态">
