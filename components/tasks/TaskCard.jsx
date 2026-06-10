@@ -1,10 +1,24 @@
 import Link from "next/link";
 import CustomerStageBadge from "../workflow/CustomerStageBadge";
 import LeadLevelBadge from "../workflow/LeadLevelBadge";
+import RecommendedScriptCard from "../workflow/RecommendedScriptCard";
 import { formatDateTime } from "../../lib/followUp";
+import { getRecommendedScript } from "../../lib/scriptTemplates";
 
 export default function TaskCard({ task, href = null }) {
-  const content = (
+  const recommendedScript = getRecommendedScript({
+    nextAction: task.current_next_action,
+    currentNextAction: task.current_next_action,
+    customerType: task.customer_type,
+    stage: task.stage,
+    missingInfo: task.missing_info,
+    shippingTerm: task.shipping_term,
+    quantity: task.quantity,
+    destinationCity: task.destination_city,
+    customerName: task.customer_name
+  });
+
+  const summary = (
     <>
       <div className="card-title">
         <strong>{task.customer_name}</strong>
@@ -21,12 +35,28 @@ export default function TaskCard({ task, href = null }) {
   );
 
   if (!href) {
-    return <article className="task-card">{content}</article>;
+    return (
+      <article className="task-card">
+        {summary}
+        <RecommendedScriptCard
+          scriptTitle={recommendedScript.scriptTitle}
+          scriptText={recommendedScript.scriptText}
+          scriptType={recommendedScript.scriptType}
+        />
+      </article>
+    );
   }
 
   return (
-    <Link className="task-card" href={href}>
-      {content}
-    </Link>
+    <article className="task-card">
+      <Link className="task-card-link" href={href}>
+        {summary}
+      </Link>
+      <RecommendedScriptCard
+        scriptTitle={recommendedScript.scriptTitle}
+        scriptText={recommendedScript.scriptText}
+        scriptType={recommendedScript.scriptType}
+      />
+    </article>
   );
 }

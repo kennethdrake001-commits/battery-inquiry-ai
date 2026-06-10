@@ -4,9 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import CustomerWorkflowCard from "../../../components/workflow/CustomerWorkflowCard";
+import RecommendedScriptCard from "../../../components/workflow/RecommendedScriptCard";
 import { getSupabaseBrowserClient } from "../../../lib/supabaseClient";
 import { dateToFollowUpAt, formatDateTime, parseFollowUpTime } from "../../../lib/followUp";
 import { generateCustomerWorkflow } from "../../../lib/customerWorkflow";
+import { getRecommendedScript } from "../../../lib/scriptTemplates";
 
 const resultOptions = ["客户已回复", "客户未回复", "进入报价", "进入 PI", "成交", "失败", "暂不确定"];
 const playbookEligibleResults = ["客户已回复", "进入报价", "进入 PI", "成交"];
@@ -173,6 +175,20 @@ export default function CustomerDetailPage() {
   const [success, setSuccess] = useState("");
 
   const customerId = params?.id;
+  const recommendedScript = useMemo(() => {
+    if (!customer) return getRecommendedScript({});
+    return getRecommendedScript({
+      nextAction: workflowForm.nextAction,
+      currentNextAction: customer.current_next_action,
+      customerType: workflowForm.customerType,
+      stage: workflowForm.stage,
+      missingInfo: workflowForm.missingInfo,
+      shippingTerm: workflowForm.shippingTerm,
+      quantity: workflowForm.quantity,
+      destinationCity: workflowForm.destinationCity,
+      customerName: customer.customer_name
+    });
+  }, [customer, workflowForm]);
 
   async function loadData() {
     if (!customerId) {
@@ -646,6 +662,17 @@ export default function CustomerDetailPage() {
         onGenerate={generateWorkflowRecommendation}
         actions={<button onClick={saveWorkflow} disabled={isSaving}>Save Workflow</button>}
       />
+      <section className="panel">
+        <div className="section-title">
+          <h2>Recommended Script</h2>
+          <span>根据当前 workflow 自动生成，可直接复制</span>
+        </div>
+        <RecommendedScriptCard
+          scriptTitle={recommendedScript.scriptTitle}
+          scriptText={recommendedScript.scriptText}
+          scriptType={recommendedScript.scriptType}
+        />
+      </section>
 
       <section className="panel">
         <div className="section-title">
