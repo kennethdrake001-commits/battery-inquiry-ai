@@ -383,7 +383,7 @@ export default function HomePage() {
       followUpDate: recommendation.followUpDate || current.followUpDate,
       leadLevel: recommendation.leadLevel || current.leadLevel
     }));
-    setSuccess("已生成规则版下一步动作建议。");
+    setSuccess("已生成下一步动作建议。");
     setError("");
   }
 
@@ -651,6 +651,7 @@ export default function HomePage() {
           <p>2. 再补充你的疑问和已知关键信息。</p>
           <p>3. 点击“分析询盘并生成下一步”，得到内部判断和推荐英文话术。</p>
           <p>4. 确认无误后再保存客户，或复制话术继续跟进。</p>
+          <p>建议分析后保存，但也可以先保存客户，稍后再处理。</p>
         </div>
       </section>
 
@@ -731,7 +732,9 @@ export default function HomePage() {
           <button className="primary" onClick={analyzeCustomer} disabled={isAnalyzing} type="button">
             {isAnalyzing ? "分析中..." : "分析询盘并生成下一步"}
           </button>
-          <button type="button" onClick={generateNextAction}>仅生成规则版下一步动作</button>
+          <button type="button" onClick={saveCustomer} disabled={isSaving}>
+            {isSaving ? "保存中..." : "先保存，稍后分析"}
+          </button>
         </div>
 
         <details style={{ marginTop: 16 }}>
@@ -804,19 +807,13 @@ export default function HomePage() {
 
       {analysis && (
         <section className="panel">
-          <SectionTitle title="保存客户" subtitle="确认判断结果后，再决定保存、发出话术或先存草稿。" />
+          <SectionTitle title="分析结果处理" subtitle="确认无误后，可以先复制英文回复，再保存客户。" />
           <div className="actions">
+            <button onClick={() => navigator.clipboard.writeText(finalReply || analysis.englishReply || "")} type="button">
+              复制英文回复
+            </button>
             <button className="primary" onClick={saveCustomer} disabled={isSaving} type="button">
               {isSaving ? "保存中..." : "保存客户"}
-            </button>
-            <button onClick={() => saveInteraction("sent")} disabled={isSaving} type="button">
-              复制并标记已发送
-            </button>
-            <button onClick={() => saveInteraction("draft")} disabled={isSaving} type="button">
-              仅保存草稿
-            </button>
-            <button onClick={() => saveInteraction("inappropriate")} disabled={isSaving} type="button">
-              话术不合适
             </button>
           </div>
         </section>
@@ -825,10 +822,11 @@ export default function HomePage() {
       {success && savedCustomerId && (
         <section className="panel">
           <SectionTitle title="下一步" subtitle="客户记录已经保存，你可以继续进入后续动作。" />
+          <div className="success">客户已保存</div>
           <div className="actions">
             <Link href={`/customers/${savedCustomerId}`}>查看客户详情</Link>
             <Link href="/tasks">进入今日任务</Link>
-            <button type="button" onClick={resetIntake}>继续录入新客户</button>
+            <button type="button" onClick={resetIntake}>继续录入下一个客户</button>
           </div>
         </section>
       )}
