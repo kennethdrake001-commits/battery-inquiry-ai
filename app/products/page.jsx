@@ -3,7 +3,56 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getSupabaseBrowserClient } from "../../lib/supabaseClient";
-import { emptyProductForm, productFields, productStatusOptions } from "../../lib/options";
+import { emptyProductForm, productStatusOptions } from "../../lib/options";
+
+const basicFields = [
+  ["product_name", "产品名称"],
+  ["model", "型号 / Model"],
+  ["category", "分类 / Category"],
+  ["application", "应用场景 / Application"],
+  ["short_description", "简短描述 / Short Description", "textarea"],
+  ["status", "状态 / Status", "select"]
+];
+
+const technicalFields = [
+  ["voltage", "电压 / Voltage"],
+  ["capacity_ah", "容量 Ah"],
+  ["energy_kwh", "能量 kWh"],
+  ["cell_type", "电芯类型 / Cell Type"],
+  ["bms", "BMS"],
+  ["cycle_life", "循环寿命 / Cycle Life"],
+  ["max_charge_current", "最大充电电流 / Max Charge Current"],
+  ["max_discharge_current", "最大放电电流 / Max Discharge Current"],
+  ["communication", "通信 / Communication"],
+  ["parallel_support", "并联支持 / Parallel Support"],
+  ["dimensions", "尺寸 / Dimensions"],
+  ["weight", "重量 / Weight"],
+  ["ip_rating", "IP 等级 / IP Rating"],
+  ["warranty", "质保 / Warranty"],
+  ["certifications", "认证 / Certifications", "textarea"],
+  ["compatible_inverters", "兼容逆变器 / Compatible Inverters", "textarea"]
+];
+
+const priceFields = [
+  ["currency", "币种 / Currency"],
+  ["base_price", "基础价格 / Base Price"],
+  ["price_term", "价格条款 / Price Term"],
+  ["port", "港口 / Port"],
+  ["moq", "MOQ"],
+  ["price_note", "价格备注 / Price Note", "textarea"],
+  ["lead_time", "交期 / Lead Time"]
+];
+
+const assetGroups = [
+  { type: "main_image", label: "主图 / Main Product Image", accept: "image/*", multiple: false },
+  { type: "gallery_image", label: "图库图片 / Gallery Images", accept: "image/*", multiple: true },
+  { type: "datasheet", label: "Datasheet", accept: ".pdf,.doc,.docx,.xls,.xlsx,.zip,.rar", multiple: false },
+  { type: "user_manual", label: "User Manual", accept: ".pdf,.doc,.docx,.zip,.rar", multiple: false },
+  { type: "certificate", label: "Certificate", accept: ".pdf,.jpg,.jpeg,.png,.zip,.rar", multiple: false },
+  { type: "test_report", label: "Test Report", accept: ".pdf,.doc,.docx,.zip,.rar", multiple: false },
+  { type: "product_catalog", label: "Product Catalog", accept: ".pdf,.doc,.docx,.xls,.xlsx,.zip,.rar", multiple: false },
+  { type: "installation_guide", label: "Installation Guide", accept: ".pdf,.doc,.docx,.zip,.rar", multiple: false }
+];
 
 function Field({ label, children }) {
   return (
@@ -19,18 +68,107 @@ function formatTime(value) {
   return new Date(value).toLocaleString();
 }
 
-function ProductCard({ product, onSelect, selected }) {
+function numberOrNull(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function bucketForAssetType(assetType) {
+  return ["main_image", "gallery_image"].includes(assetType) ? "product-images" : "product-files";
+}
+
+function isImageAsset(asset) {
+  return ["main_image", "gallery_image"].includes(asset.asset_type) || String(asset.file_type || "").startsWith("image/");
+}
+
+function normalizeProductToForm(product) {
+  return {
+    ...emptyProductForm,
+    ...product,
+    model: product.model || product.common_name || "",
+    energy_kwh: product.energy_kwh ?? product.capacity_kwh ?? "",
+    cell_type: product.cell_type || product.battery_type || "",
+    bms: product.bms || product.bms_current || "",
+    category: product.category || product.installation_type || "",
+    application: product.application || product.suitable_scenarios || "",
+    base_price: product.base_price ?? product.fob_price ?? "",
+    port: product.port || product.fob_port || "",
+    price_note: product.price_note || product.risk_notes || "",
+    price_term: product.price_term || "FOB",
+    currency: product.currency || "USD"
+  };
+}
+
+function buildProductPayload(form, userId) {
+  const energyKwh = numberOrNull(form.energy_kwh);
+  const capacityAh = numberOrNull(form.capacity_ah);
+  const basePrice = numberOrNull(form.base_price);
+
+  return {
+    product_name: form.product_name,
+    model: form.model,
+    category: form.category,
+    application: form.application,
+    short_description: form.short_description,
+    status: form.status,
+    voltage: form.voltage,
+    capacity_ah: capacityAh,
+    energy_kwh: energyKwh,
+    cell_type: form.cell_type,
+    bms: form.bms,
+    cycle_life: form.cycle_life,
+    max_charge_current: form.max_charge_current,
+    max_discharge_current: form.max_discharge_current,
+    communication: form.communication,
+    parallel_support: form.parallel_support,
+    dimensions: form.dimensions,
+    weight: form.weight,
+    ip_rating: form.ip_rating,
+    warranty: form.warranty,
+    certifications: form.certifications,
+    compatible_inverters: form.compatible_inverters,
+    currency: form.currency,
+    base_price: basePrice,
+    price_term: form.price_term,
+    port: form.port,
+    moq: form.moq,
+    price_note: form.price_note,
+    lead_time: form.lead_time,
+    common_name: form.model || form.product_name || "",
+    capacity_kwh: energyKwh,
+    battery_type: form.cell_type,
+    installation_type: form.category,
+    bms_current: form.bms,
+    fob_price: form.price_term === "FOB" && basePrice !== null ? String(basePrice) : null,
+    fob_port: form.port || null,
+    suitable_customers: form.category || "",
+    suitable_scenarios: form.application || "",
+    risk_notes: form.price_note || "",
+    created_by: userId,
+    updated_at: new Date().toISOString()
+  };
+}
+
+function ProductCard({ product, onSelect, selected, mainImageUrl }) {
   return (
     <button className={`product-card ${selected ? "selected-card" : ""}`} onClick={() => onSelect(product)} type="button">
+      {mainImageUrl && (
+        <img
+          src={mainImageUrl}
+          alt={product.product_name || "product"}
+          style={{ width: "100%", height: 160, objectFit: "cover", borderRadius: 12, marginBottom: 12 }}
+        />
+      )}
       <div className="card-title">
         <strong>{product.product_name || "未命名产品"}</strong>
         <span>{product.status || "-"}</span>
       </div>
-      <p>{product.common_name || "-"}</p>
-      <p>{product.capacity_kwh ?? "-"} kWh · {product.voltage || "-"}</p>
-      <p>{product.installation_type || "-"}</p>
-      <p>FOB：{product.fob_price || "-"}</p>
-      <p>{product.suitable_customers || "-"}</p>
+      <p>{product.model || product.common_name || "-"}</p>
+      <p>{product.energy_kwh ?? product.capacity_kwh ?? "-"} kWh · {product.voltage || "-"}</p>
+      <p>{product.category || product.installation_type || "-"}</p>
+      <p>{product.currency || "USD"} {product.base_price ?? product.fob_price ?? "-"}</p>
+      <p>{product.application || product.suitable_scenarios || "-"}</p>
     </button>
   );
 }
@@ -41,12 +179,42 @@ export default function ProductsPage() {
   const [products, setProducts] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [form, setForm] = useState(emptyProductForm);
+  const [assets, setAssets] = useState([]);
+  const [uploadQueue, setUploadQueue] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingType, setUploadingType] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  async function loadProducts() {
+  const productImages = assets.filter(isImageAsset);
+  const mainImage = productImages.find((asset) => asset.asset_type === "main_image") || productImages[0] || null;
+  const galleryImages = productImages.filter((asset) => asset.asset_type === "gallery_image");
+  const fileAssets = assets.filter((asset) => !isImageAsset(asset));
+  const productImageMap = useMemo(() => {
+    const map = {};
+    for (const asset of assets) {
+      if (asset.product_id && isImageAsset(asset) && !map[asset.product_id]) {
+        map[asset.product_id] = asset.signed_url || asset.file_url || "";
+      }
+    }
+    return map;
+  }, [assets]);
+
+  async function hydrateAssetUrls(rows) {
+    if (!supabase || !rows?.length) return [];
+    const resolved = await Promise.all(rows.map(async (item) => {
+      const bucket = bucketForAssetType(item.asset_type);
+      const { data } = await supabase.storage.from(bucket).createSignedUrl(item.storage_path, 3600);
+      return {
+        ...item,
+        signed_url: data?.signedUrl || item.file_url || ""
+      };
+    }));
+    return resolved;
+  }
+
+  async function loadProducts(preferredId = null) {
     if (!supabase) {
       setError("请先配置 Supabase 环境变量。");
       setLoading(false);
@@ -67,18 +235,56 @@ export default function ProductsPage() {
 
     if (queryError) {
       setError(queryError.message);
-    } else {
-      setProducts(rows || []);
-      if (rows?.length && !selectedProduct) {
-        setSelectedProduct(rows[0]);
-      }
+      setLoading(false);
+      return;
+    }
+
+    setProducts(rows || []);
+    const nextSelected =
+      (preferredId && rows?.find((item) => item.id === preferredId))
+      || (selectedProduct?.id && rows?.find((item) => item.id === selectedProduct.id))
+      || rows?.[0]
+      || null;
+    setSelectedProduct(nextSelected || null);
+    if (nextSelected) {
+      setForm(normalizeProductToForm(nextSelected));
     }
     setLoading(false);
+  }
+
+  async function loadAssets(productId) {
+    if (!supabase || !session?.user || !productId) {
+      setAssets([]);
+      return;
+    }
+
+    const { data: rows, error: queryError } = await supabase
+      .from("product_assets")
+      .select("*")
+      .eq("product_id", productId)
+      .order("created_at", { ascending: false });
+
+    if (queryError) {
+      setAssets([]);
+      setError(queryError.message);
+      return;
+    }
+
+    const resolved = await hydrateAssetUrls(rows || []);
+    setAssets(resolved);
   }
 
   useEffect(() => {
     loadProducts();
   }, [supabase]);
+
+  useEffect(() => {
+    if (selectedProduct?.id) {
+      loadAssets(selectedProduct.id);
+    } else {
+      setAssets([]);
+    }
+  }, [selectedProduct?.id, supabase, session?.user?.id]);
 
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -87,23 +293,21 @@ export default function ProductsPage() {
   function startNewProduct() {
     setSelectedProduct(null);
     setForm(emptyProductForm);
+    setAssets([]);
+    setUploadQueue({});
     setError("");
     setSuccess("");
   }
 
   function startEditProduct(product) {
     setSelectedProduct(product);
-    const nextForm = { ...emptyProductForm };
-    Object.keys(nextForm).forEach((key) => {
-      nextForm[key] = product[key] ?? nextForm[key];
-    });
-    setForm(nextForm);
+    setForm(normalizeProductToForm(product));
     setError("");
     setSuccess("");
   }
 
   async function saveProduct() {
-    if (!session) {
+    if (!session?.user) {
       setError("请先登录后再管理产品。");
       return;
     }
@@ -112,19 +316,12 @@ export default function ProductsPage() {
     setError("");
     setSuccess("");
 
-    const payload = {
-      ...form,
-      capacity_kwh: form.capacity_kwh === "" ? null : Number(form.capacity_kwh),
-      capacity_ah: form.capacity_ah === "" ? null : Number(form.capacity_ah),
-      created_by: session.user.id,
-      updated_at: new Date().toISOString()
-    };
-
+    const payload = buildProductPayload(form, session.user.id);
     const query = selectedProduct
-      ? supabase.from("products").update(payload).eq("id", selectedProduct.id)
-      : supabase.from("products").insert(payload);
+      ? supabase.from("products").update(payload).eq("id", selectedProduct.id).select("*").single()
+      : supabase.from("products").insert(payload).select("*").single();
 
-    const { error: saveError } = await query;
+    const { data: savedProduct, error: saveError } = await query;
     setSaving(false);
 
     if (saveError) {
@@ -132,11 +329,132 @@ export default function ProductsPage() {
       return;
     }
 
+    setSelectedProduct(savedProduct);
+    setForm(normalizeProductToForm(savedProduct));
     setSuccess(selectedProduct ? "产品已更新。" : "产品已新增。");
-    await loadProducts();
-    if (!selectedProduct) {
-      setForm(emptyProductForm);
+    await loadProducts(savedProduct.id);
+  }
+
+  function queueUpload(assetType, files) {
+    setUploadQueue((current) => ({ ...current, [assetType]: Array.from(files || []) }));
+  }
+
+  async function uploadAssetGroup(config) {
+    if (!session?.user || !selectedProduct?.id) {
+      setError("请先保存产品，再上传图片或文件。");
+      return;
     }
+
+    const files = uploadQueue[config.type] || [];
+    if (!files.length) {
+      setError("请先选择要上传的文件。");
+      return;
+    }
+
+    setUploadingType(config.type);
+    setError("");
+    setSuccess("");
+
+    try {
+      for (const file of files) {
+        const safeName = file.name.replace(/\s+/g, "-");
+        const storagePath = `${session.user.id}/${selectedProduct.id}/${config.type}/${Date.now()}-${safeName}`;
+        const bucket = bucketForAssetType(config.type);
+
+        const { error: uploadError } = await supabase.storage.from(bucket).upload(storagePath, file, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: file.type || undefined
+        });
+
+        if (uploadError) throw uploadError;
+
+        const { data: publicData } = supabase.storage.from(bucket).getPublicUrl(storagePath);
+        const { error: assetError } = await supabase.from("product_assets").insert({
+          product_id: selectedProduct.id,
+          asset_type: config.type,
+          file_type: file.type || "application/octet-stream",
+          file_name: file.name,
+          file_url: publicData?.publicUrl || "",
+          storage_path: storagePath
+        });
+
+        if (assetError) throw assetError;
+      }
+
+      setUploadQueue((current) => ({ ...current, [config.type]: [] }));
+      setSuccess(`${config.label} 上传成功。`);
+      await loadAssets(selectedProduct.id);
+    } catch (uploadError) {
+      setError(uploadError.message || "上传失败，请检查 Storage 配置。");
+    } finally {
+      setUploadingType("");
+    }
+  }
+
+  async function downloadAsset(asset) {
+    const bucket = bucketForAssetType(asset.asset_type);
+    const existingUrl = asset.signed_url || asset.file_url;
+    if (existingUrl) {
+      window.open(existingUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    const { data, error: signedUrlError } = await supabase.storage.from(bucket).createSignedUrl(asset.storage_path, 3600);
+    if (signedUrlError) {
+      setError(signedUrlError.message);
+      return;
+    }
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  }
+
+  async function deleteAsset(asset) {
+    if (!session?.user) {
+      setError("请先登录后再删除文件。");
+      return;
+    }
+
+    const bucket = bucketForAssetType(asset.asset_type);
+    const { error: storageError } = await supabase.storage.from(bucket).remove([asset.storage_path]);
+    if (storageError) {
+      setError(storageError.message);
+      return;
+    }
+
+    const { error: deleteError } = await supabase.from("product_assets").delete().eq("id", asset.id);
+    if (deleteError) {
+      setError(deleteError.message);
+      return;
+    }
+
+    setSuccess("文件已删除。");
+    await loadAssets(selectedProduct.id);
+  }
+
+  function renderField([key, label, type]) {
+    if (type === "select") {
+      return (
+        <Field key={key} label={label}>
+          <select value={form[key]} onChange={(event) => updateForm(key, event.target.value)}>
+            {productStatusOptions.map((option) => <option key={option}>{option}</option>)}
+          </select>
+        </Field>
+      );
+    }
+
+    if (type === "textarea") {
+      return (
+        <Field key={key} label={label}>
+          <textarea rows={3} value={form[key]} onChange={(event) => updateForm(key, event.target.value)} />
+        </Field>
+      );
+    }
+
+    return (
+      <Field key={key} label={label}>
+        <input value={form[key]} onChange={(event) => updateForm(key, event.target.value)} />
+      </Field>
+    );
   }
 
   return (
@@ -145,7 +463,7 @@ export default function ProductsPage() {
         <div>
           <p className="eyebrow">Product Knowledge</p>
           <h1>产品知识库</h1>
-          <p>先维护最小版产品资料，供 AI 分析客户时参考，避免乱编参数。</p>
+          <p>维护产品参数、价格、图片和文件资料，供业务团队和 AI 安全调用。</p>
         </div>
         <nav>
           <Link href="/">客户录入</Link>
@@ -178,6 +496,7 @@ export default function ProductsPage() {
                   product={product}
                   selected={selectedProduct?.id === product.id}
                   onSelect={startEditProduct}
+                  mainImageUrl={productImageMap[product.id]}
                 />
               ))}
               {products.length === 0 && <p className="empty">暂无产品</p>}
@@ -189,21 +508,22 @@ export default function ProductsPage() {
               <h2>{selectedProduct ? "编辑产品" : "新增产品"}</h2>
               <span>{selectedProduct ? `更新时间：${formatTime(selectedProduct.updated_at)}` : "填写产品资料"}</span>
             </div>
+
+            <h3>基础信息</h3>
             <div className="form-grid">
-              {productFields.map(([key, label]) => (
-                <Field key={key} label={label}>
-                  {key === "status" ? (
-                    <select value={form[key]} onChange={(event) => updateForm(key, event.target.value)}>
-                      {productStatusOptions.map((option) => <option key={option}>{option}</option>)}
-                    </select>
-                  ) : ["suitable_customers", "suitable_scenarios", "risk_notes"].includes(key) ? (
-                    <textarea rows={3} value={form[key]} onChange={(event) => updateForm(key, event.target.value)} />
-                  ) : (
-                    <input value={form[key]} onChange={(event) => updateForm(key, event.target.value)} />
-                  )}
-                </Field>
-              ))}
+              {basicFields.map(renderField)}
             </div>
+
+            <h3>技术参数</h3>
+            <div className="form-grid">
+              {technicalFields.map(renderField)}
+            </div>
+
+            <h3>价格信息</h3>
+            <div className="form-grid">
+              {priceFields.map(renderField)}
+            </div>
+
             <div className="actions">
               <button className="primary" onClick={saveProduct} disabled={saving}>
                 {saving ? "保存中..." : selectedProduct ? "保存修改" : "创建产品"}
@@ -212,21 +532,138 @@ export default function ProductsPage() {
             </div>
           </section>
 
-          {selectedProduct && (
-            <section className="panel">
-              <div className="section-title">
-                <h2>产品详情</h2>
-                <span>{selectedProduct.product_name || "-"}</span>
-              </div>
-              <div className="detail-grid">
-                {productFields.map(([key, label]) => (
-                  <div className="detail-item" key={key}>
-                    <strong>{label}</strong>
-                    <p>{selectedProduct[key] ?? "待确认"}</p>
+          <section className="panel">
+            <div className="section-title">
+              <h2>上传图片与文件</h2>
+              <span>{selectedProduct ? "上传后会挂到当前产品名下" : "请先保存产品，再上传文件"}</span>
+            </div>
+            <div className="detail-grid">
+              {assetGroups.map((group) => (
+                <div className="detail-item" key={group.type}>
+                  <strong>{group.label}</strong>
+                  <input
+                    type="file"
+                    accept={group.accept}
+                    multiple={group.multiple}
+                    onChange={(event) => queueUpload(group.type, event.target.files)}
+                    disabled={!selectedProduct}
+                  />
+                  <div className="actions compact">
+                    <button
+                      onClick={() => uploadAssetGroup(group)}
+                      disabled={!selectedProduct || uploadingType === group.type}
+                      type="button"
+                    >
+                      {uploadingType === group.type ? "上传中..." : "上传"}
+                    </button>
                   </div>
-                ))}
-              </div>
-            </section>
+                  <p className="muted">
+                    {(uploadQueue[group.type] || []).length
+                      ? `已选择 ${(uploadQueue[group.type] || []).length} 个文件`
+                      : "未选择文件"}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {selectedProduct && (
+            <>
+              <section className="panel">
+                <div className="section-title">
+                  <h2>产品详情</h2>
+                  <span>{selectedProduct.product_name || "-"}</span>
+                </div>
+                <div className="detail-grid">
+                  <div className="detail-item">
+                    <strong>产品名称</strong>
+                    <p>{selectedProduct.product_name || "待确认"}</p>
+                  </div>
+                  <div className="detail-item">
+                    <strong>型号</strong>
+                    <p>{selectedProduct.model || "待确认"}</p>
+                  </div>
+                  <div className="detail-item">
+                    <strong>关键规格</strong>
+                    <p>{selectedProduct.voltage || "待确认"} / {selectedProduct.energy_kwh ?? selectedProduct.capacity_kwh ?? "待确认"} kWh / {selectedProduct.capacity_ah ?? "待确认"} Ah</p>
+                  </div>
+                  <div className="detail-item">
+                    <strong>电芯 + BMS</strong>
+                    <p>{selectedProduct.cell_type || "待确认"} / {selectedProduct.bms || "待确认"}</p>
+                  </div>
+                  <div className="detail-item">
+                    <strong>价格</strong>
+                    <p>{selectedProduct.currency || "USD"} {selectedProduct.base_price ?? "待确认"} · {selectedProduct.price_term || "待确认"} · {selectedProduct.port || "待确认"}</p>
+                  </div>
+                  <div className="detail-item">
+                    <strong>适合场景</strong>
+                    <p>{selectedProduct.application || "待确认"}</p>
+                  </div>
+                  <div className="detail-item">
+                    <strong>认证</strong>
+                    <p>{selectedProduct.certifications || "待确认"}</p>
+                  </div>
+                  <div className="detail-item">
+                    <strong>兼容逆变器</strong>
+                    <p>{selectedProduct.compatible_inverters || "待确认"}</p>
+                  </div>
+                </div>
+              </section>
+
+              <section className="panel">
+                <div className="section-title">
+                  <h2>产品图片</h2>
+                  <span>{productImages.length} 张</span>
+                </div>
+                {mainImage && (
+                  <img
+                    src={mainImage.signed_url || mainImage.file_url}
+                    alt={selectedProduct.product_name || "product"}
+                    style={{ width: "100%", maxHeight: 420, objectFit: "cover", borderRadius: 16, marginBottom: 16 }}
+                  />
+                )}
+                <div className="product-grid">
+                  {galleryImages.map((asset) => (
+                    <article className="detail-item" key={asset.id}>
+                      <img
+                        src={asset.signed_url || asset.file_url}
+                        alt={asset.file_name}
+                        style={{ width: "100%", height: 160, objectFit: "cover", borderRadius: 12, marginBottom: 12 }}
+                      />
+                      <strong>{asset.file_name}</strong>
+                      <p>{asset.file_type || "-"}</p>
+                      <div className="actions compact">
+                        <button type="button" onClick={() => downloadAsset(asset)}>Download</button>
+                        <button type="button" onClick={() => deleteAsset(asset)}>Delete</button>
+                      </div>
+                    </article>
+                  ))}
+                  {!productImages.length && <p className="empty">暂无产品图片</p>}
+                </div>
+              </section>
+
+              <section className="panel">
+                <div className="section-title">
+                  <h2>可下载文件</h2>
+                  <span>{fileAssets.length} 个文件</span>
+                </div>
+                <div className="detail-grid">
+                  {fileAssets.map((asset) => (
+                    <div className="detail-item" key={asset.id}>
+                      <strong>{asset.file_name}</strong>
+                      <p>类型：{asset.asset_type}</p>
+                      <p>文件格式：{asset.file_type || "-"}</p>
+                      <p>上传时间：{formatTime(asset.created_at)}</p>
+                      <div className="actions compact">
+                        <button type="button" onClick={() => downloadAsset(asset)}>Download</button>
+                        <button type="button" onClick={() => deleteAsset(asset)}>Delete</button>
+                      </div>
+                    </div>
+                  ))}
+                  {!fileAssets.length && <p className="empty">暂无可下载文件</p>}
+                </div>
+              </section>
+            </>
           )}
         </>
       )}
