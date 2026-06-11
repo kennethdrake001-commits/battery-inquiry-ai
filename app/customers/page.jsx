@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import AppNav from "../../components/layout/AppNav";
+import { formatNextActionForDisplay } from "../../lib/displayText";
 import { getSupabaseBrowserClient } from "../../lib/supabaseClient";
 import {
   getCustomerName,
@@ -27,7 +28,8 @@ const emptyFilters = {
   source: "",
   leadLevel: "",
   status: "",
-  partnerCandidate: ""
+  partnerCandidate: "",
+  showArchived: "否"
 };
 
 export default function CustomersPage() {
@@ -37,6 +39,7 @@ export default function CustomersPage() {
   const [filters, setFilters] = useState(emptyFilters);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   useEffect(() => {
     async function init() {
@@ -53,21 +56,28 @@ export default function CustomersPage() {
         return;
       }
 
-      const { data: rows, error: queryError } = await supabase
-        .from("customers")
-        .select("*")
-        .order("updated_at", { ascending: false });
-
-      if (queryError) {
-        setError(queryError.message);
-      } else {
-        setCustomers(rows || []);
-      }
+      await loadCustomers();
       setLoading(false);
     }
 
     init();
   }, [supabase]);
+
+  async function loadCustomers() {
+    if (!supabase) return;
+
+    const { data: rows, error: queryError } = await supabase
+      .from("customers")
+      .select("*")
+      .order("updated_at", { ascending: false });
+
+    if (queryError) {
+      setError(queryError.message);
+      return;
+    }
+
+    setCustomers(rows || []);
+  }
 
   const filteredCustomers = useMemo(() => {
     return customers.filter((customer) => {
@@ -77,6 +87,11 @@ export default function CustomersPage() {
       const level = getLeadLevel(customer);
       const status = getStageLabel(getStageValue(customer));
       const partnerCandidate = isPartnerCandidate(customer);
+      const isArchived = customer.current_status === "归档" || customer.stage === "Archived";
+
+      if (filters.showArchived !== "是" && isArchived) {
+        return false;
+      }
 
       return (!filters.country || country === filters.country)
         && (!filters.customerType || type === filters.customerType)
@@ -90,6 +105,59 @@ export default function CustomersPage() {
 
   function updateFilter(field, value) {
     setFilters((current) => ({ ...current, [field]: value }));
+  }
+
+  async function archiveCustomer(customer) {
+    setError("");
+    setNotice("");
+
+    const confirmed = window.confirm("确定归档这个客户吗？归档后默认不再显示在客户列表中。");
+    if (!confirmed) return;
+
+    const { error: archiveError } = await supabase
+      .from("customers")
+      .update({
+        current_status: "归档",
+        stage: "Archived",
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", customer.id);
+
+    if (archiveError) {
+      setError(`归档失败：${archiveError.message}`);
+      return;
+    }
+
+    await loadCustomers();
+    setNotice("客户已归档");
+  }
+
+  async function deleteCustomer(customer) {
+    setError("");
+    setNotice("");
+
+    const confirmed = window.confirm("确定删除这个客户吗？删除后不可恢复。");
+    if (!confirmed) return;
+
+    const { error: deleteError } = await supabase
+      .from("customers")
+      .delete()
+      .eq("id", customer.id);
+
+    if (deleteError) {
+      const message = deleteError.message || "未知错误";
+      if (
+        /foreign key|violates foreign key constraint|constraint/i.test(message)
+      ) {
+        setError(`删除失败：该客户存在关联记录，请先删除或归档。原始错误：${message}`);
+      } else {
+        setError(`删除失败：${message}`);
+      }
+      return;
+    }
+
+    await loadCustomers();
+    setNotice("客户已删除");
   }
 
   return (
@@ -107,6 +175,7 @@ export default function CustomersPage() {
 
       {loading && <section className="panel">加载客户中...</section>}
       {error && <div className="error">{error}</div>}
+      {notice && <div className="success">{notice}</div>}
 
       {!loading && session && (
         <>
@@ -161,6 +230,13 @@ export default function CustomersPage() {
                   <option value="否">否</option>
                 </select>
               </label>
+              <label className="field">
+                <span>显示归档客户</span>
+                <select value={filters.showArchived} onChange={(event) => updateFilter("showArchived", event.target.value)}>
+                  <option value="否">否</option>
+                  <option value="是">是</option>
+                </select>
+              </label>
             </div>
           </section>
 
@@ -181,7 +257,7 @@ export default function CustomersPage() {
                     <th>当前状态</th>
                     <th>下一步动作</th>
                     <th>合作商候选</th>
-                    <th>查看</th>
+                    <th>操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -193,15 +269,21 @@ export default function CustomersPage() {
                       <td><span className="soft-badge">{getSourceLabel(customer.source)}</span></td>
                       <td><span className={`level level-${getLeadLevel(customer)}`}>{getLeadLevel(customer)}</span></td>
                       <td>{getStageLabel(getStageValue(customer))}</td>
-                      <td className="truncate-cell">{getNextAction(customer)}</td>
+                      <td className="truncate-cell">{formatNextActionForDisplay(customer.next_action || customer.current_next_action || getNextAction(customer))}</td>
                       <td>{isPartnerCandidate(customer) ? "是" : "否"}</td>
-                      <td><Link href={`/customers/${customer.id}`}>查看</Link></td>
+                      <td>
+                        <div className="actions compact">
+                          <Link href={`/customers/${customer.id}`}>查看详情</Link>
+                          <button type="button" onClick={() => archiveCustomer(customer)}>归档</button>
+                          <button type="button" onClick={() => deleteCustomer(customer)}>删除</button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            {filteredCustomers.length === 0 && <p className="empty">暂无符合条件的客户</p>}
+            {filteredCustomers.length === 0 && <p className="empty">暂无客户</p>}
           </section>
         </>
       )}
