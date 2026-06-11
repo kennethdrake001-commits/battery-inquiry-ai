@@ -128,6 +128,16 @@ function isImageAsset(asset) {
   return ["main_image", "gallery_image"].includes(normalizeAssetType(asset.asset_type)) || String(asset.file_type || "").startsWith("image/");
 }
 
+function isIgnorableStorageRemoveError(message) {
+  const normalized = String(message || "").toLowerCase();
+  return (
+    normalized.includes("not found")
+    || normalized.includes("no such object")
+    || normalized.includes("object not found")
+    || normalized.includes("the resource was not found")
+  );
+}
+
 function normalizeProductToForm(product) {
   return {
     ...emptyProductForm,
@@ -275,8 +285,8 @@ export default function ProductsPage() {
     return resolved;
   }
 
-  async function loadAssetsForProducts(productRows) {
-    if (!supabase || !session?.user || !productRows?.length) {
+  async function loadAssetsForProducts(productRows, activeSession = session) {
+    if (!supabase || !activeSession?.user || !productRows?.length) {
       setAssetsByProduct({});
       setCoverImageMap({});
       return;
@@ -319,8 +329,9 @@ export default function ProductsPage() {
     }
 
     const { data } = await supabase.auth.getSession();
-    setSession(data.session);
-    if (!data.session) {
+    const activeSession = data.session;
+    setSession(activeSession);
+    if (!activeSession) {
       setLoading(false);
       return;
     }
@@ -346,12 +357,12 @@ export default function ProductsPage() {
     if (nextSelected) {
       setForm(normalizeProductToForm(nextSelected));
     }
-    await loadAssetsForProducts(rows || []);
+    await loadAssetsForProducts(rows || [], activeSession);
     setLoading(false);
   }
 
-  async function loadAssets(productId) {
-    if (!supabase || !session?.user || !productId) {
+  async function loadAssets(productId, activeSession = session) {
+    if (!supabase || !activeSession?.user || !productId) {
       setAssetsByProduct((current) => ({ ...current, [productId]: [] }));
       return;
     }
@@ -528,7 +539,12 @@ export default function ProductsPage() {
           });
 
           if (assetError) {
-            failedMessages.push(`${file.name}：product_assets 记录写入失败：${assetError.message || "未知错误"}`);
+            const { error: cleanupError } = await supabase.storage.from(bucket).remove([storagePath]);
+            if (cleanupError && !isIgnorableStorageRemoveError(cleanupError.message)) {
+              failedMessages.push(`${file.name}：文件已上传到 Storage，但 product_assets 记录写入失败：${assetError.message || "未知错误"}；孤儿文件清理失败：${cleanupError.message}`);
+            } else {
+              failedMessages.push(`${file.name}：文件已上传到 Storage，但 product_assets 记录写入失败：${assetError.message || "未知错误"}`);
+            }
             continue;
           }
           successCount += 1;
@@ -600,9 +616,11 @@ export default function ProductsPage() {
       return;
     }
 
+    clearProductSectionMessages(asset.product_id, [`${assetType}Error`, `${assetType}Success`]);
     const bucket = bucketForAssetType(assetType);
     const { error: storageError } = await supabase.storage.from(bucket).remove([asset.storage_path]);
-    if (storageError) {
+    const storageMissing = storageError && isIgnorableStorageRemoveError(storageError.message);
+    if (storageError && !storageMissing) {
       setProductMessage(asset.product_id, `${assetType}Error`, storageError.message);
       setError(storageError.message);
       return;
@@ -615,7 +633,11 @@ export default function ProductsPage() {
       return;
     }
 
-    setProductMessage(asset.product_id, `${assetType}Success`, "文件已删除。");
+    setProductMessage(
+      asset.product_id,
+      `${assetType}Success`,
+      storageMissing ? "Storage 文件不存在，已删除产品资料记录。" : "文件已删除。"
+    );
     await loadAssets(asset.product_id);
   }
 
