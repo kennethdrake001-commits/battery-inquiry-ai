@@ -233,7 +233,6 @@ export default function HomePage() {
             <div className="section-title">
               <h2>今日行动列表</h2>
               <div className="actions compact">
-                <Link className="primary" href="/customers/new">新增客户</Link>
                 <Link href="/tasks">查看全部任务</Link>
               </div>
             </div>
