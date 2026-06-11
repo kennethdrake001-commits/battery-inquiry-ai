@@ -52,6 +52,59 @@ function formatTime(value) {
   return new Date(value).toLocaleString();
 }
 
+function formatDateOnly(value) {
+  if (!value) return "待安排";
+  const text = `${value}`.trim();
+  if (!text) return "待安排";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return text;
+
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function isProspectingCustomer(customer) {
+  return customer?.source === "主动开发"
+    || customer?.stage === "Prospecting";
+}
+
+function formatProspectingStageDisplay(customer, fallbackStage) {
+  if (isProspectingCustomer(customer)) {
+    return "主动开发中";
+  }
+  return fallbackStage;
+}
+
+function formatProspectingStatusDisplay(customer, fallbackStatus) {
+  const status = customer?.current_status || "";
+  if ([
+    "未联系",
+    "已发第一封",
+    "第一次跟进",
+    "第二次跟进",
+    "已回复",
+    "有兴趣",
+    "不合适",
+    "已转正式客户"
+  ].includes(status)) {
+    return status;
+  }
+  return fallbackStatus;
+}
+
+function formatProspectingActionDisplay(action) {
+  if (!action) return "暂无动作";
+  const text = `${action}`.trim();
+  if (text === "发送首封开发信") return "发送首封开发信";
+  if (text === "第一次跟进") return "第一次跟进";
+  if (text === "第二次跟进") return "第二次跟进";
+  return formatNextActionForDisplay(text);
+}
+
 const emptyPlaybookForm = {
   scene_name: "",
   customer_type: "",
@@ -647,10 +700,12 @@ export default function CustomerDetailPage() {
   if (loading) return <main className="app"><section className="panel">加载中...</section></main>;
 
   const currentStage = getStageLabel(getStageValue(customer || {}));
+  const displayStage = formatProspectingStageDisplay(customer || {}, currentStage);
+  const displayStatus = formatProspectingStatusDisplay(customer || {}, currentStage);
   const currentType = getCustomerTypeLabel(getCustomerTypeValue(customer || {}));
   const currentLeadLevel = getLeadLevel(customer || {});
   const currentAction = workflowForm.nextAction || getNextAction(customer || {});
-  const localizedCurrentAction = formatNextActionForDisplay(currentAction);
+  const localizedCurrentAction = formatProspectingActionDisplay(currentAction);
   const suggestedMaterials = [
     currentType.includes("安装商") ? "电池规格书、安装照片、兼容性说明" : null,
     currentType.includes("经销") ? "产品目录、主推型号、渠道供货说明" : null,
@@ -737,9 +792,10 @@ export default function CustomerDetailPage() {
               <div className="detail-item"><strong>客户类型</strong><p>{currentType}</p></div>
               <div className="detail-item"><strong>来源</strong><p>{customer?.source || "待补充"}</p></div>
               <div className="detail-item"><strong>客户评分 / 等级</strong><p>{customer?.latest_analysis?.customerScore || "-"} / {currentLeadLevel}</p></div>
-              <div className="detail-item"><strong>当前状态</strong><p>{currentStage}</p></div>
+              <div className="detail-item"><strong>当前阶段</strong><p>{displayStage}</p></div>
+              <div className="detail-item"><strong>当前状态</strong><p>{displayStatus}</p></div>
               <div className="detail-item"><strong>下一步建议</strong><p>{localizedCurrentAction}</p></div>
-              <div className="detail-item"><strong>下一步任务</strong><p>{workflowForm.followUpDate || customer?.next_follow_up_at || "待安排"}</p></div>
+              <div className="detail-item"><strong>下一步任务</strong><p>{formatDateOnly(workflowForm.followUpDate || customer?.next_follow_up_at)}</p></div>
               <div className="detail-item"><strong>合作商候选标记</strong><p>{isPartnerCandidate(customer || {}) ? "是" : "否"}</p></div>
             </div>
           </section>
