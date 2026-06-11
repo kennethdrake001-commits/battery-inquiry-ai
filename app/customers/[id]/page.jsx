@@ -8,6 +8,7 @@ import CustomerWorkflowCard from "../../../components/workflow/CustomerWorkflowC
 import RecommendedScriptCard from "../../../components/workflow/RecommendedScriptCard";
 import { getSupabaseBrowserClient } from "../../../lib/supabaseClient";
 import { dateToFollowUpAt, formatDateTime, parseFollowUpTime } from "../../../lib/followUp";
+import { formatNextActionForDisplay } from "../../../lib/displayText";
 import { generateCustomerWorkflow } from "../../../lib/customerWorkflow";
 import { getRecommendedScript } from "../../../lib/scriptTemplates";
 import {
@@ -49,29 +50,6 @@ function Field({ label, children }) {
 function formatTime(value) {
   if (!value) return "未发送";
   return new Date(value).toLocaleString();
-}
-
-function localizeNextAction(action = "") {
-  const text = `${action}`.trim();
-  if (!text) return "暂无动作";
-
-  const normalized = text.toLowerCase();
-
-  if (normalized === "no action" || text === "暂无动作") return "暂无动作";
-  if (normalized.includes("follow up quotation after 2 days")) return "报价后第 2 天跟进客户";
-  if (normalized.includes("ask customer for order quantity and destination city/country before checking ddp shipping")) {
-    return "先询问客户数量和目的城市/国家，再进行 DDP 运费核算";
-  }
-  if (normalized.includes("ask customer for order quantity")) return "询问客户订单数量";
-  if (normalized.includes("ask customer for destination city/country")) return "询问客户目的城市和国家";
-  if (normalized.includes("check ddp shipping cost")) return "核算 DDP 运费并确认清关配送成本";
-  if (normalized.includes("send follow-up message")) return "发送跟进消息，推动客户回复";
-  if (normalized.includes("ask customer") || normalized.includes("confirm whether")) return "询问客户更多需求信息";
-  if (normalized.includes("send datasheet")) return "发送规格书、安装照片和兼容性资料";
-  if (normalized.includes("send product catalog") || normalized.includes("wholesale")) return "发送产品目录和批发供货资料";
-  if (normalized.includes("logo") || normalized.includes("packaging") || normalized.includes("sample")) return "确认 logo、包装、MOQ 和样品要求";
-
-  return text;
 }
 
 const emptyPlaybookForm = {
@@ -672,7 +650,7 @@ export default function CustomerDetailPage() {
   const currentType = getCustomerTypeLabel(getCustomerTypeValue(customer || {}));
   const currentLeadLevel = getLeadLevel(customer || {});
   const currentAction = workflowForm.nextAction || getNextAction(customer || {});
-  const localizedCurrentAction = localizeNextAction(currentAction);
+  const localizedCurrentAction = formatNextActionForDisplay(currentAction);
   const suggestedMaterials = [
     currentType.includes("安装商") ? "电池规格书、安装照片、兼容性说明" : null,
     currentType.includes("经销") ? "产品目录、主推型号、渠道供货说明" : null,
