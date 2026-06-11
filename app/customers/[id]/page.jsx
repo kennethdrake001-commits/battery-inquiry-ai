@@ -786,6 +786,12 @@ export default function CustomerDetailPage() {
               <h2>概览</h2>
               <span>只看当前阶段判断和下一步</span>
             </div>
+            {isProspectingCustomer(customer || {}) && (
+              <div className="notice-panel" style={{ marginBottom: 16 }}>
+                <strong>主动开发提醒</strong>
+                <p>这是主动开发客户，请在主动开发页推进开发信、跟进和转正式客户。</p>
+              </div>
+            )}
             <div className="detail-grid">
               <div className="detail-item"><strong>客户名</strong><p>{customer?.customer_name || "待补充"}</p></div>
               <div className="detail-item"><strong>国家</strong><p>{customer?.country || "待补充"}</p></div>
@@ -795,8 +801,8 @@ export default function CustomerDetailPage() {
               <div className="detail-item"><strong>当前阶段</strong><p>{displayStage}</p></div>
               <div className="detail-item"><strong>当前状态</strong><p>{displayStatus}</p></div>
               <div className="detail-item"><strong>下一步建议</strong><p>{localizedCurrentAction}</p></div>
-              <div className="detail-item"><strong>下一步任务</strong><p>{formatDateOnly(workflowForm.followUpDate || customer?.next_follow_up_at)}</p></div>
-              <div className="detail-item"><strong>合作商候选标记</strong><p>{isPartnerCandidate(customer || {}) ? "是" : "否"}</p></div>
+              <div className="detail-item"><strong>下次跟进日期</strong><p>{formatDateOnly(workflowForm.followUpDate || customer?.next_follow_up_at)}</p></div>
+              <div className="detail-item"><strong>合作商候选标记</strong><p>{isProspectingCustomer(customer || {}) ? "待判断" : (isPartnerCandidate(customer || {}) ? "是" : "否")}</p></div>
             </div>
           </section>
 
