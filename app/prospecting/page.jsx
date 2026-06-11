@@ -239,6 +239,7 @@ export default function ProspectingPage() {
   const [selectedStage, setSelectedStage] = useState("");
   const [page, setPage] = useState(1);
   const [reviewRange, setReviewRange] = useState("本月");
+  const [showImportRules, setShowImportRules] = useState(false);
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
   const [loading, setLoading] = useState(true);
@@ -747,7 +748,7 @@ export default function ProspectingPage() {
                     textAlign: "center"
                   }}
                 >
-                  <strong style={{ fontSize: 14, lineHeight: 1.3, color: "#c2410c" }}>{item.title}</strong>
+                  <strong style={{ fontSize: 14, lineHeight: 1.3, color: "#1f2937" }}>{item.title}</strong>
                   <div style={{ fontSize: 30, fontWeight: 700, marginTop: 6, lineHeight: 1.1 }}>{item.value}</div>
                 </article>
               ))}
@@ -760,22 +761,27 @@ export default function ProspectingPage() {
               <span>先支持 CSV 模板</span>
             </div>
             <p className="notice">
-              把从 Google Maps、LinkedIn、官网收集到的客户整理成 CSV 后导入，系统会加入目标客户池并从“未联系”阶段开始推进。
+              导入后默认进入“未联系”，下一步为“发送首封开发信”。
             </p>
             <div className="actions compact">
               <button type="button" onClick={handleImportClick}>上传 CSV</button>
               <button type="button" onClick={downloadTemplate}>下载导入模板</button>
+              <button type="button" onClick={() => setShowImportRules((current) => !current)}>
+                {showImportRules ? "收起导入规则" : "查看导入字段与默认规则"}
+              </button>
             </div>
-            <div className="detail-grid" style={{ marginTop: 16 }}>
-              <div className="detail-item" style={{ gridColumn: "1 / -1" }}>
-                <strong>导入模板字段</strong>
-                <p>公司名、国家、客户类型、官网、邮箱、LinkedIn、联系人、WhatsApp、来源渠道、备注</p>
+            {showImportRules && (
+              <div className="detail-grid" style={{ marginTop: 16 }}>
+                <div className="detail-item" style={{ gridColumn: "1 / -1" }}>
+                  <strong>导入模板字段</strong>
+                  <p>公司名、国家、客户类型、官网、邮箱、LinkedIn、联系人、WhatsApp、来源渠道、备注</p>
+                </div>
+                <div className="detail-item"><strong>默认阶段</strong><p>未联系</p></div>
+                <div className="detail-item"><strong>默认下一步动作</strong><p>发送首封开发信</p></div>
+                <div className="detail-item"><strong>默认下次跟进日期</strong><p>空</p></div>
+                <div className="detail-item"><strong>默认客户来源</strong><p>主动开发</p></div>
               </div>
-              <div className="detail-item"><strong>默认阶段</strong><p>未联系</p></div>
-              <div className="detail-item"><strong>默认下一步动作</strong><p>发送首封开发信</p></div>
-              <div className="detail-item"><strong>默认下次跟进日期</strong><p>空</p></div>
-              <div className="detail-item"><strong>默认客户来源</strong><p>主动开发</p></div>
-            </div>
+            )}
           </section>
 
           <section className="panel">
