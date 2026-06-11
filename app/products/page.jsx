@@ -91,12 +91,20 @@ function numberOrNull(value) {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
+function normalizeAssetType(assetType) {
+  const normalized = String(assetType || "").trim().toLowerCase();
+  if (["main_image", "image", "main", "cover", "cover_image"].includes(normalized)) return "main_image";
+  if (["datasheet", "datasheets", "specification", "spec"].includes(normalized)) return "datasheet";
+  if (["certificate", "cert", "certification", "certificates"].includes(normalized)) return "certificate";
+  return String(assetType || "").trim();
+}
+
 function bucketForAssetType() {
   return PRODUCT_ASSETS_BUCKET;
 }
 
 function isImageAsset(asset) {
-  return ["main_image", "gallery_image"].includes(asset.asset_type) || String(asset.file_type || "").startsWith("image/");
+  return ["main_image", "gallery_image"].includes(normalizeAssetType(asset.asset_type)) || String(asset.file_type || "").startsWith("image/");
 }
 
 function normalizeProductToForm(product) {
@@ -217,7 +225,6 @@ export default function ProductsPage() {
   const [form, setForm] = useState(emptyProductForm);
   const [assetsByProduct, setAssetsByProduct] = useState({});
   const [coverImageMap, setCoverImageMap] = useState({});
-  const [uploadQueue, setUploadQueue] = useState({});
   const [editingProductId, setEditingProductId] = useState("");
   const [editingNoteId, setEditingNoteId] = useState("");
   const [noteDrafts, setNoteDrafts] = useState({});
@@ -265,9 +272,10 @@ export default function ProductsPage() {
     const nextCoverMap = {};
 
     resolved.forEach((asset) => {
+      const assetType = normalizeAssetType(asset.asset_type);
       if (!nextAssetMap[asset.product_id]) nextAssetMap[asset.product_id] = [];
-      nextAssetMap[asset.product_id].push(asset);
-      if (!nextCoverMap[asset.product_id] && asset.asset_type === "main_image" && asset.signed_url) {
+      nextAssetMap[asset.product_id].push({ ...asset, asset_type: assetType });
+      if (!nextCoverMap[asset.product_id] && assetType === "main_image" && asset.signed_url) {
         nextCoverMap[asset.product_id] = asset.signed_url;
       }
     });
@@ -341,8 +349,12 @@ export default function ProductsPage() {
     }
 
     const resolved = await hydrateAssetUrls(rows || []);
-    setAssetsByProduct((current) => ({ ...current, [productId]: resolved }));
-    const cover = resolved.find((a) => a.asset_type === "main_image");
+    const normalizedAssets = resolved.map((asset) => ({
+      ...asset,
+      asset_type: normalizeAssetType(asset.asset_type)
+    }));
+    setAssetsByProduct((current) => ({ ...current, [productId]: normalizedAssets }));
+    const cover = normalizedAssets.find((a) => a.asset_type === "main_image");
     if (cover?.signed_url) {
       setCoverImageMap((current) => ({ ...current, [productId]: cover.signed_url }));
     } else {
@@ -361,7 +373,6 @@ export default function ProductsPage() {
   function startNewProduct() {
     setSelectedProduct(null);
     setForm({ ...emptyProductForm, category: "壁挂式电池", status: "active", currency: "USD", price_term: "FOB" });
-    setUploadQueue({});
     setEditingProductId("__new__");
     setError("");
     setSuccess("");
@@ -405,10 +416,6 @@ export default function ProductsPage() {
     await loadProducts(savedProduct.id);
   }
 
-  function queueUpload(productId, assetType, files) {
-    setUploadQueue((current) => ({ ...current, [`${productId}:${assetType}`]: Array.from(files || []) }));
-  }
-
   function setProductMessage(productId, key, value) {
     setProductMessages((current) => ({
       ...current,
@@ -432,14 +439,13 @@ export default function ProductsPage() {
     });
   }
 
-  async function uploadAssetGroup(product, config) {
+  async function uploadAssetGroup(product, config, inputFiles) {
     if (!session?.user || !product?.id) {
       setError("请先保存产品，再上传图片或文件。");
       return;
     }
 
-    const queueKey = `${product.id}:${config.type}`;
-    const files = uploadQueue[queueKey] || [];
+    const files = Array.from(inputFiles || []);
     if (!files.length) {
       setProductMessage(product.id, `${config.type}Error`, "请先选择要上传的文件。");
       return;
@@ -487,7 +493,6 @@ export default function ProductsPage() {
         }
       }
 
-      setUploadQueue((current) => ({ ...current, [queueKey]: [] }));
       if (successCount > 0) setProductMessage(product.id, `${config.type}Success`, `成功上传 ${successCount} 个文件。`);
       if (failedMessages.length > 0) setProductMessage(product.id, `${config.type}Error`, `部分文件上传失败：${failedMessages.join("；")}`);
       await loadAssets(product.id);
@@ -508,44 +513,60 @@ export default function ProductsPage() {
       || String(asset.file_name || "").toLowerCase().endsWith(".pdf");
   }
 
-  async function openAsset(asset) {
-    const bucket = bucketForAssetType(asset.asset_type);
+  async function openAsset(asset, mode = "preview") {
+    const assetType = normalizeAssetType(asset.asset_type);
+    const bucket = bucketForAssetType(assetType);
     const { data, error: urlError } = await supabase.storage
       .from(bucket)
       .createSignedUrl(asset.storage_path, 3600);
     if (urlError || !data?.signedUrl) {
       const message = urlError?.message || "无法生成预览链接。";
-      setProductMessage(asset.product_id, `${asset.asset_type}Error`, message);
+      setProductMessage(asset.product_id, `${assetType}Error`, message);
       setError(message);
       return;
     }
-    setProductMessage(asset.product_id, `${asset.asset_type}Success`, "已生成预览/下载链接。");
+
+    if (mode === "download") {
+      const link = document.createElement("a");
+      link.href = data.signedUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.download = asset.file_name || "download";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setProductMessage(asset.product_id, `${assetType}Success`, "已开始下载文件。");
+      return;
+    }
+
+    setProductMessage(asset.product_id, `${assetType}Success`, "已打开预览。");
     window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   }
 
   async function deleteAsset(asset) {
+    const assetType = normalizeAssetType(asset.asset_type);
     if (!session?.user) {
-      setProductMessage(asset.product_id, `${asset.asset_type}Error`, "请先登录后再删除文件。");
+      setProductMessage(asset.product_id, `${assetType}Error`, "请先登录后再删除文件。");
       setError("请先登录后再删除文件。");
       return;
     }
 
-    const bucket = bucketForAssetType(asset.asset_type);
+    const bucket = bucketForAssetType(assetType);
     const { error: storageError } = await supabase.storage.from(bucket).remove([asset.storage_path]);
     if (storageError) {
-      setProductMessage(asset.product_id, `${asset.asset_type}Error`, storageError.message);
+      setProductMessage(asset.product_id, `${assetType}Error`, storageError.message);
       setError(storageError.message);
       return;
     }
 
     const { error: deleteError } = await supabase.from("product_assets").delete().eq("id", asset.id);
     if (deleteError) {
-      setProductMessage(asset.product_id, `${asset.asset_type}Error`, deleteError.message);
+      setProductMessage(asset.product_id, `${assetType}Error`, deleteError.message);
       setError(deleteError.message);
       return;
     }
 
-    setProductMessage(asset.product_id, `${asset.asset_type}Success`, "文件已删除。");
+    setProductMessage(asset.product_id, `${assetType}Success`, "文件已删除。");
     await loadAssets(asset.product_id);
   }
 
@@ -643,11 +664,12 @@ export default function ProductsPage() {
 
   function getMainImageForProduct(productId) {
     const productAssets = getAssetsForProduct(productId);
-    return productAssets.find((asset) => asset.asset_type === "main_image") || null;
+    return productAssets.find((asset) => normalizeAssetType(asset.asset_type) === "main_image") || null;
   }
 
   function getFilesByTypes(productId, types) {
-    return getAssetsForProduct(productId).filter((asset) => types.includes(asset.asset_type));
+    const normalizedTypes = types.map((type) => normalizeAssetType(type));
+    return getAssetsForProduct(productId).filter((asset) => normalizedTypes.includes(normalizeAssetType(asset.asset_type)));
   }
 
   const groupedProducts = useMemo(() => {
@@ -705,6 +727,14 @@ export default function ProductsPage() {
   function triggerFileSelect(productId, assetType) {
     const input = document.getElementById(getUploadInputId(productId, assetType));
     input?.click();
+  }
+
+  async function handleAssetSelection(product, config, fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    await uploadAssetGroup(product, config, files);
+    const input = document.getElementById(getUploadInputId(product.id, config.type));
+    if (input) input.value = "";
   }
 
   function renderInlineMessage(productId, keyPrefix) {
@@ -839,7 +869,7 @@ export default function ProductsPage() {
                                   type="file"
                                   accept="image/*"
                                   style={{ display: "none" }}
-                                  onChange={(event) => queueUpload(product.id, "main_image", event.target.files)}
+                                  onChange={(event) => handleAssetSelection(product, assetGroups.find((item) => item.type === "main_image"), event.target.files)}
                                   disabled={String(product.status || "").toLowerCase() === "archived"}
                                 />
                                 <div
@@ -871,7 +901,7 @@ export default function ProductsPage() {
                                         onClick={() => triggerFileSelect(product.id, "main_image")}
                                         disabled={String(product.status || "").toLowerCase() === "archived"}
                                       >
-                                        上传 / 替换主图
+                                        上传主图
                                       </button>
                                     </div>
                                   )}
@@ -885,16 +915,8 @@ export default function ProductsPage() {
                                     >
                                       替换主图
                                     </button>
-                                    <button type="button" onClick={() => mainImage && openAsset(mainImage)} disabled={!mainImage}>预览主图</button>
+                                    <button type="button" onClick={() => mainImage && openAsset(mainImage, "preview")} disabled={!mainImage}>预览主图</button>
                                     <button type="button" onClick={() => mainImage && deleteAsset(mainImage)} disabled={!mainImage}>删除主图</button>
-                                  </div>
-                                )}
-                                {(uploadQueue[`${product.id}:main_image`] || []).length > 0 && (
-                                  <div className="actions compact" style={{ justifyContent: "space-between", alignItems: "center" }}>
-                                    <span className="muted">已选 {(uploadQueue[`${product.id}:main_image`] || []).length} 个文件</span>
-                                    <button type="button" onClick={() => uploadAssetGroup(product, assetGroups.find((item) => item.type === "main_image"))}>
-                                      上传主图
-                                    </button>
                                   </div>
                                 )}
                                 {renderInlineMessage(product.id, "main_image")}
@@ -963,7 +985,6 @@ export default function ProductsPage() {
                                             {section.uploadTypes.map((type) => {
                                               const config = assetGroups.find((item) => item.type === type);
                                               if (!config) return null;
-                                              const queueKey = `${product.id}:${config.type}`;
                                               return (
                                                 <div key={config.type} className="actions compact">
                                                   <input
@@ -972,18 +993,15 @@ export default function ProductsPage() {
                                                     accept={config.accept}
                                                     multiple={config.multiple}
                                                     style={{ display: "none" }}
-                                                    onChange={(event) => queueUpload(product.id, config.type, event.target.files)}
+                                                    onChange={(event) => handleAssetSelection(product, config, event.target.files)}
                                                     disabled={String(product.status || "").toLowerCase() === "archived"}
                                                   />
                                                   <button
                                                     type="button"
-                                                    onClick={() => (uploadQueue[queueKey] || []).length
-                                                      ? uploadAssetGroup(product, config)
-                                                      : triggerFileSelect(product.id, config.type)}
+                                                    onClick={() => triggerFileSelect(product.id, config.type)}
                                                   >
                                                     {section.key === "datasheet" ? "上传规格书" : "上传认证文件"}
                                                   </button>
-                                                  {(uploadQueue[queueKey] || []).length > 0 && <span className="muted">已选 {(uploadQueue[queueKey] || []).length} 个</span>}
                                                 </div>
                                               );
                                             })}
@@ -1000,8 +1018,8 @@ export default function ProductsPage() {
                                                   <span className="muted">{asset.file_type || "-"}</span>
                                                 </div>
                                                 <div className="actions compact">
-                                                  <button type="button" onClick={() => openAsset(asset)}>{isPdfAsset(asset) || isImageAsset(asset) ? "预览" : "打开"}</button>
-                                                  <button type="button" onClick={() => openAsset(asset)}>下载</button>
+                                                  <button type="button" onClick={() => openAsset(asset, "preview")}>{isPdfAsset(asset) || isImageAsset(asset) ? "预览" : "打开"}</button>
+                                                  <button type="button" onClick={() => openAsset(asset, "download")}>下载</button>
                                                   <button type="button" onClick={() => deleteAsset(asset)}>删除</button>
                                                 </div>
                                               </div>
