@@ -167,11 +167,15 @@ function getContactSummary(customer) {
   return parts.length ? parts.join(" / ") : "待补充";
 }
 
+const pageSize = 10;
+
 export default function ProspectingPage() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [session, setSession] = useState(null);
   const [customers, setCustomers] = useState([]);
   const [selectedId, setSelectedId] = useState("");
+  const [selectedStage, setSelectedStage] = useState("");
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -254,11 +258,32 @@ export default function ProspectingPage() {
     return map;
   }, [targetPool]);
 
+  const filteredTargetPool = useMemo(() => {
+    if (!selectedStage) return targetPool;
+    return targetPool.filter((customer) => customer.prospectingStage === selectedStage);
+  }, [selectedStage, targetPool]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredTargetPool.length / pageSize));
+  const pagedCustomers = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredTargetPool.slice(start, start + pageSize);
+  }, [filteredTargetPool, page]);
+
   useEffect(() => {
     if (selectedId && !targetPool.find((customer) => customer.id === selectedId)) {
       setSelectedId("");
     }
   }, [selectedId, targetPool]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [selectedStage]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   const selectedCustomer = targetPool.find((customer) => customer.id === selectedId) || null;
   const selectedScript = selectedCustomer ? getProspectingScript(selectedCustomer) : null;
@@ -327,27 +352,54 @@ export default function ProspectingPage() {
                 <article className="customer-card" key={customer.id}>
                   <strong>{getCustomerName(customer)}</strong>
                   <p>当前阶段：{customer.prospectingStage}</p>
-                  <p>任务原因：{customer.taskReason}</p>
                   <p>下一步动作：{customer.prospectingAction}</p>
                   <p>下次跟进：{formatDate(getFollowUpDate(customer))}</p>
                   <div className="actions compact">
                     <button type="button" onClick={() => setSelectedId(customer.id)}>生成英文开发信</button>
                     <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
-                    <button type="button" onClick={() => convertToFormalCustomer(customer)}>转为正式客户</button>
                   </div>
                 </article>
               ))}
               {todayTasks.length === 0 && <p className="empty">今天暂无待推进的开发任务</p>}
             </div>
             {todayTasks.length > 5 && (
-              <p className="empty">还有 {todayTasks.length - 5} 条今日开发任务，请进入客户详情继续处理。</p>
+              <p className="empty">还有 {todayTasks.length - 5} 个开发任务，查看全部。</p>
             )}
           </section>
 
           <section className="panel">
             <div className="section-title">
+              <h2>开发阶段概览</h2>
+              <div className="actions compact">
+                <button
+                  type="button"
+                  onClick={() => setSelectedStage("")}
+                  style={selectedStage ? undefined : { border: "1px solid #155eef", color: "#155eef", background: "#eff6ff", fontWeight: 700 }}
+                >
+                  全部客户
+                </button>
+              </div>
+            </div>
+            <div className="summary-grid">
+              {prospectingStages.map((stage) => (
+                <button
+                  key={stage}
+                  type="button"
+                  className="summary-card"
+                  onClick={() => setSelectedStage(stage)}
+                  style={selectedStage === stage ? { border: "1px solid #155eef", boxShadow: "0 0 0 2px rgba(21,94,239,0.08)" } : undefined}
+                >
+                  <strong>{stage}</strong>
+                  <span>{(boardGroups[stage] || []).length}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="section-title">
               <h2>目标客户池</h2>
-              <span>{targetPool.length} 个目标客户</span>
+              <span>{filteredTargetPool.length} 个目标客户{selectedStage ? ` · 当前筛选：${selectedStage}` : ""}</span>
             </div>
             <div className="table-wrap">
               <table className="compact-table">
@@ -356,8 +408,6 @@ export default function ProspectingPage() {
                     <th>公司名</th>
                     <th>国家</th>
                     <th>客户类型</th>
-                    <th>来源渠道</th>
-                    <th>邮箱 / 官网</th>
                     <th>当前阶段</th>
                     <th>下一步动作</th>
                     <th>下次跟进日期</th>
@@ -365,13 +415,11 @@ export default function ProspectingPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {targetPool.map((customer) => (
+                  {pagedCustomers.map((customer) => (
                     <tr key={customer.id}>
                       <td>{getCustomerName(customer)}</td>
                       <td>{customer.country || "待补充"}</td>
                       <td><span className="soft-badge">{getCustomerTypeLabel(getCustomerTypeValue(customer))}</span></td>
-                      <td><span className="soft-badge">{getSourceLabel(customer.source)}</span></td>
-                      <td>{getContactSummary(customer)}</td>
                       <td>{customer.prospectingStage}</td>
                       <td className="truncate-cell">{customer.prospectingAction}</td>
                       <td>{formatDate(getFollowUpDate(customer))}</td>
@@ -387,42 +435,20 @@ export default function ProspectingPage() {
                 </tbody>
               </table>
             </div>
-            {targetPool.length === 0 && <p className="empty">暂无目标客户</p>}
-          </section>
-
-          <section className="board">
-            {prospectingStages.map((stage) => (
-              <div className="stage-column" key={stage}>
-                <div className="section-title">
-                  <h2>{stage}</h2>
-                  <span>{(boardGroups[stage] || []).length} 个</span>
-                </div>
-                <div className="card-list">
-                  {(boardGroups[stage] || []).slice(0, 3).map((customer) => (
-                    <article className="customer-card" key={customer.id}>
-                      <strong>{getCustomerName(customer)}</strong>
-                      <p>国家：{customer.country || "待补充"}</p>
-                      <p>客户类型：{getCustomerTypeLabel(getCustomerTypeValue(customer))}</p>
-                      <p>来源渠道：{getSourceLabel(customer.source)}</p>
-                      <p>邮箱 / 官网：{getContactSummary(customer)}</p>
-                      <p>下一步动作：{customer.prospectingAction}</p>
-                      <p>下次跟进：{formatDate(getFollowUpDate(customer))}</p>
-                      <div className="actions compact">
-                        <button type="button" onClick={() => setSelectedId(customer.id)}>生成英文开发信</button>
-                        <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
-                        <button type="button" onClick={() => convertToFormalCustomer(customer)}>转为正式客户</button>
-                      </div>
-                    </article>
-                  ))}
-                  {(boardGroups[stage] || []).length === 0 && <p className="empty">暂无客户</p>}
-                  {(boardGroups[stage] || []).length > 3 && (
-                    <p className="empty">
-                      查看全部（还有 {(boardGroups[stage] || []).length - 3} 个）
-                    </p>
-                  )}
+            {filteredTargetPool.length === 0 && <p className="empty">暂无目标客户</p>}
+            {filteredTargetPool.length > 0 && (
+              <div className="actions compact" style={{ marginTop: 16, justifyContent: "space-between" }}>
+                <span>第 {page} / {totalPages} 页</span>
+                <div className="actions compact">
+                  <button type="button" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>
+                    上一页
+                  </button>
+                  <button type="button" disabled={page >= totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>
+                    下一页
+                  </button>
                 </div>
               </div>
-            ))}
+            )}
           </section>
 
           {selectedCustomer && (
