@@ -134,21 +134,27 @@ export default function TasksPage() {
           <div className="tabs">
             <button
               className={activeTab === "today" ? "primary" : ""}
-              style={activeTab === "today" ? { border: "1px solid #155eef", color: "#fff" } : { border: "1px solid #dbe5f1", color: "#1d2433", background: "#f8fafc" }}
+              style={activeTab === "today"
+                ? { border: "1px solid #155eef", color: "#155eef", background: "#eff6ff", fontWeight: 700 }
+                : { border: "1px solid #dbe5f1", color: "#1d2433", background: "#f8fafc" }}
               onClick={() => setActiveTab("today")}
             >
               今日任务
             </button>
             <button
               className={activeTab === "week" ? "primary" : ""}
-              style={activeTab === "week" ? { border: "1px solid #155eef", color: "#fff" } : { border: "1px solid #dbe5f1", color: "#1d2433", background: "#f8fafc" }}
+              style={activeTab === "week"
+                ? { border: "1px solid #155eef", color: "#155eef", background: "#eff6ff", fontWeight: 700 }
+                : { border: "1px solid #dbe5f1", color: "#1d2433", background: "#f8fafc" }}
               onClick={() => setActiveTab("week")}
             >
               本周任务
             </button>
             <button
               className={activeTab === "overdue" ? "primary" : ""}
-              style={activeTab === "overdue" ? { border: "1px solid #155eef", color: "#fff" } : { border: "1px solid #dbe5f1", color: "#1d2433", background: "#f8fafc" }}
+              style={activeTab === "overdue"
+                ? { border: "1px solid #155eef", color: "#155eef", background: "#eff6ff", fontWeight: 700 }
+                : { border: "1px solid #dbe5f1", color: "#1d2433", background: "#f8fafc" }}
               onClick={() => setActiveTab("overdue")}
             >
               逾期任务

@@ -51,6 +51,29 @@ function formatTime(value) {
   return new Date(value).toLocaleString();
 }
 
+function localizeNextAction(action = "") {
+  const text = `${action}`.trim();
+  if (!text) return "暂无动作";
+
+  const normalized = text.toLowerCase();
+
+  if (normalized === "no action" || text === "暂无动作") return "暂无动作";
+  if (normalized.includes("follow up quotation after 2 days")) return "报价后第 2 天跟进客户";
+  if (normalized.includes("ask customer for order quantity and destination city/country before checking ddp shipping")) {
+    return "先询问客户数量和目的城市/国家，再进行 DDP 运费核算";
+  }
+  if (normalized.includes("ask customer for order quantity")) return "询问客户订单数量";
+  if (normalized.includes("ask customer for destination city/country")) return "询问客户目的城市和国家";
+  if (normalized.includes("check ddp shipping cost")) return "核算 DDP 运费并确认清关配送成本";
+  if (normalized.includes("send follow-up message")) return "发送跟进消息，推动客户回复";
+  if (normalized.includes("ask customer") || normalized.includes("confirm whether")) return "询问客户更多需求信息";
+  if (normalized.includes("send datasheet")) return "发送规格书、安装照片和兼容性资料";
+  if (normalized.includes("send product catalog") || normalized.includes("wholesale")) return "发送产品目录和批发供货资料";
+  if (normalized.includes("logo") || normalized.includes("packaging") || normalized.includes("sample")) return "确认 logo、包装、MOQ 和样品要求";
+
+  return text;
+}
+
 const emptyPlaybookForm = {
   scene_name: "",
   customer_type: "",
@@ -649,6 +672,7 @@ export default function CustomerDetailPage() {
   const currentType = getCustomerTypeLabel(getCustomerTypeValue(customer || {}));
   const currentLeadLevel = getLeadLevel(customer || {});
   const currentAction = workflowForm.nextAction || getNextAction(customer || {});
+  const localizedCurrentAction = localizeNextAction(currentAction);
   const suggestedMaterials = [
     currentType.includes("安装商") ? "电池规格书、安装照片、兼容性说明" : null,
     currentType.includes("经销") ? "产品目录、主推型号、渠道供货说明" : null,
@@ -674,11 +698,51 @@ export default function CustomerDetailPage() {
 
       <section className="panel">
         <div className="tabs">
-          <button className={activeTab === "overview" ? "primary" : ""} onClick={() => setActiveTab("overview")}>概览</button>
-          <button className={activeTab === "profile" ? "primary" : ""} onClick={() => setActiveTab("profile")}>客户资料</button>
-          <button className={activeTab === "demand" ? "primary" : ""} onClick={() => setActiveTab("demand")}>需求与产品</button>
-          <button className={activeTab === "records" ? "primary" : ""} onClick={() => setActiveTab("records")}>跟进记录</button>
-          <button className={activeTab === "materials" ? "primary" : ""} onClick={() => setActiveTab("materials")}>资料与话术</button>
+          <button
+            className={activeTab === "overview" ? "primary" : ""}
+            style={activeTab === "overview"
+              ? { border: "1px solid #155eef", color: "#155eef", background: "#eff6ff", fontWeight: 700 }
+              : { border: "1px solid #dbe5f1", color: "#1d2433", background: "#f8fafc" }}
+            onClick={() => setActiveTab("overview")}
+          >
+            概览
+          </button>
+          <button
+            className={activeTab === "profile" ? "primary" : ""}
+            style={activeTab === "profile"
+              ? { border: "1px solid #155eef", color: "#155eef", background: "#eff6ff", fontWeight: 700 }
+              : { border: "1px solid #dbe5f1", color: "#1d2433", background: "#f8fafc" }}
+            onClick={() => setActiveTab("profile")}
+          >
+            客户资料
+          </button>
+          <button
+            className={activeTab === "demand" ? "primary" : ""}
+            style={activeTab === "demand"
+              ? { border: "1px solid #155eef", color: "#155eef", background: "#eff6ff", fontWeight: 700 }
+              : { border: "1px solid #dbe5f1", color: "#1d2433", background: "#f8fafc" }}
+            onClick={() => setActiveTab("demand")}
+          >
+            需求与产品
+          </button>
+          <button
+            className={activeTab === "records" ? "primary" : ""}
+            style={activeTab === "records"
+              ? { border: "1px solid #155eef", color: "#155eef", background: "#eff6ff", fontWeight: 700 }
+              : { border: "1px solid #dbe5f1", color: "#1d2433", background: "#f8fafc" }}
+            onClick={() => setActiveTab("records")}
+          >
+            跟进记录
+          </button>
+          <button
+            className={activeTab === "materials" ? "primary" : ""}
+            style={activeTab === "materials"
+              ? { border: "1px solid #155eef", color: "#155eef", background: "#eff6ff", fontWeight: 700 }
+              : { border: "1px solid #dbe5f1", color: "#1d2433", background: "#f8fafc" }}
+            onClick={() => setActiveTab("materials")}
+          >
+            资料与话术
+          </button>
         </div>
       </section>
 
@@ -696,7 +760,7 @@ export default function CustomerDetailPage() {
               <div className="detail-item"><strong>来源</strong><p>{customer?.source || "待补充"}</p></div>
               <div className="detail-item"><strong>客户评分 / 等级</strong><p>{customer?.latest_analysis?.customerScore || "-"} / {currentLeadLevel}</p></div>
               <div className="detail-item"><strong>当前状态</strong><p>{currentStage}</p></div>
-              <div className="detail-item"><strong>下一步建议</strong><p>{currentAction}</p></div>
+              <div className="detail-item"><strong>下一步建议</strong><p>{localizedCurrentAction}</p></div>
               <div className="detail-item"><strong>下一步任务</strong><p>{workflowForm.followUpDate || customer?.next_follow_up_at || "待安排"}</p></div>
               <div className="detail-item"><strong>合作商候选标记</strong><p>{isPartnerCandidate(customer || {}) ? "是" : "否"}</p></div>
             </div>

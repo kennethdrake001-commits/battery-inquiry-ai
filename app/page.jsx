@@ -238,15 +238,6 @@ export default function HomePage() {
 
       <AuthPanel session={session} onSessionChange={setSession} />
 
-      {session && (
-        <section className="panel">
-          <div className="notice-panel">
-            <strong>新增客户入口</strong>
-            <p>点击上方“新增客户”后，会进入新询盘分析页面，只展示新询盘分析相关字段；原始 workflow 字段不会在首页默认展开。</p>
-          </div>
-        </section>
-      )}
-
       {error && <div className="error">{error}</div>}
 
       {session && (
