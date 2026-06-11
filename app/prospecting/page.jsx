@@ -426,7 +426,14 @@ export default function ProspectingPage() {
                 </button>
               </div>
             </div>
-            <div className="summary-grid">
+            <div
+              className="summary-grid"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                gap: 12
+              }}
+            >
               {prospectingStages.map((stage) => (
                 <button
                   key={stage}
@@ -437,14 +444,23 @@ export default function ProspectingPage() {
                     ? {
                       border: "1px solid #155eef",
                       boxShadow: "0 0 0 2px rgba(21,94,239,0.08)",
-                      background: "#eff6ff"
+                      background: "#eff6ff",
+                      borderRadius: 16,
+                      padding: 16,
+                      textAlign: "left"
                     }
                     : {
-                      background: "#ffffff"
+                      background: "#ffffff",
+                      borderRadius: 16,
+                      padding: 16,
+                      textAlign: "left",
+                      border: "1px solid #dbe5f1"
                     }}
                 >
                   <strong>{stage}</strong>
-                  <span>{(boardGroups[stage] || []).length}</span>
+                  <span style={{ display: "block", marginTop: 8, fontSize: 28, fontWeight: 700 }}>
+                    {(boardGroups[stage] || []).length}
+                  </span>
                 </button>
               ))}
             </div>
@@ -489,7 +505,7 @@ export default function ProspectingPage() {
                 </tbody>
               </table>
             </div>
-            {filteredTargetPool.length === 0 && <p className="empty">暂无目标客户</p>}
+            {filteredTargetPool.length === 0 && <p className="empty">暂无目标客户。请先下载模板，整理客户名单后上传 CSV / Excel。</p>}
             {filteredTargetPool.length > 0 && (
               <div className="actions compact" style={{ marginTop: 16, justifyContent: "space-between" }}>
                 <span>第 {page} / {totalPages} 页</span>
