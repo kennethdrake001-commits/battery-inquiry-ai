@@ -62,7 +62,26 @@ const fileSectionConfigs = [
   { key: "others", title: "其他文件", assetTypes: ["test_report", "product_catalog"], emptyText: "暂无其他文件", uploadTypes: ["test_report", "product_catalog"] }
 ];
 
-const productSections = ["壁挂式电池", "落地式电池", "一体机", "未分类产品"];
+const productSections = ["壁挂式电池", "落地式电池", "一体机", "未分类产品", "归档产品"];
+const productCategoryOptions = ["壁挂式电池", "落地式电池", "一体机"];
+const inlineEditFields = [
+  ["product_name", "产品名称"],
+  ["model", "产品型号"],
+  ["category", "产品分类"],
+  ["short_description", "简短描述", "textarea"],
+  ["voltage", "电压"],
+  ["capacity_ah", "容量 Ah"],
+  ["energy_kwh", "能量 kWh"],
+  ["base_price", "价格"],
+  ["currency", "币种"],
+  ["price_term", "贸易条款"],
+  ["port", "港口"],
+  ["moq", "MOQ"],
+  ["lead_time", "交期"],
+  ["certifications", "认证", "textarea"],
+  ["compatible_inverters", "兼容逆变器", "textarea"],
+  ["status", "状态", "select"]
+];
 
 function Field({ label, children }) {
   return (
@@ -161,26 +180,18 @@ function buildProductPayload(form, userId) {
   };
 }
 
-function getStatusLabel(status) {
-  return status === "archived" ? "已归档" : "启用";
-}
-
 function getInternalNoteValue(product) {
   return product?.risk_notes || product?.internal_notes || product?.product_note || product?.notes || "";
 }
 
 function getProductSection(product) {
   if (String(product?.status || "").toLowerCase() === "archived") return "归档产品";
-  const haystack = [
-    product?.category,
-    product?.product_type,
-    product?.installation_type,
-    product?.product_name,
-    product?.model
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+  const category = String(product?.category || product?.product_type || "").trim();
+  if (category === "壁挂式电池") return "壁挂式电池";
+  if (category === "落地式电池") return "落地式电池";
+  if (category === "一体机") return "一体机";
+
+  const haystack = [product?.product_name, product?.model].filter(Boolean).join(" ").toLowerCase();
 
   if (
     haystack.includes("壁挂")
@@ -232,12 +243,9 @@ export default function ProductsPage() {
   const [assetsByProduct, setAssetsByProduct] = useState({});
   const [coverImageMap, setCoverImageMap] = useState({});
   const [uploadQueue, setUploadQueue] = useState({});
-  const [expandedProductId, setExpandedProductId] = useState("");
   const [editingProductId, setEditingProductId] = useState("");
   const [editingNoteId, setEditingNoteId] = useState("");
   const [noteDrafts, setNoteDrafts] = useState({});
-  const [expandedMoreFiles, setExpandedMoreFiles] = useState({});
-  const [showArchived, setShowArchived] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingType, setUploadingType] = useState("");
@@ -369,7 +377,7 @@ export default function ProductsPage() {
 
   function startNewProduct() {
     setSelectedProduct(null);
-    setForm(emptyProductForm);
+    setForm({ ...emptyProductForm, category: "壁挂式电池", status: "active", currency: "USD", price_term: "FOB" });
     setUploadQueue({});
     setEditingProductId("__new__");
     setError("");
@@ -436,33 +444,42 @@ export default function ProductsPage() {
     setSuccess("");
 
     try {
+      let successCount = 0;
+      const failedMessages = [];
+
       for (const file of files) {
-        const safeName = file.name.replace(/\s+/g, "-");
-        const storagePath = `${session.user.id}/${product.id}/${config.type}/${Date.now()}-${safeName}`;
-        const bucket = bucketForAssetType(config.type);
+        try {
+          const safeName = file.name.replace(/\s+/g, "-");
+          const storagePath = `${session.user.id}/${product.id}/${config.type}/${Date.now()}-${safeName}`;
+          const bucket = bucketForAssetType(config.type);
 
-        const { error: uploadError } = await supabase.storage.from(bucket).upload(storagePath, file, {
-          cacheControl: "3600",
-          upsert: false,
-          contentType: file.type || undefined
-        });
+          const { error: uploadError } = await supabase.storage.from(bucket).upload(storagePath, file, {
+            cacheControl: "3600",
+            upsert: false,
+            contentType: file.type || undefined
+          });
 
-        if (uploadError) throw uploadError;
+          if (uploadError) throw uploadError;
 
-        const { error: assetError } = await supabase.from("product_assets").insert({
-          product_id: product.id,
-          asset_type: config.type,
-          file_type: file.type || "application/octet-stream",
-          file_name: file.name,
-          file_url: null,
-          storage_path: storagePath
-        });
+          const { error: assetError } = await supabase.from("product_assets").insert({
+            product_id: product.id,
+            asset_type: config.type,
+            file_type: file.type || "application/octet-stream",
+            file_name: file.name,
+            file_url: null,
+            storage_path: storagePath
+          });
 
-        if (assetError) throw assetError;
+          if (assetError) throw assetError;
+          successCount += 1;
+        } catch (singleError) {
+          failedMessages.push(`${file.name}：${singleError.message || "上传失败"}`);
+        }
       }
 
       setUploadQueue((current) => ({ ...current, [queueKey]: [] }));
-      setSuccess(`${config.label} 上传成功。`);
+      if (successCount > 0) setSuccess(`成功上传 ${successCount} 个文件`);
+      if (failedMessages.length > 0) setError(`部分文件上传失败：${failedMessages.join("；")}`);
       await loadAssets(product.id);
     } catch (uploadError) {
       setError(uploadError.message || "上传失败，请检查 Storage 配置。");
@@ -509,6 +526,69 @@ export default function ProductsPage() {
 
     setSuccess("文件已删除。");
     await loadAssets(asset.product_id);
+  }
+
+  async function updateProductStatus(product, status) {
+    if (!session?.user) {
+      setError("请先登录后再更新产品状态。");
+      return;
+    }
+
+    const confirmText = status === "archived"
+      ? "确定归档这个产品吗？归档后默认不在启用产品中显示。"
+      : "确定恢复启用这个产品吗？";
+    if (!window.confirm(confirmText)) return;
+
+    const { error: updateError } = await supabase
+      .from("products")
+      .update({
+        status,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", product.id);
+
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+
+    setSuccess(status === "archived" ? "产品已归档。" : "产品已恢复启用。");
+    await loadProducts(product.id);
+  }
+
+  async function deleteProduct(product) {
+    if (!session?.user) {
+      setError("请先登录后再删除产品。");
+      return;
+    }
+    if (!window.confirm("确定删除这个产品吗？删除后不可恢复。建议真实产品优先归档。")) return;
+
+    try {
+      const productAssets = getAssetsForProduct(product.id);
+      const bucketGroups = productAssets.reduce((acc, asset) => {
+        const bucket = bucketForAssetType(asset.asset_type);
+        if (!acc[bucket]) acc[bucket] = [];
+        acc[bucket].push(asset.storage_path);
+        return acc;
+      }, {});
+
+      for (const [bucket, paths] of Object.entries(bucketGroups)) {
+        if (!paths.length) continue;
+        const { error: storageError } = await supabase.storage.from(bucket).remove(paths);
+        if (storageError) throw storageError;
+      }
+
+      const { error: assetDeleteError } = await supabase.from("product_assets").delete().eq("product_id", product.id);
+      if (assetDeleteError) throw assetDeleteError;
+
+      const { error: productDeleteError } = await supabase.from("products").delete().eq("id", product.id);
+      if (productDeleteError) throw productDeleteError;
+
+      setSuccess("产品已删除。");
+      await loadProducts();
+    } catch (deleteError) {
+      setError(deleteError.message || "删除失败。");
+    }
   }
 
   async function saveInternalNote(product) {
@@ -566,6 +646,16 @@ export default function ProductsPage() {
   }, [products]);
 
   function renderField([key, label, type]) {
+    if (key === "category") {
+      return (
+        <Field key={key} label={label}>
+          <select value={form[key]} onChange={(event) => updateForm(key, event.target.value)}>
+            {productCategoryOptions.map((option) => <option key={option}>{option}</option>)}
+          </select>
+        </Field>
+      );
+    }
+
     if (type === "select") {
       return (
         <Field key={key} label={label}>
@@ -661,16 +751,14 @@ export default function ProductsPage() {
                     <span>{sectionProducts.length} 个产品</span>
                   </div>
                   {sectionProducts.length === 0 ? (
-                    <p className="empty">暂无产品</p>
+                    <p className="empty">暂无产品，请先新增产品。</p>
                   ) : (
                     <div style={{ display: "grid", gap: 16 }}>
                       {sectionProducts.map((product) => {
                         const mainImage = getMainImageForProduct(product.id);
-                        const detailOpen = expandedProductId === product.id;
                         const editOpen = editingProductId === product.id;
                         const internalNote = getInternalNoteValue(product);
                         const priceSummary = getPriceSummary(product);
-                        const moreFilesOpen = Boolean(expandedMoreFiles[product.id]);
                         return (
                           <article key={product.id} className="detail-item" style={{ padding: 20 }}>
                             <div style={{ display: "grid", gridTemplateColumns: "280px minmax(0, 1fr)", gap: 20, alignItems: "start" }}>
@@ -755,12 +843,21 @@ export default function ProductsPage() {
                                 <div className="section-title" style={{ marginBottom: 12 }}>
                                   <div>
                                     <h3 style={{ margin: 0 }}>{product.product_name || "未命名产品"}</h3>
-                                    <p className="muted" style={{ marginTop: 6, marginBottom: 4 }}>{product.model || "待补充型号"}</p>
-                                    {product.short_description ? (
-                                      <p style={{ margin: 0, color: "#475569" }}>{product.short_description}</p>
-                                    ) : null}
+                                    <p className="muted" style={{ marginTop: 6, marginBottom: 4 }}>
+                                      {[product.model || "待补充型号", product.short_description || ""].filter(Boolean).join(" / ")}
+                                    </p>
+                                    <p style={{ margin: 0, color: "#475569" }}>产品分类：{product.category || product.product_type || getProductSection(product)}</p>
                                   </div>
-                                  <span className="soft-badge">{getStatusLabel(product.status)}</span>
+                                  <div className="actions compact" style={{ flexWrap: "wrap" }}>
+                                    <button type="button" onClick={() => startEditProduct(product)}>编辑</button>
+                                    <button
+                                      type="button"
+                                      onClick={() => updateProductStatus(product, String(product.status || "").toLowerCase() === "archived" ? "active" : "archived")}
+                                    >
+                                      {String(product.status || "").toLowerCase() === "archived" ? "恢复启用" : "归档"}
+                                    </button>
+                                    <button type="button" onClick={() => deleteProduct(product)}>删除</button>
+                                  </div>
                                 </div>
 
                                 {priceSummary ? (
@@ -830,7 +927,7 @@ export default function ProductsPage() {
                                                       ? uploadAssetGroup(product, config)
                                                       : triggerFileSelect(product.id, config.type)}
                                                   >
-                                                    {(uploadQueue[queueKey] || []).length ? `上传${section.title}` : `上传${section.title}`}
+                                                    {section.key === "datasheet" ? "上传规格书" : "上传认证文件"}
                                                   </button>
                                                   {(uploadQueue[queueKey] || []).length > 0 && <span className="muted">已选 {(uploadQueue[queueKey] || []).length} 个</span>}
                                                 </div>
@@ -862,112 +959,13 @@ export default function ProductsPage() {
                                   })}
                                 </div>
 
-                                <div className="detail-item" style={{ marginTop: 12 }}>
-                                  <div className="section-title">
-                                    <strong>更多文件</strong>
-                                    <button
-                                      type="button"
-                                      onClick={() => setExpandedMoreFiles((current) => ({ ...current, [product.id]: !current[product.id] }))}
-                                    >
-                                      {moreFilesOpen ? "收起更多文件" : "管理更多文件"}
-                                    </button>
-                                  </div>
-                                  {moreFilesOpen ? (
-                                    <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
-                                      {fileSectionConfigs.slice(2).map((section) => {
-                                        const files = getFilesByTypes(product.id, section.assetTypes);
-                                        return (
-                                          <div key={section.key} className="detail-item">
-                                            <div className="section-title" style={{ marginBottom: 8 }}>
-                                              <strong>{section.title}</strong>
-                                              <div className="actions compact" style={{ flexWrap: "wrap" }}>
-                                                {section.uploadTypes.map((type) => {
-                                                  const config = assetGroups.find((item) => item.type === type);
-                                                  if (!config) return null;
-                                                  const queueKey = `${product.id}:${config.type}`;
-                                                  return (
-                                                    <div key={config.type} className="actions compact">
-                                                      <input
-                                                        id={getUploadInputId(product.id, config.type)}
-                                                        type="file"
-                                                        accept={config.accept}
-                                                        multiple={config.multiple}
-                                                        style={{ display: "none" }}
-                                                        onChange={(event) => queueUpload(product.id, config.type, event.target.files)}
-                                                        disabled={String(product.status || "").toLowerCase() === "archived"}
-                                                      />
-                                                      <button
-                                                        type="button"
-                                                        onClick={() => (uploadQueue[queueKey] || []).length
-                                                          ? uploadAssetGroup(product, config)
-                                                          : triggerFileSelect(product.id, config.type)}
-                                                      >
-                                                        {(uploadQueue[queueKey] || []).length ? "上传更多文件" : "上传更多文件"}
-                                                      </button>
-                                                      {(uploadQueue[queueKey] || []).length > 0 && <span className="muted">已选 {(uploadQueue[queueKey] || []).length} 个</span>}
-                                                    </div>
-                                                  );
-                                                })}
-                                              </div>
-                                            </div>
-                                            {files.length === 0 ? (
-                                              <p>{section.key === "others" ? "暂无更多文件" : section.emptyText}</p>
-                                            ) : (
-                                              <div style={{ display: "grid", gap: 8 }}>
-                                                {files.map((asset) => (
-                                                  <div key={asset.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 12, alignItems: "center", padding: "8px 0", borderTop: "1px solid #eef2f7" }}>
-                                                    <div style={{ minWidth: 0 }}>
-                                                      <strong style={{ display: "block" }}>{asset.file_name}</strong>
-                                                      <span className="muted">{asset.file_type || "-"}</span>
-                                                    </div>
-                                                    <div className="actions compact">
-                                                      <button type="button" onClick={() => openAsset(asset)}>{isPdfAsset(asset) || isImageAsset(asset) ? "预览" : "打开"}</button>
-                                                      <button type="button" onClick={() => openAsset(asset)}>下载</button>
-                                                      <button type="button" onClick={() => deleteAsset(asset)}>删除</button>
-                                                    </div>
-                                                  </div>
-                                                ))}
-                                              </div>
-                                            )}
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  ) : null}
-                                </div>
-
-                                <div className="actions compact" style={{ marginTop: 16, flexWrap: "wrap" }}>
-                                  <button type="button" onClick={() => setExpandedProductId(detailOpen ? "" : product.id)}>
-                                    {detailOpen ? "收起详情" : "查看详情"}
-                                  </button>
-                                  <button type="button" onClick={() => startEditProduct(product)}>编辑产品</button>
-                                </div>
-
-                                {detailOpen && (
-                                  <div className="detail-grid" style={{ marginTop: 16 }}>
-                                    <div className="detail-item"><strong>应用场景</strong><p>{product.application || "待确认"}</p></div>
-                                    <div className="detail-item"><strong>电芯类型</strong><p>{product.cell_type || "待确认"}</p></div>
-                                    <div className="detail-item"><strong>BMS</strong><p>{product.bms || "待确认"}</p></div>
-                                    <div className="detail-item"><strong>通信方式</strong><p>{product.communication || "待确认"}</p></div>
-                                    <div className="detail-item"><strong>循环寿命</strong><p>{product.cycle_life || "待确认"}</p></div>
-                                    <div className="detail-item"><strong>兼容逆变器</strong><p>{product.compatible_inverters || "待确认"}</p></div>
-                                    <div className="detail-item"><strong>认证</strong><p>{product.certifications || "待确认"}</p></div>
-                                    <div className="detail-item"><strong>交期 / MOQ</strong><p>{product.lead_time || "待确认"} / {product.moq || "待确认"}</p></div>
-                                  </div>
-                                )}
-
                                 {editOpen && (
                                   <div className="panel" style={{ marginTop: 16, background: "#f8fafc" }}>
                                     <div className="section-title">
                                       <h3>编辑产品</h3>
                                       <span>{`更新时间：${formatTime(product.updated_at)}`}</span>
                                     </div>
-                                    <h4>基础信息</h4>
-                                    <div className="form-grid">{basicFields.map(renderField)}</div>
-                                    <h4>技术参数</h4>
-                                    <div className="form-grid">{technicalFields.map(renderField)}</div>
-                                    <h4>价格信息</h4>
-                                    <div className="form-grid">{priceFields.map(renderField)}</div>
+                                    <div className="form-grid">{inlineEditFields.map(renderField)}</div>
                                     <Field label="内部备注">
                                       <textarea rows={3} value={form.internal_notes || ""} onChange={(event) => updateForm("internal_notes", event.target.value)} />
                                     </Field>
@@ -990,60 +988,6 @@ export default function ProductsPage() {
               );
             })}
           </section>
-
-          <section className="panel" style={{ marginTop: 16 }}>
-              <div className="section-title">
-                <h2>归档产品</h2>
-                <button type="button" onClick={() => setShowArchived((current) => !current)}>
-                  {showArchived ? "收起归档产品" : "展开归档产品"}
-                </button>
-              </div>
-              {showArchived && (
-                groupedProducts["归档产品"]?.length ? (
-                  <div style={{ display: "grid", gap: 16 }}>
-                    {groupedProducts["归档产品"].map((product) => {
-                      const mainImage = getMainImageForProduct(product.id);
-                      const internalNote = getInternalNoteValue(product);
-                      return (
-                        <article key={product.id} className="detail-item" style={{ padding: 20 }}>
-                          <div style={{ display: "grid", gridTemplateColumns: "280px minmax(0, 1fr)", gap: 20, alignItems: "start" }}>
-                            <div>
-                              {mainImage ? (
-                                <img
-                                  src={mainImage.signed_url || mainImage.file_url}
-                                  alt={product.product_name || "product"}
-                                  style={{ width: "100%", height: 220, objectFit: "cover", borderRadius: 16, marginBottom: 12 }}
-                                />
-                              ) : (
-                                <div style={{ height: 220, borderRadius: 16, background: "#f8fafc", border: "1px dashed #cbd5e1", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 16, marginBottom: 12 }}>
-                                  暂无主图
-                                </div>
-                              )}
-                            </div>
-                            <div>
-                              <div className="section-title" style={{ marginBottom: 12 }}>
-                                <div>
-                                  <h3 style={{ margin: 0 }}>{product.product_name || "未命名产品"}</h3>
-                                  <p className="muted" style={{ marginTop: 6, marginBottom: 4 }}>{product.model || "待补充型号"}</p>
-                                  {product.short_description ? (
-                                    <p style={{ margin: 0, color: "#475569" }}>{product.short_description}</p>
-                                  ) : null}
-                                </div>
-                                <span className="soft-badge">已归档</span>
-                              </div>
-                              <div className="detail-grid">
-                                {getPriceSummary(product) ? <div className="detail-item"><strong>价格信息</strong><p>{getPriceSummary(product)}</p></div> : null}
-                                <div className="detail-item" style={{ gridColumn: "1 / -1" }}><strong>内部备注</strong><p>{internalNote || "暂无备注"}</p></div>
-                              </div>
-                            </div>
-                          </div>
-                        </article>
-                      );
-                    })}
-                  </div>
-                ) : <p className="empty">暂无产品</p>
-              )}
-            </section>
         </>
       )}
     </main>
