@@ -126,12 +126,13 @@ function normalizeProductToForm(product) {
   };
 }
 
-function buildProductPayload(form, userId) {
+function buildProductPayload(form, userId, options = {}) {
+  const { includeCreatedBy = false } = options;
   const energyKwh = numberOrNull(form.energy_kwh);
   const capacityAh = numberOrNull(form.capacity_ah);
   const basePrice = numberOrNull(form.base_price);
 
-  return {
+  const payload = {
     product_name: form.product_name,
     model: form.model,
     category: form.category,
@@ -171,9 +172,14 @@ function buildProductPayload(form, userId) {
     suitable_customers: form.category || "",
     suitable_scenarios: form.application || "",
     risk_notes: form.internal_notes || form.risk_notes || "",
-    created_by: userId,
     updated_at: new Date().toISOString()
   };
+
+  if (includeCreatedBy) {
+    payload.created_by = userId;
+  }
+
+  return payload;
 }
 
 function getInternalNoteValue(product) {
@@ -396,7 +402,7 @@ export default function ProductsPage() {
     setError("");
     setSuccess("");
 
-    const payload = buildProductPayload(form, session.user.id);
+    const payload = buildProductPayload(form, session.user.id, { includeCreatedBy: !selectedProduct });
     const query = selectedProduct
       ? supabase.from("products").update(payload).eq("id", selectedProduct.id).select("*").single()
       : supabase.from("products").insert(payload).select("*").single();
@@ -444,6 +450,18 @@ export default function ProductsPage() {
       setError("请先保存产品，再上传图片或文件。");
       return;
     }
+    if (!product?.created_by) {
+      const ownerError = "该产品缺少创建人信息，请重新保存产品后再上传文件。";
+      setProductMessage(product.id, `${config.type}Error`, ownerError);
+      setError(ownerError);
+      return;
+    }
+    if (product.created_by !== session.user.id) {
+      const ownerMismatchError = "当前登录账号不是该产品的创建人，无法上传产品资料。";
+      setProductMessage(product.id, `${config.type}Error`, ownerMismatchError);
+      setError(ownerMismatchError);
+      return;
+    }
 
     const files = Array.from(inputFiles || []);
     if (!files.length) {
@@ -470,7 +488,14 @@ export default function ProductsPage() {
             contentType: file.type || undefined
           });
 
-          if (uploadError) throw uploadError;
+          if (uploadError) {
+            const rawMessage = uploadError.message || "上传失败";
+            const friendlyMessage = rawMessage.toLowerCase().includes("bucket not found")
+              ? `Storage 上传失败：产品资料 bucket 不存在，请先在 Supabase Storage 创建 ${PRODUCT_ASSETS_BUCKET} bucket。`
+              : `Storage 上传失败：${rawMessage}`;
+            failedMessages.push(`${file.name}：${friendlyMessage}`);
+            continue;
+          }
 
           const { error: assetError } = await supabase.from("product_assets").insert({
             product_id: product.id,
@@ -481,12 +506,15 @@ export default function ProductsPage() {
             storage_path: storagePath
           });
 
-          if (assetError) throw assetError;
+          if (assetError) {
+            failedMessages.push(`${file.name}：product_assets 记录写入失败：${assetError.message || "未知错误"}`);
+            continue;
+          }
           successCount += 1;
         } catch (singleError) {
           const rawMessage = singleError.message || "上传失败";
           if (rawMessage.toLowerCase().includes("bucket not found")) {
-            failedMessages.push(`产品资料 bucket 不存在，请先在 Supabase Storage 创建 ${PRODUCT_ASSETS_BUCKET} bucket。`);
+            failedMessages.push(`${file.name}：Storage 上传失败：产品资料 bucket 不存在，请先在 Supabase Storage 创建 ${PRODUCT_ASSETS_BUCKET} bucket。`);
           } else {
             failedMessages.push(`${file.name}：${rawMessage}`);
           }
