@@ -357,6 +357,12 @@ export default function ProspectingPage() {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    if (!session?.user?.id) {
+      setError("请先登录后再导入客户。");
+      event.target.value = "";
+      return;
+    }
+
     try {
       const content = await file.text();
       const lines = content
@@ -408,6 +414,7 @@ export default function ProspectingPage() {
           ].filter(Boolean);
 
           return {
+            user_id: session.user.id,
             customer_name: companyName,
             country,
             source: "主动开发",
