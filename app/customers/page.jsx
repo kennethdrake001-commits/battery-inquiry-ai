@@ -129,35 +129,7 @@ export default function CustomersPage() {
     }
 
     await loadCustomers();
-    setNotice("客户已归档");
-  }
-
-  async function deleteCustomer(customer) {
-    setError("");
-    setNotice("");
-
-    const confirmed = window.confirm("确定删除这个客户吗？删除后不可恢复。");
-    if (!confirmed) return;
-
-    const { error: deleteError } = await supabase
-      .from("customers")
-      .delete()
-      .eq("id", customer.id);
-
-    if (deleteError) {
-      const message = deleteError.message || "未知错误";
-      if (
-        /foreign key|violates foreign key constraint|constraint/i.test(message)
-      ) {
-        setError(`删除失败：该客户存在关联记录，请先删除或归档。原始错误：${message}`);
-      } else {
-        setError(`删除失败：${message}`);
-      }
-      return;
-    }
-
-    await loadCustomers();
-    setNotice("客户已删除");
+    setNotice("客户已归档。可在“显示归档客户”中查看。");
   }
 
   return (
@@ -275,7 +247,6 @@ export default function CustomersPage() {
                         <div className="actions compact">
                           <Link href={`/customers/${customer.id}`}>查看详情</Link>
                           <button type="button" onClick={() => archiveCustomer(customer)}>归档</button>
-                          <button type="button" onClick={() => deleteCustomer(customer)}>删除</button>
                         </div>
                       </td>
                     </tr>
