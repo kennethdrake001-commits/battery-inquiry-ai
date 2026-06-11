@@ -99,6 +99,27 @@ function normalizeAssetType(assetType) {
   return String(assetType || "").trim();
 }
 
+function sanitizeFileName(fileName) {
+  const original = String(fileName || "").trim();
+  const lastDotIndex = original.lastIndexOf(".");
+  const rawBaseName = lastDotIndex > 0 ? original.slice(0, lastDotIndex) : original;
+  const rawExtension = lastDotIndex > 0 ? original.slice(lastDotIndex + 1) : "";
+
+  const safeBaseName = rawBaseName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    || "file";
+
+  const safeExtension = rawExtension
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "")
+    .trim();
+
+  return safeExtension ? `${safeBaseName}.${safeExtension}` : safeBaseName;
+}
+
 function bucketForAssetType() {
   return PRODUCT_ASSETS_BUCKET;
 }
@@ -478,8 +499,8 @@ export default function ProductsPage() {
 
       for (const file of files) {
         try {
-          const safeName = file.name.replace(/\s+/g, "-");
-          const storagePath = `${session.user.id}/${product.id}/${config.type}/${Date.now()}-${safeName}`;
+          const safeName = sanitizeFileName(file.name);
+          const storagePath = `products/${product.id}/${config.type}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
           const bucket = bucketForAssetType(config.type);
 
           const { error: uploadError } = await supabase.storage.from(bucket).upload(storagePath, file, {
@@ -943,7 +964,6 @@ export default function ProductsPage() {
                                     >
                                       替换主图
                                     </button>
-                                    <button type="button" onClick={() => mainImage && openAsset(mainImage, "preview")} disabled={!mainImage}>预览主图</button>
                                     <button type="button" onClick={() => mainImage && deleteAsset(mainImage)} disabled={!mainImage}>删除主图</button>
                                   </div>
                                 )}
