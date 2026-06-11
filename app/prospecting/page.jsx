@@ -297,6 +297,28 @@ export default function ProspectingPage() {
     }
   }
 
+  function handleImportClick() {
+    setNotice("批量导入功能待接入，当前先保留上传入口。");
+  }
+
+  function downloadTemplate() {
+    const csv = [
+      "公司名,国家,客户类型,官网,邮箱,LinkedIn,联系人,WhatsApp,来源渠道,备注",
+      "ABC Solar,Kenya,Solar Distributor,https://example.com,sales@example.com,https://linkedin.com/company/example,John,+254700000000,主动开发,重点跟进东非市场"
+    ].join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "目标客户导入模板.csv";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setNotice("导入模板已下载。");
+  }
+
   async function convertToFormalCustomer(customer) {
     setError("");
     setNotice("");
@@ -369,6 +391,30 @@ export default function ProspectingPage() {
 
           <section className="panel">
             <div className="section-title">
+              <h2>批量导入目标客户</h2>
+              <span>先支持 CSV 模板</span>
+            </div>
+            <p className="notice">
+              把从 Google Maps、LinkedIn、官网收集到的客户整理成 CSV/Excel 后导入，系统会加入目标客户池并从“未联系”阶段开始推进。
+            </p>
+            <div className="actions compact">
+              <button type="button" onClick={handleImportClick}>上传 CSV / Excel</button>
+              <button type="button" onClick={downloadTemplate}>下载导入模板</button>
+            </div>
+            <div className="detail-grid" style={{ marginTop: 16 }}>
+              <div className="detail-item" style={{ gridColumn: "1 / -1" }}>
+                <strong>导入模板字段</strong>
+                <p>公司名、国家、客户类型、官网、邮箱、LinkedIn、联系人、WhatsApp、来源渠道、备注</p>
+              </div>
+              <div className="detail-item"><strong>默认阶段</strong><p>未联系</p></div>
+              <div className="detail-item"><strong>默认下一步动作</strong><p>发送首封开发信</p></div>
+              <div className="detail-item"><strong>默认下次跟进日期</strong><p>空</p></div>
+              <div className="detail-item"><strong>默认客户来源</strong><p>主动开发</p></div>
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="section-title">
               <h2>开发阶段概览</h2>
               <div className="actions compact">
                 <button
@@ -387,7 +433,15 @@ export default function ProspectingPage() {
                   type="button"
                   className="summary-card"
                   onClick={() => setSelectedStage(stage)}
-                  style={selectedStage === stage ? { border: "1px solid #155eef", boxShadow: "0 0 0 2px rgba(21,94,239,0.08)" } : undefined}
+                  style={selectedStage === stage
+                    ? {
+                      border: "1px solid #155eef",
+                      boxShadow: "0 0 0 2px rgba(21,94,239,0.08)",
+                      background: "#eff6ff"
+                    }
+                    : {
+                      background: "#ffffff"
+                    }}
                 >
                   <strong>{stage}</strong>
                   <span>{(boardGroups[stage] || []).length}</span>
