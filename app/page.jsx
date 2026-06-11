@@ -103,6 +103,29 @@ function SummaryCard({ title, count, subtitle }) {
   );
 }
 
+function localizeNextAction(action = "") {
+  const text = `${action}`.trim();
+  if (!text) return "暂无动作";
+
+  const normalized = text.toLowerCase();
+
+  if (normalized === "no action" || text === "暂无动作") return "暂无动作";
+  if (normalized.includes("follow up quotation after 2 days")) return "报价后第 2 天跟进客户";
+  if (normalized.includes("ask customer for order quantity and destination city/country before checking ddp shipping")) {
+    return "先询问客户数量和目的城市/国家，再进行 DDP 运费核算";
+  }
+  if (normalized.includes("ask customer for order quantity")) return "询问客户订单数量";
+  if (normalized.includes("ask customer for destination city/country")) return "询问客户目的城市和国家";
+  if (normalized.includes("check ddp shipping cost")) return "核算 DDP 运费并确认清关配送成本";
+  if (normalized.includes("send follow-up message")) return "发送跟进消息，推动客户回复";
+  if (normalized.includes("ask customer") || normalized.includes("confirm whether")) return "询问客户更多需求信息";
+  if (normalized.includes("send datasheet")) return "发送规格书、安装照片和兼容性资料";
+  if (normalized.includes("send product catalog") || normalized.includes("wholesale")) return "发送产品目录和批发供货资料";
+  if (normalized.includes("logo") || normalized.includes("packaging") || normalized.includes("sample")) return "确认 logo、包装、MOQ 和样品要求";
+
+  return text;
+}
+
 export default function HomePage() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [session, setSession] = useState(null);
@@ -187,7 +210,7 @@ export default function HomePage() {
   }, [customers, tasks]);
 
   const actionRows = useMemo(() => {
-    return tasks.slice(0, 12).map((task) => {
+    return tasks.slice(0, 5).map((task) => {
       const customer = customers.find((item) => item.id === task.id) || null;
       return {
         id: task.id,
@@ -195,10 +218,12 @@ export default function HomePage() {
         customerName: task.customer_name,
         customerType: getCustomerTypeLabel(getCustomerTypeValue(customer || task)),
         currentStatus: getStageLabel(getStageValue(customer || task)),
-        nextAction: task.current_next_action || getNextAction(customer || task)
+        nextAction: localizeNextAction(task.current_next_action || getNextAction(customer || task))
       };
     });
   }, [customers, tasks]);
+
+  const remainingTaskCount = Math.max(tasks.length - 5, 0);
 
   return (
     <main className="app">
@@ -212,6 +237,15 @@ export default function HomePage() {
       </header>
 
       <AuthPanel session={session} onSessionChange={setSession} />
+
+      {session && (
+        <section className="panel">
+          <div className="notice-panel">
+            <strong>新增客户入口</strong>
+            <p>点击上方“新增客户”后，会进入新询盘分析页面，只展示新询盘分析相关字段；原始 workflow 字段不会在首页默认展开。</p>
+          </div>
+        </section>
+      )}
 
       {error && <div className="error">{error}</div>}
 
@@ -269,6 +303,13 @@ export default function HomePage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {remainingTaskCount > 0 && (
+              <div className="actions" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <span className="notice">还有 {remainingTaskCount} 个任务</span>
+                <Link href="/tasks">查看全部任务</Link>
               </div>
             )}
           </section>
