@@ -9,9 +9,7 @@ import {
   getCustomerName,
   getCustomerTypeLabel,
   getCustomerTypeValue,
-  getLeadLevel,
-  getSourceLabel,
-  isPartnerCandidate
+  getSourceLabel
 } from "../../lib/customerViews";
 
 const prospectingStages = [
@@ -257,15 +255,12 @@ export default function ProspectingPage() {
   }, [targetPool]);
 
   useEffect(() => {
-    if (!selectedId && targetPool[0]?.id) {
-      setSelectedId(targetPool[0].id);
-    }
     if (selectedId && !targetPool.find((customer) => customer.id === selectedId)) {
-      setSelectedId(targetPool[0]?.id || "");
+      setSelectedId("");
     }
   }, [selectedId, targetPool]);
 
-  const selectedCustomer = targetPool.find((customer) => customer.id === selectedId) || todayTasks[0] || null;
+  const selectedCustomer = targetPool.find((customer) => customer.id === selectedId) || null;
   const selectedScript = selectedCustomer ? getProspectingScript(selectedCustomer) : null;
 
   async function copyScript(text) {
@@ -328,10 +323,9 @@ export default function ProspectingPage() {
               <span>{todayTasks.length} 项</span>
             </div>
             <div className="card-list">
-              {todayTasks.map((customer) => (
+              {todayTasks.slice(0, 5).map((customer) => (
                 <article className="customer-card" key={customer.id}>
                   <strong>{getCustomerName(customer)}</strong>
-                  <p>客户类型：{getCustomerTypeLabel(getCustomerTypeValue(customer))}</p>
                   <p>当前阶段：{customer.prospectingStage}</p>
                   <p>任务原因：{customer.taskReason}</p>
                   <p>下一步动作：{customer.prospectingAction}</p>
@@ -345,6 +339,9 @@ export default function ProspectingPage() {
               ))}
               {todayTasks.length === 0 && <p className="empty">今天暂无待推进的开发任务</p>}
             </div>
+            {todayTasks.length > 5 && (
+              <p className="empty">还有 {todayTasks.length - 5} 条今日开发任务，请进入客户详情继续处理。</p>
+            )}
           </section>
 
           <section className="panel">
@@ -396,9 +393,12 @@ export default function ProspectingPage() {
           <section className="board">
             {prospectingStages.map((stage) => (
               <div className="stage-column" key={stage}>
-                <h2>{stage}</h2>
+                <div className="section-title">
+                  <h2>{stage}</h2>
+                  <span>{(boardGroups[stage] || []).length} 个</span>
+                </div>
                 <div className="card-list">
-                  {(boardGroups[stage] || []).map((customer) => (
+                  {(boardGroups[stage] || []).slice(0, 3).map((customer) => (
                     <article className="customer-card" key={customer.id}>
                       <strong>{getCustomerName(customer)}</strong>
                       <p>国家：{customer.country || "待补充"}</p>
@@ -415,58 +415,44 @@ export default function ProspectingPage() {
                     </article>
                   ))}
                   {(boardGroups[stage] || []).length === 0 && <p className="empty">暂无客户</p>}
+                  {(boardGroups[stage] || []).length > 3 && (
+                    <p className="empty">
+                      查看全部（还有 {(boardGroups[stage] || []).length - 3} 个）
+                    </p>
+                  )}
                 </div>
               </div>
             ))}
           </section>
 
-          <section className="form-grid">
-            <article className="panel">
+          {selectedCustomer && (
+            <section className="panel">
               <div className="section-title">
-                <h2>下一步动作</h2>
-                <span>{selectedCustomer ? getCustomerName(selectedCustomer) : "未选择客户"}</span>
+                <h2>开发信操作面板</h2>
+                <span>{getCustomerName(selectedCustomer)}</span>
               </div>
-              {selectedCustomer ? (
-                <div className="detail-grid">
-                  <div className="detail-item"><strong>公司名</strong><p>{getCustomerName(selectedCustomer)}</p></div>
-                  <div className="detail-item"><strong>国家</strong><p>{selectedCustomer.country || "待补充"}</p></div>
-                  <div className="detail-item"><strong>客户类型</strong><p>{getCustomerTypeLabel(getCustomerTypeValue(selectedCustomer))}</p></div>
-                  <div className="detail-item"><strong>来源渠道</strong><p>{getSourceLabel(selectedCustomer.source)}</p></div>
-                  <div className="detail-item"><strong>当前阶段</strong><p>{getProspectingStage(selectedCustomer)}</p></div>
-                  <div className="detail-item"><strong>下次跟进日期</strong><p>{formatDate(getFollowUpDate(selectedCustomer))}</p></div>
-                  <div className="detail-item"><strong>开发优先级</strong><p>{getLeadLevel(selectedCustomer)}</p></div>
-                  <div className="detail-item"><strong>合作商候选</strong><p>{isPartnerCandidate(selectedCustomer) ? "是" : "否"}</p></div>
-                  <div className="detail-item" style={{ gridColumn: "1 / -1" }}>
-                    <strong>下一步动作</strong>
-                    <p>{getProspectingNextAction(selectedCustomer)}</p>
-                  </div>
-                </div>
-              ) : (
-                <p className="empty">请选择一个客户查看下一步动作</p>
-              )}
-            </article>
-
-            <article className="panel">
-              <div className="section-title">
-                <h2>英文开发信 / 跟进话术</h2>
-                <span>{selectedScript?.title || "未生成"}</span>
-              </div>
-              {selectedScript ? (
+              {selectedScript && (
                 <>
-                  <div className="detail-item">
-                    <strong>{selectedScript.title}</strong>
-                    <p style={{ whiteSpace: "pre-wrap" }}>{selectedScript.text}</p>
+                  <div className="detail-grid">
+                    <div className="detail-item"><strong>当前客户名</strong><p>{getCustomerName(selectedCustomer)}</p></div>
+                    <div className="detail-item"><strong>当前阶段</strong><p>{getProspectingStage(selectedCustomer)}</p></div>
+                    <div className="detail-item" style={{ gridColumn: "1 / -1" }}>
+                      <strong>下一步动作</strong>
+                      <p>{getProspectingNextAction(selectedCustomer)}</p>
+                    </div>
+                    <div className="detail-item" style={{ gridColumn: "1 / -1" }}>
+                      <strong>{selectedScript.title}</strong>
+                      <p style={{ whiteSpace: "pre-wrap" }}>{selectedScript.text}</p>
+                    </div>
                   </div>
                   <div className="actions compact">
                     <button type="button" onClick={() => copyScript(selectedScript.text)}>复制英文开发信</button>
-                    {selectedCustomer && <Link href={`/customers/${selectedCustomer.id}`}>查看/编辑</Link>}
+                    <Link href={`/customers/${selectedCustomer.id}`}>查看/编辑客户</Link>
                   </div>
                 </>
-              ) : (
-                <p className="empty">请选择一个客户生成英文开发信</p>
               )}
-            </article>
-          </section>
+            </section>
+          )}
         </>
       )}
     </main>
