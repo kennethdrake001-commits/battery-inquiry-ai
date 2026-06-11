@@ -726,11 +726,10 @@ export default function ProspectingPage() {
               className="summary-grid"
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(8, minmax(0, 1fr))",
-                gap: 8,
+                gridTemplateColumns: "repeat(8, minmax(120px, 140px))",
+                justifyContent: "center",
+                gap: 24,
                 marginTop: 16,
-                width: "100%",
-                minWidth: 0,
                 overflow: "hidden"
               }}
             >
@@ -739,7 +738,7 @@ export default function ProspectingPage() {
                   key={item.title}
                   className="notice-panel"
                   style={{
-                    padding: "10px 8px",
+                    padding: "12px 10px",
                     minWidth: 0,
                     display: "flex",
                     flexDirection: "column",
@@ -748,8 +747,8 @@ export default function ProspectingPage() {
                     textAlign: "center"
                   }}
                 >
-                  <strong style={{ fontSize: 12, lineHeight: 1.3 }}>{item.title}</strong>
-                  <div style={{ fontSize: 24, fontWeight: 700, marginTop: 6, lineHeight: 1.1 }}>{item.value}</div>
+                  <strong style={{ fontSize: 14, lineHeight: 1.3, color: "#c2410c" }}>{item.title}</strong>
+                  <div style={{ fontSize: 30, fontWeight: 700, marginTop: 6, lineHeight: 1.1 }}>{item.value}</div>
                 </article>
               ))}
             </div>
