@@ -3,12 +3,22 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import AppNav from "../../../components/layout/AppNav";
 import CustomerWorkflowCard from "../../../components/workflow/CustomerWorkflowCard";
 import RecommendedScriptCard from "../../../components/workflow/RecommendedScriptCard";
 import { getSupabaseBrowserClient } from "../../../lib/supabaseClient";
 import { dateToFollowUpAt, formatDateTime, parseFollowUpTime } from "../../../lib/followUp";
 import { generateCustomerWorkflow } from "../../../lib/customerWorkflow";
 import { getRecommendedScript } from "../../../lib/scriptTemplates";
+import {
+  getCustomerTypeLabel,
+  getCustomerTypeValue,
+  getLeadLevel,
+  getNextAction,
+  getStageLabel,
+  getStageValue,
+  isPartnerCandidate
+} from "../../../lib/customerViews";
 
 const resultOptions = ["客户已回复", "客户未回复", "进入报价", "进入 PI", "成交", "失败", "暂不确定"];
 const playbookEligibleResults = ["客户已回复", "进入报价", "进入 PI", "成交"];
@@ -173,6 +183,7 @@ export default function CustomerDetailPage() {
   const [isSavingQuote, setIsSavingQuote] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [activeTab, setActiveTab] = useState("overview");
 
   const customerId = params?.id;
   const recommendedScript = useMemo(() => {
@@ -634,6 +645,18 @@ export default function CustomerDetailPage() {
 
   if (loading) return <main className="app"><section className="panel">加载中...</section></main>;
 
+  const currentStage = getStageLabel(getStageValue(customer || {}));
+  const currentType = getCustomerTypeLabel(getCustomerTypeValue(customer || {}));
+  const currentLeadLevel = getLeadLevel(customer || {});
+  const currentAction = workflowForm.nextAction || getNextAction(customer || {});
+  const suggestedMaterials = [
+    currentType.includes("安装商") ? "电池规格书、安装照片、兼容性说明" : null,
+    currentType.includes("经销") ? "产品目录、主推型号、渠道供货说明" : null,
+    currentType.includes("终端") ? "简单方案说明、应用场景图、英文回复话术" : null,
+    "产品规格书",
+    "英文跟进话术"
+  ].filter(Boolean);
+
   return (
     <main className="app">
       <header className="hero">
@@ -642,132 +665,251 @@ export default function CustomerDetailPage() {
           <h1>{customer?.customer_name || "客户详情"}</h1>
           <p>{customer?.country || "未知国家"} · {customer?.source || "未知来源"}</p>
         </div>
-        <nav>
-          <Link href="/">客户录入</Link>
-          <Link href="/customers">客户列表</Link>
-          <Link href="/playbook">有效案例库</Link>
-          <Link href="/products">产品知识库</Link>
-          <Link href="/system-checker">系统搭配校验器</Link>
-          <Link href="/tasks">今日任务</Link>
-        </nav>
+        <AppNav />
       </header>
 
       {session ? <div className="auth-card">已登录：{session.user.email}</div> : <div className="auth-card">请先登录。</div>}
       {error && <div className="error">{error}</div>}
       {success && <div className="success">{success}</div>}
 
-      <CustomerWorkflowCard
-        form={workflowForm}
-        onChange={updateWorkflowForm}
-        onGenerate={generateWorkflowRecommendation}
-        actions={<button onClick={saveWorkflow} disabled={isSaving}>保存客户流程</button>}
-      />
       <section className="panel">
-        <div className="section-title">
-          <h2>推荐英文回复</h2>
-          <span>根据当前 workflow 自动生成，可直接复制</span>
-        </div>
-        <RecommendedScriptCard
-          scriptTitle={recommendedScript.scriptTitle}
-          scriptText={recommendedScript.scriptText}
-          scriptType={recommendedScript.scriptType}
-        />
-      </section>
-
-      <section className="panel">
-        <div className="section-title">
-          <h2>AI 继续分析下一步</h2>
-          <span>会结合该客户历史 interactions</span>
-        </div>
-        <div className="form-grid">
-          <Field label="客户新回复">
-            <textarea rows={5} value={customerNewReply} onChange={(event) => setCustomerNewReply(event.target.value)} />
-          </Field>
-          <Field label="人工备注">
-            <textarea rows={5} value={operatorNote} onChange={(event) => setOperatorNote(event.target.value)} />
-          </Field>
-        </div>
-        <div className="actions">
-          <button className="primary" onClick={() => continueAnalyze()} disabled={isAnalyzing || !session}>
-            {isAnalyzing ? "AI 分析中..." : "AI 继续分析下一步"}
-          </button>
+        <div className="tabs">
+          <button className={activeTab === "overview" ? "primary" : ""} onClick={() => setActiveTab("overview")}>概览</button>
+          <button className={activeTab === "profile" ? "primary" : ""} onClick={() => setActiveTab("profile")}>客户资料</button>
+          <button className={activeTab === "demand" ? "primary" : ""} onClick={() => setActiveTab("demand")}>需求与产品</button>
+          <button className={activeTab === "records" ? "primary" : ""} onClick={() => setActiveTab("records")}>跟进记录</button>
+          <button className={activeTab === "materials" ? "primary" : ""} onClick={() => setActiveTab("materials")}>资料与话术</button>
         </div>
       </section>
 
-      {analysis && (
+      {activeTab === "overview" && (
+        <>
+          <section className="panel">
+            <div className="section-title">
+              <h2>概览</h2>
+              <span>只看当前阶段判断和下一步</span>
+            </div>
+            <div className="detail-grid">
+              <div className="detail-item"><strong>客户名</strong><p>{customer?.customer_name || "待补充"}</p></div>
+              <div className="detail-item"><strong>国家</strong><p>{customer?.country || "待补充"}</p></div>
+              <div className="detail-item"><strong>客户类型</strong><p>{currentType}</p></div>
+              <div className="detail-item"><strong>来源</strong><p>{customer?.source || "待补充"}</p></div>
+              <div className="detail-item"><strong>客户评分 / 等级</strong><p>{customer?.latest_analysis?.customerScore || "-"} / {currentLeadLevel}</p></div>
+              <div className="detail-item"><strong>当前状态</strong><p>{currentStage}</p></div>
+              <div className="detail-item"><strong>下一步建议</strong><p>{currentAction}</p></div>
+              <div className="detail-item"><strong>下一步任务</strong><p>{workflowForm.followUpDate || customer?.next_follow_up_at || "待安排"}</p></div>
+              <div className="detail-item"><strong>合作商候选标记</strong><p>{isPartnerCandidate(customer || {}) ? "是" : "否"}</p></div>
+            </div>
+          </section>
+
+          <CustomerWorkflowCard
+            form={workflowForm}
+            onChange={updateWorkflowForm}
+            onGenerate={generateWorkflowRecommendation}
+            actions={<button onClick={saveWorkflow} disabled={isSaving}>保存客户流程</button>}
+          />
+        </>
+      )}
+
+      {activeTab === "profile" && (
         <section className="panel">
           <div className="section-title">
-            <h2>下一步 AI 分析结果</h2>
-            <span>可保存草稿或标记已发送</span>
+            <h2>客户资料</h2>
+            <span>基础信息统一放这里，避免列表页过载</span>
           </div>
-          <pre className="json-box">{JSON.stringify(analysis, null, 2)}</pre>
-          <Field label="运营最终发送话术">
-            <textarea rows={5} value={finalReply} onChange={(event) => setFinalReply(event.target.value)} />
-          </Field>
-          <div className="actions">
-            <button onClick={() => saveNextInteraction("sent")} disabled={isSaving}>复制并标记已发送</button>
-            <button onClick={() => saveNextInteraction("draft")} disabled={isSaving}>仅保存草稿</button>
+          <div className="detail-grid">
+            <div className="detail-item"><strong>联系人</strong><p>{customer?.contact_name || "待补充"}</p></div>
+            <div className="detail-item"><strong>邮箱</strong><p>{customer?.email || "待补充"}</p></div>
+            <div className="detail-item"><strong>WhatsApp</strong><p>{customer?.whatsapp || "待补充"}</p></div>
+            <div className="detail-item"><strong>官网</strong><p>{customer?.website || "待补充"}</p></div>
+            <div className="detail-item"><strong>LinkedIn</strong><p>{customer?.linkedin || "待补充"}</p></div>
+            <div className="detail-item"><strong>Facebook</strong><p>{customer?.facebook || "待补充"}</p></div>
+            <div className="detail-item"><strong>城市</strong><p>{customer?.destination_city || customer?.city || "待补充"}</p></div>
+            <div className="detail-item"><strong>主营业务</strong><p>{customer?.business_scope || "待补充"}</p></div>
+            <div className="detail-item"><strong>是否做安装</strong><p>{currentType.includes("安装商") ? "是" : "待确认"}</p></div>
+            <div className="detail-item"><strong>是否卖电池</strong><p>{["太阳能经销商", "电池批发商", "OEM / 品牌方"].includes(currentType) ? "是" : "待确认"}</p></div>
+            <div className="detail-item"><strong>是否卖逆变器</strong><p>{currentType.includes("逆变器经销商") ? "是" : "待确认"}</p></div>
+            <div className="detail-item"><strong>是否有进口经验</strong><p>{customer?.import_experience || "待补充"}</p></div>
+            <div className="detail-item"><strong>清关能力</strong><p>{customer?.customs_capability || "待补充"}</p></div>
           </div>
         </section>
       )}
 
-      <section className="panel">
-        <div className="section-title">
-          <h2>报价记录</h2>
-          <span>{quotes.length} 个报价版本</span>
-        </div>
-        <div className="form-grid">
-          <Field label="报价版本">
-            <input value={quoteForm.quote_version} onChange={(event) => updateQuoteForm("quote_version", event.target.value)} />
-          </Field>
-          <Field label="product 产品">
-            <input value={quoteForm.product} onChange={(event) => updateQuoteForm("product", event.target.value)} />
-          </Field>
-          <Field label="quantity 数量">
-            <input value={quoteForm.quantity} onChange={(event) => updateQuoteForm("quantity", event.target.value)} />
-          </Field>
-          <Field label="unit_price 单价">
-            <input value={quoteForm.unit_price} onChange={(event) => updateQuoteForm("unit_price", event.target.value)} />
-          </Field>
-          <Field label="total_price 总价">
-            <input value={quoteForm.total_price} onChange={(event) => updateQuoteForm("total_price", event.target.value)} />
-          </Field>
-          <Field label="贸易条款">
-            <select value={quoteForm.trade_term} onChange={(event) => updateQuoteForm("trade_term", event.target.value)}>
-              {["FOB", "CIF", "DDP", "EXW", "Other"].map((term) => <option key={term}>{term}</option>)}
-            </select>
-          </Field>
-          <Field label="港口或地址">
-            <input value={quoteForm.port_or_address} onChange={(event) => updateQuoteForm("port_or_address", event.target.value)} />
-          </Field>
-          <Field label="报价有效期">
-            <input type="date" value={quoteForm.valid_until} onChange={(event) => updateQuoteForm("valid_until", event.target.value)} />
-          </Field>
-          <Field label="报价备注">
-            <textarea rows={3} value={quoteForm.quote_note} onChange={(event) => updateQuoteForm("quote_note", event.target.value)} />
-          </Field>
-        </div>
-        <div className="actions">
-          <button className="primary" onClick={saveQuote} disabled={isSavingQuote}>新增报价</button>
-        </div>
-        <div className="history">
-          {quotes.map((item) => (
-            <QuoteItem key={item.id} item={item} onNoteChange={updateQuoteNote} onSaveNote={saveQuoteNote} isSaving={isSavingQuote} />
-          ))}
-          {quotes.length === 0 && <p className="empty">暂无报价记录</p>}
-        </div>
-      </section>
+      {activeTab === "demand" && (
+        <>
+          <section className="panel">
+            <div className="section-title">
+              <h2>需求与产品</h2>
+              <span>把需求、推荐产品和报价入口放在一起看</span>
+            </div>
+            <div className="detail-grid">
+              <div className="detail-item"><strong>目标容量</strong><p>{customer?.target_capacity || customer?.latest_analysis?.capacitySuggestion || "待确认"}</p></div>
+              <div className="detail-item"><strong>数量</strong><p>{workflowForm.quantity || customer?.quantity || "待确认"}</p></div>
+              <div className="detail-item"><strong>应用场景</strong><p>{customer?.application_scenario || customer?.question || "待确认"}</p></div>
+              <div className="detail-item"><strong>逆变器品牌</strong><p>{customer?.inverter_brand || "待确认"}</p></div>
+              <div className="detail-item"><strong>是否 OEM</strong><p>{getCustomerTypeValue(customer || {}) === "OEM / Brand Owner" ? "是" : "否 / 待确认"}</p></div>
+              <div className="detail-item"><strong>贸易条款</strong><p>{workflowForm.shippingTerm || customer?.shipping_term || "待确认"}</p></div>
+              <div className="detail-item"><strong>推荐产品</strong><p>{customer?.recommended_product || customer?.quote_content || "待补充"}</p></div>
+              <div className="detail-item"><strong>报价记录入口</strong><p>下方可直接新增和查看报价版本</p></div>
+            </div>
+          </section>
 
-      <section className="panel history">
-        <div className="section-title">
-          <h2>跟进历史</h2>
-          <span>{interactions.length} 条记录</span>
-        </div>
-        {interactions.map((item) => (
-          <HistoryItem key={item.id} item={item} onSaveAsPlaybook={openPlaybookForm} />
-        ))}
-        {interactions.length === 0 && <p className="empty">暂无历史记录</p>}
-      </section>
+          <section className="panel">
+            <div className="section-title">
+              <h2>报价记录</h2>
+              <span>{quotes.length} 个报价版本</span>
+            </div>
+            <div className="form-grid">
+              <Field label="报价版本">
+                <input value={quoteForm.quote_version} onChange={(event) => updateQuoteForm("quote_version", event.target.value)} />
+              </Field>
+              <Field label="产品">
+                <input value={quoteForm.product} onChange={(event) => updateQuoteForm("product", event.target.value)} />
+              </Field>
+              <Field label="数量">
+                <input value={quoteForm.quantity} onChange={(event) => updateQuoteForm("quantity", event.target.value)} />
+              </Field>
+              <Field label="单价">
+                <input value={quoteForm.unit_price} onChange={(event) => updateQuoteForm("unit_price", event.target.value)} />
+              </Field>
+              <Field label="总价">
+                <input value={quoteForm.total_price} onChange={(event) => updateQuoteForm("total_price", event.target.value)} />
+              </Field>
+              <Field label="贸易条款">
+                <select value={quoteForm.trade_term} onChange={(event) => updateQuoteForm("trade_term", event.target.value)}>
+                  {["FOB", "CIF", "DDP", "EXW", "Other"].map((term) => <option key={term}>{term}</option>)}
+                </select>
+              </Field>
+              <Field label="港口或地址">
+                <input value={quoteForm.port_or_address} onChange={(event) => updateQuoteForm("port_or_address", event.target.value)} />
+              </Field>
+              <Field label="报价有效期">
+                <input type="date" value={quoteForm.valid_until} onChange={(event) => updateQuoteForm("valid_until", event.target.value)} />
+              </Field>
+              <Field label="报价备注">
+                <textarea rows={3} value={quoteForm.quote_note} onChange={(event) => updateQuoteForm("quote_note", event.target.value)} />
+              </Field>
+            </div>
+            <div className="actions">
+              <button className="primary" onClick={saveQuote} disabled={isSavingQuote}>新增报价</button>
+              <Link href="/quotes">进入报价页</Link>
+            </div>
+            <div className="history">
+              {quotes.map((item) => (
+                <QuoteItem key={item.id} item={item} onNoteChange={updateQuoteNote} onSaveNote={saveQuoteNote} isSaving={isSavingQuote} />
+              ))}
+              {quotes.length === 0 && <p className="empty">暂无报价记录</p>}
+            </div>
+          </section>
+        </>
+      )}
+
+      {activeTab === "records" && (
+        <>
+          <section className="panel">
+            <div className="section-title">
+              <h2>继续跟进</h2>
+              <span>跟进动作和新回复在这里推进</span>
+            </div>
+            <div className="form-grid">
+              <Field label="客户新回复">
+                <textarea rows={5} value={customerNewReply} onChange={(event) => setCustomerNewReply(event.target.value)} />
+              </Field>
+              <Field label="人工备注">
+                <textarea rows={5} value={operatorNote} onChange={(event) => setOperatorNote(event.target.value)} />
+              </Field>
+            </div>
+            <div className="actions">
+              <button className="primary" onClick={() => continueAnalyze()} disabled={isAnalyzing || !session}>
+                {isAnalyzing ? "AI 分析中..." : "AI 继续分析下一步"}
+              </button>
+            </div>
+          </section>
+
+          {analysis && (
+            <section className="panel">
+              <div className="section-title">
+                <h2>下一步 AI 分析结果</h2>
+                <span>可保存草稿或标记已发送</span>
+              </div>
+              <pre className="json-box">{JSON.stringify(analysis, null, 2)}</pre>
+              <Field label="运营最终发送话术">
+                <textarea rows={5} value={finalReply} onChange={(event) => setFinalReply(event.target.value)} />
+              </Field>
+              <div className="actions">
+                <button onClick={() => saveNextInteraction("sent")} disabled={isSaving}>复制并标记已发送</button>
+                <button onClick={() => saveNextInteraction("draft")} disabled={isSaving}>仅保存草稿</button>
+              </div>
+            </section>
+          )}
+
+          <section className="panel history">
+            <div className="section-title">
+              <h2>跟进记录时间线</h2>
+              <span>{interactions.length} 条记录</span>
+            </div>
+            <div className="timeline">
+              {interactions.map((item) => (
+                <article className="timeline-item" key={item.id}>
+                  <div className="timeline-dot" />
+                  <div className="timeline-content">
+                    <div className="history-head">
+                      <strong>{new Date(item.created_at).toLocaleString()}</strong>
+                      <div className="actions compact">
+                        {playbookEligibleResults.includes(item.result_feedback) && (
+                          <button onClick={() => openPlaybookForm(item)}>保存为有效案例</button>
+                        )}
+                        <span>{item.interaction_status || "草稿"}</span>
+                      </div>
+                    </div>
+                    <p><strong>客户原始消息：</strong>{item.original_message || "无"}</p>
+                    <p><strong>最终发送话术：</strong>{item.final_sent_reply || "未发送"}</p>
+                    <p><strong>客户新回复：</strong>{item.customer_new_reply || "无"}</p>
+                    <p><strong>结果反馈：</strong>{[item.result_feedback, item.failure_reason, item.operator_note].filter(Boolean).join(" / ") || "无"}</p>
+                    <details>
+                      <summary>查看完整记录</summary>
+                      <HistoryItem item={item} onSaveAsPlaybook={openPlaybookForm} />
+                    </details>
+                  </div>
+                </article>
+              ))}
+            </div>
+            {interactions.length === 0 && <p className="empty">暂无历史记录</p>}
+          </section>
+        </>
+      )}
+
+      {activeTab === "materials" && (
+        <>
+          <section className="panel">
+            <div className="section-title">
+              <h2>资料与话术</h2>
+              <span>把可发给客户的内容统一收在一起</span>
+            </div>
+            <div className="detail-grid">
+              <div className="detail-item">
+                <strong>已发送资料</strong>
+                <p>{customer?.sent_materials || "暂未记录"}</p>
+              </div>
+              <div className="detail-item">
+                <strong>推荐资料</strong>
+                <p>{suggestedMaterials.join(" / ")}</p>
+              </div>
+            </div>
+          </section>
+          <section className="panel">
+            <div className="section-title">
+              <h2>推荐英文话术</h2>
+              <span>可直接复制发送给客户</span>
+            </div>
+            <RecommendedScriptCard
+              scriptTitle={recommendedScript.scriptTitle}
+              scriptText={recommendedScript.scriptText}
+              scriptType={recommendedScript.scriptType}
+            />
+          </section>
+        </>
+      )}
 
       {pendingFeedbackInteraction && (
         <div className="modal-backdrop">

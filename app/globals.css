@@ -103,6 +103,11 @@ nav,
   gap: 10px;
 }
 
+nav a {
+  background: white;
+  border: 1px solid #dbe5f1;
+}
+
 .compact {
   margin-top: 0 !important;
 }
@@ -552,6 +557,122 @@ nav,
   margin: 0;
 }
 
+.table-wrap {
+  overflow-x: auto;
+  width: 100%;
+}
+
+.compact-table {
+  border-collapse: collapse;
+  min-width: 900px;
+  width: 100%;
+}
+
+.compact-table th,
+.compact-table td {
+  border-bottom: 1px solid #e4eaf3;
+  padding: 14px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.compact-table th {
+  background: #f8fafc;
+  color: #526070;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.compact-table tbody tr:hover {
+  background: #fbfdff;
+}
+
+.truncate-cell {
+  color: #344054;
+  max-width: 340px;
+}
+
+.soft-badge {
+  background: #f2f4f7;
+  border-radius: 999px;
+  color: #344054;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+.priority-badge {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+.priority-高 {
+  background: #fef3f2;
+  color: #b42318;
+}
+
+.priority-中 {
+  background: #fffaeb;
+  color: #b54708;
+}
+
+.priority-普通 {
+  background: #eff8ff;
+  color: #175cd3;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.tabs button {
+  background: #f8fafc;
+  border: 1px solid #dbe5f1;
+}
+
+.timeline {
+  display: grid;
+  gap: 18px;
+}
+
+.timeline-item {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 20px minmax(0, 1fr);
+}
+
+.timeline-dot {
+  align-self: start;
+  background: #155eef;
+  border-radius: 999px;
+  height: 12px;
+  margin-top: 8px;
+  width: 12px;
+}
+
+.timeline-content {
+  border: 1px solid #e4eaf3;
+  border-radius: 16px;
+  padding: 18px;
+}
+
+.timeline-content p {
+  margin: 8px 0 0;
+}
+
+.timeline-content details {
+  margin-top: 12px;
+}
+
 .checker-grid {
   display: grid;
   gap: 16px;
@@ -647,5 +768,9 @@ nav,
 
   .two-col {
     flex-direction: column;
+  }
+
+  .compact-table {
+    min-width: 720px;
   }
 }

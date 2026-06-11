@@ -2,19 +2,35 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import TaskListPanel from "../../components/tasks/TaskListPanel";
+import AppNav from "../../components/layout/AppNav";
 import { getSupabaseBrowserClient } from "../../lib/supabaseClient";
 import { buildTaskRows } from "../../lib/taskWorkflow";
+import { formatDateTime } from "../../lib/followUp";
+import { getTaskPriority } from "../../lib/customerViews";
 
 function AuthNotice({ session }) {
   if (session) return <div className="auth-card">已登录：{session.user.email}</div>;
-  return <div className="auth-card">请先回到客户录入页登录邮箱账号。</div>;
+  return <div className="auth-card">请先回到工作台登录邮箱账号。</div>;
+}
+
+function getTaskTab(task) {
+  if (!task.next_follow_up_at) return "today";
+  const now = new Date();
+  const target = new Date(task.next_follow_up_at);
+  if (target.getTime() < now.getTime()) return "overdue";
+
+  const diffDays = (target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+  if (diffDays <= 1) return "today";
+  if (diffDays <= 7) return "week";
+  return "week";
 }
 
 export default function TasksPage() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [session, setSession] = useState(null);
   const [customers, setCustomers] = useState([]);
+  const [activeTab, setActiveTab] = useState("today");
+  const [completedIds, setCompletedIds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -49,24 +65,32 @@ export default function TasksPage() {
     init();
   }, [supabase]);
 
-  const tasks = useMemo(() => buildTaskRows(customers), [customers]);
+  const allTasks = useMemo(() => buildTaskRows(customers), [customers]);
+
+  const tasksByTab = useMemo(() => {
+    const visibleTasks = allTasks.filter((task) => !completedIds.includes(task.id));
+    return {
+      today: visibleTasks.filter((task) => getTaskTab(task) === "today"),
+      week: visibleTasks.filter((task) => getTaskTab(task) === "week"),
+      overdue: visibleTasks.filter((task) => getTaskTab(task) === "overdue")
+    };
+  }, [allTasks, completedIds]);
+
+  const currentTasks = tasksByTab[activeTab] || [];
+
+  function completeTask(taskId) {
+    setCompletedIds((current) => [...current, taskId]);
+  }
 
   return (
     <main className="app">
       <header className="hero">
         <div>
-          <p className="eyebrow">今日任务</p>
-          <h1>今日跟进任务</h1>
-          <p>集中查看今天优先需要处理的客户。</p>
+          <p className="eyebrow">任务</p>
+          <h1>任务中心</h1>
+          <p>任务页只展示要做的动作，不混入完整客户资料。</p>
         </div>
-        <nav>
-          <Link href="/">客户录入</Link>
-          <Link href="/customers">客户列表</Link>
-          <Link href="/playbook">有效案例库</Link>
-          <Link href="/products">产品知识库</Link>
-          <Link href="/system-checker">系统搭配校验器</Link>
-          <Link href="/tasks">今日任务</Link>
-        </nav>
+        <AppNav />
       </header>
 
       <AuthNotice session={session} />
@@ -75,7 +99,54 @@ export default function TasksPage() {
       {error && <div className="error">{error}</div>}
 
       {!loading && session && (
-        <TaskListPanel tasks={tasks} hrefForTask={(task) => `/customers/${task.id}`} />
+        <section className="panel">
+          <div className="section-title">
+            <h2>任务列表</h2>
+            <span>按时间分组查看待处理事项</span>
+          </div>
+
+          <div className="tabs">
+            <button className={activeTab === "today" ? "primary" : ""} onClick={() => setActiveTab("today")}>今日任务</button>
+            <button className={activeTab === "week" ? "primary" : ""} onClick={() => setActiveTab("week")}>本周任务</button>
+            <button className={activeTab === "overdue" ? "primary" : ""} onClick={() => setActiveTab("overdue")}>逾期任务</button>
+          </div>
+
+          {currentTasks.length === 0 ? (
+            <p className="empty" style={{ marginTop: 20 }}>当前标签下暂无任务</p>
+          ) : (
+            <div className="table-wrap" style={{ marginTop: 20 }}>
+              <table className="compact-table">
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>客户名</th>
+                    <th>任务类型</th>
+                    <th>任务内容</th>
+                    <th>优先级</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {currentTasks.map((task) => (
+                    <tr key={task.id}>
+                      <td>{formatDateTime(task.next_follow_up_at)}</td>
+                      <td>{task.customer_name}</td>
+                      <td>{task.task_reason}</td>
+                      <td className="truncate-cell">{task.current_next_action}</td>
+                      <td><span className={`priority-badge priority-${getTaskPriority(task)}`}>{getTaskPriority(task)}</span></td>
+                      <td>
+                        <div className="actions compact">
+                          <Link href={`/customers/${task.id}`}>查看客户</Link>
+                          <button type="button" onClick={() => completeTask(task.id)}>完成</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       )}
     </main>
   );
