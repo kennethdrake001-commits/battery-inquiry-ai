@@ -46,9 +46,9 @@ const priceFields = [
 const assetGroups = [
   { type: "main_image", label: "主图", accept: "image/*", multiple: false },
   { type: "gallery_image", label: "图库图片", accept: "image/*", multiple: true },
-  { type: "datasheet", label: "产品规格书", accept: ".pdf,.doc,.docx,.xls,.xlsx,.zip,.rar", multiple: false },
+  { type: "datasheet", label: "产品规格书", accept: ".pdf,.doc,.docx,.xls,.xlsx,.zip,.rar", multiple: true },
   { type: "user_manual", label: "用户手册", accept: ".pdf,.doc,.docx,.zip,.rar", multiple: false },
-  { type: "certificate", label: "认证文件", accept: ".pdf,.jpg,.jpeg,.png,.zip,.rar", multiple: false },
+  { type: "certificate", label: "认证文件", accept: ".pdf,.jpg,.jpeg,.png,.zip,.rar", multiple: true },
   { type: "test_report", label: "测试报告", accept: ".pdf,.doc,.docx,.zip,.rar", multiple: false },
   { type: "product_catalog", label: "产品目录", accept: ".pdf,.doc,.docx,.xls,.xlsx,.zip,.rar", multiple: false },
   { type: "installation_guide", label: "安装指南", accept: ".pdf,.doc,.docx,.zip,.rar", multiple: false }
@@ -206,16 +206,21 @@ function getProductSection(product) {
   return "未分类产品";
 }
 
-function getSpecSummary(product) {
-  return [
-    product.voltage || "待确认",
-    product.capacity_ah ? `${product.capacity_ah}Ah` : "待确认",
-    product.energy_kwh ?? product.capacity_kwh ? `${product.energy_kwh ?? product.capacity_kwh}kWh` : "待确认"
-  ].join(" / ");
+function getPriceSummary(product) {
+  const price = product.base_price ?? product.fob_price;
+  const term = product.price_term || "";
+  const port = product.port || product.fob_port || "";
+
+  if (price === null || price === undefined || price === "") return "";
+
+  const parts = [`${product.currency || "USD"} ${price}`];
+  if (term) parts.push(term);
+  if (port) parts.push(port);
+  return parts.join(" / ");
 }
 
-function getPriceSummary(product) {
-  return `${product.currency || "USD"} ${product.base_price ?? product.fob_price ?? "待确认"} / ${product.price_term || "FOB"} ${product.port || product.fob_port || "待确认"}`;
+function getUploadInputId(productId, assetType) {
+  return `product-upload-${productId}-${assetType}`;
 }
 
 export default function ProductsPage() {
@@ -231,6 +236,7 @@ export default function ProductsPage() {
   const [editingProductId, setEditingProductId] = useState("");
   const [editingNoteId, setEditingNoteId] = useState("");
   const [noteDrafts, setNoteDrafts] = useState({});
+  const [expandedMoreFiles, setExpandedMoreFiles] = useState({});
   const [showArchived, setShowArchived] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -585,6 +591,11 @@ export default function ProductsPage() {
     );
   }
 
+  function triggerFileSelect(productId, assetType) {
+    const input = document.getElementById(getUploadInputId(productId, assetType));
+    input?.click();
+  }
+
   return (
     <main className="app">
       <header className="hero">
@@ -658,49 +669,106 @@ export default function ProductsPage() {
                         const detailOpen = expandedProductId === product.id;
                         const editOpen = editingProductId === product.id;
                         const internalNote = getInternalNoteValue(product);
+                        const priceSummary = getPriceSummary(product);
+                        const moreFilesOpen = Boolean(expandedMoreFiles[product.id]);
                         return (
                           <article key={product.id} className="detail-item" style={{ padding: 20 }}>
                             <div style={{ display: "grid", gridTemplateColumns: "280px minmax(0, 1fr)", gap: 20, alignItems: "start" }}>
-                              <div>
-                                {mainImage ? (
-                                  <img
-                                    src={mainImage.signed_url || mainImage.file_url}
-                                    alt={product.product_name || "product"}
-                                    style={{ width: "100%", height: 220, objectFit: "cover", borderRadius: 16, marginBottom: 12 }}
-                                  />
-                                ) : (
-                                  <div style={{ height: 220, borderRadius: 16, background: "#f8fafc", border: "1px dashed #cbd5e1", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 16, marginBottom: 12 }}>
-                                    暂无主图，请上传产品主图
-                                  </div>
-                                )}
+                              <div
+                                style={{
+                                  borderRadius: 16,
+                                  background: "#f8fafc",
+                                  border: "1px solid #e2e8f0",
+                                  minHeight: 320,
+                                  padding: 16,
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: 12
+                                }}
+                              >
                                 <input
+                                  id={getUploadInputId(product.id, "main_image")}
                                   type="file"
                                   accept="image/*"
+                                  style={{ display: "none" }}
                                   onChange={(event) => queueUpload(product.id, "main_image", event.target.files)}
                                   disabled={String(product.status || "").toLowerCase() === "archived"}
                                 />
-                                <div className="actions compact" style={{ marginTop: 8, flexWrap: "wrap" }}>
-                                  <button type="button" onClick={() => uploadAssetGroup(product, assetGroups.find((item) => item.type === "main_image"))}>
-                                    上传 / 替换主图
-                                  </button>
-                                  <button type="button" onClick={() => mainImage && openAsset(mainImage)} disabled={!mainImage}>预览主图</button>
-                                  <button type="button" onClick={() => mainImage && deleteAsset(mainImage)} disabled={!mainImage}>删除主图</button>
+                                <div
+                                  style={{
+                                    flex: 1,
+                                    minHeight: 220,
+                                    borderRadius: 12,
+                                    border: mainImage ? "none" : "1px dashed #cbd5e1",
+                                    background: mainImage ? "#fff" : "#f8fafc",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    overflow: "hidden",
+                                    textAlign: "center",
+                                    padding: 12
+                                  }}
+                                >
+                                  {mainImage ? (
+                                    <img
+                                      src={mainImage.signed_url || mainImage.file_url}
+                                      alt={product.product_name || "product"}
+                                      style={{ width: "100%", height: 220, objectFit: "cover", borderRadius: 12 }}
+                                    />
+                                  ) : (
+                                    <div>
+                                      <p style={{ marginBottom: 12 }}>暂无主图，请上传产品主图</p>
+                                      <button
+                                        type="button"
+                                        onClick={() => triggerFileSelect(product.id, "main_image")}
+                                        disabled={String(product.status || "").toLowerCase() === "archived"}
+                                      >
+                                        上传 / 替换主图
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
+                                {mainImage && (
+                                  <div className="actions compact" style={{ flexWrap: "wrap" }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => triggerFileSelect(product.id, "main_image")}
+                                      disabled={String(product.status || "").toLowerCase() === "archived"}
+                                    >
+                                      替换主图
+                                    </button>
+                                    <button type="button" onClick={() => mainImage && openAsset(mainImage)} disabled={!mainImage}>预览主图</button>
+                                    <button type="button" onClick={() => mainImage && deleteAsset(mainImage)} disabled={!mainImage}>删除主图</button>
+                                  </div>
+                                )}
+                                {(uploadQueue[`${product.id}:main_image`] || []).length > 0 && (
+                                  <div className="actions compact" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                                    <span className="muted">已选 {(uploadQueue[`${product.id}:main_image`] || []).length} 个文件</span>
+                                    <button type="button" onClick={() => uploadAssetGroup(product, assetGroups.find((item) => item.type === "main_image"))}>
+                                      上传主图
+                                    </button>
+                                  </div>
+                                )}
                               </div>
 
                               <div style={{ minWidth: 0 }}>
                                 <div className="section-title" style={{ marginBottom: 12 }}>
                                   <div>
                                     <h3 style={{ margin: 0 }}>{product.product_name || "未命名产品"}</h3>
-                                    <p className="muted" style={{ marginTop: 6 }}>{product.model || "待补充型号"}</p>
+                                    <p className="muted" style={{ marginTop: 6, marginBottom: 4 }}>{product.model || "待补充型号"}</p>
+                                    {product.short_description ? (
+                                      <p style={{ margin: 0, color: "#475569" }}>{product.short_description}</p>
+                                    ) : null}
                                   </div>
                                   <span className="soft-badge">{getStatusLabel(product.status)}</span>
                                 </div>
 
-                                <div className="detail-grid" style={{ marginBottom: 16 }}>
-                                  <div className="detail-item"><strong>核心规格摘要</strong><p>{getSpecSummary(product)}</p></div>
-                                  <div className="detail-item"><strong>价格信息</strong><p>{getPriceSummary(product)}</p></div>
-                                </div>
+                                {priceSummary ? (
+                                  <div className="detail-item" style={{ marginBottom: 16 }}>
+                                    <strong>价格信息</strong>
+                                    <p>{priceSummary}</p>
+                                  </div>
+                                ) : null}
 
                                 <div className="detail-item" style={{ marginBottom: 16 }}>
                                   <div className="section-title" style={{ marginBottom: 8 }}>
@@ -734,7 +802,7 @@ export default function ProductsPage() {
                                 </div>
 
                                 <div style={{ display: "grid", gap: 12 }}>
-                                  {fileSectionConfigs.map((section) => {
+                                  {fileSectionConfigs.slice(0, 2).map((section) => {
                                     const files = getFilesByTypes(product.id, section.assetTypes);
                                     return (
                                       <div key={section.key} className="detail-item">
@@ -748,14 +816,21 @@ export default function ProductsPage() {
                                               return (
                                                 <div key={config.type} className="actions compact">
                                                   <input
+                                                    id={getUploadInputId(product.id, config.type)}
                                                     type="file"
                                                     accept={config.accept}
                                                     multiple={config.multiple}
+                                                    style={{ display: "none" }}
                                                     onChange={(event) => queueUpload(product.id, config.type, event.target.files)}
                                                     disabled={String(product.status || "").toLowerCase() === "archived"}
                                                   />
-                                                  <button type="button" onClick={() => uploadAssetGroup(product, config)}>
-                                                    上传
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => (uploadQueue[queueKey] || []).length
+                                                      ? uploadAssetGroup(product, config)
+                                                      : triggerFileSelect(product.id, config.type)}
+                                                  >
+                                                    {(uploadQueue[queueKey] || []).length ? `上传${section.title}` : `上传${section.title}`}
                                                   </button>
                                                   {(uploadQueue[queueKey] || []).length > 0 && <span className="muted">已选 {(uploadQueue[queueKey] || []).length} 个</span>}
                                                 </div>
@@ -785,6 +860,80 @@ export default function ProductsPage() {
                                       </div>
                                     );
                                   })}
+                                </div>
+
+                                <div className="detail-item" style={{ marginTop: 12 }}>
+                                  <div className="section-title">
+                                    <strong>更多文件</strong>
+                                    <button
+                                      type="button"
+                                      onClick={() => setExpandedMoreFiles((current) => ({ ...current, [product.id]: !current[product.id] }))}
+                                    >
+                                      {moreFilesOpen ? "收起更多文件" : "管理更多文件"}
+                                    </button>
+                                  </div>
+                                  {moreFilesOpen ? (
+                                    <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
+                                      {fileSectionConfigs.slice(2).map((section) => {
+                                        const files = getFilesByTypes(product.id, section.assetTypes);
+                                        return (
+                                          <div key={section.key} className="detail-item">
+                                            <div className="section-title" style={{ marginBottom: 8 }}>
+                                              <strong>{section.title}</strong>
+                                              <div className="actions compact" style={{ flexWrap: "wrap" }}>
+                                                {section.uploadTypes.map((type) => {
+                                                  const config = assetGroups.find((item) => item.type === type);
+                                                  if (!config) return null;
+                                                  const queueKey = `${product.id}:${config.type}`;
+                                                  return (
+                                                    <div key={config.type} className="actions compact">
+                                                      <input
+                                                        id={getUploadInputId(product.id, config.type)}
+                                                        type="file"
+                                                        accept={config.accept}
+                                                        multiple={config.multiple}
+                                                        style={{ display: "none" }}
+                                                        onChange={(event) => queueUpload(product.id, config.type, event.target.files)}
+                                                        disabled={String(product.status || "").toLowerCase() === "archived"}
+                                                      />
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => (uploadQueue[queueKey] || []).length
+                                                          ? uploadAssetGroup(product, config)
+                                                          : triggerFileSelect(product.id, config.type)}
+                                                      >
+                                                        {(uploadQueue[queueKey] || []).length ? "上传更多文件" : "上传更多文件"}
+                                                      </button>
+                                                      {(uploadQueue[queueKey] || []).length > 0 && <span className="muted">已选 {(uploadQueue[queueKey] || []).length} 个</span>}
+                                                    </div>
+                                                  );
+                                                })}
+                                              </div>
+                                            </div>
+                                            {files.length === 0 ? (
+                                              <p>{section.key === "others" ? "暂无更多文件" : section.emptyText}</p>
+                                            ) : (
+                                              <div style={{ display: "grid", gap: 8 }}>
+                                                {files.map((asset) => (
+                                                  <div key={asset.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 12, alignItems: "center", padding: "8px 0", borderTop: "1px solid #eef2f7" }}>
+                                                    <div style={{ minWidth: 0 }}>
+                                                      <strong style={{ display: "block" }}>{asset.file_name}</strong>
+                                                      <span className="muted">{asset.file_type || "-"}</span>
+                                                    </div>
+                                                    <div className="actions compact">
+                                                      <button type="button" onClick={() => openAsset(asset)}>{isPdfAsset(asset) || isImageAsset(asset) ? "预览" : "打开"}</button>
+                                                      <button type="button" onClick={() => openAsset(asset)}>下载</button>
+                                                      <button type="button" onClick={() => deleteAsset(asset)}>删除</button>
+                                                    </div>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : null}
                                 </div>
 
                                 <div className="actions compact" style={{ marginTop: 16, flexWrap: "wrap" }}>
@@ -875,13 +1024,15 @@ export default function ProductsPage() {
                               <div className="section-title" style={{ marginBottom: 12 }}>
                                 <div>
                                   <h3 style={{ margin: 0 }}>{product.product_name || "未命名产品"}</h3>
-                                  <p className="muted" style={{ marginTop: 6 }}>{product.model || "待补充型号"}</p>
+                                  <p className="muted" style={{ marginTop: 6, marginBottom: 4 }}>{product.model || "待补充型号"}</p>
+                                  {product.short_description ? (
+                                    <p style={{ margin: 0, color: "#475569" }}>{product.short_description}</p>
+                                  ) : null}
                                 </div>
                                 <span className="soft-badge">已归档</span>
                               </div>
                               <div className="detail-grid">
-                                <div className="detail-item"><strong>核心规格摘要</strong><p>{getSpecSummary(product)}</p></div>
-                                <div className="detail-item"><strong>价格信息</strong><p>{getPriceSummary(product)}</p></div>
+                                {getPriceSummary(product) ? <div className="detail-item"><strong>价格信息</strong><p>{getPriceSummary(product)}</p></div> : null}
                                 <div className="detail-item" style={{ gridColumn: "1 / -1" }}><strong>内部备注</strong><p>{internalNote || "暂无备注"}</p></div>
                               </div>
                             </div>
