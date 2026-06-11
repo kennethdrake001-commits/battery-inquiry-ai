@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import AppNav from "../../components/layout/AppNav";
 import { formatNextActionForDisplay } from "../../lib/displayText";
@@ -22,6 +22,8 @@ const prospectingStages = [
   "不合适",
   "已转正式客户"
 ];
+
+const importHeaders = ["公司名", "国家", "客户类型", "官网", "邮箱", "LinkedIn", "联系人", "WhatsApp", "来源渠道", "备注"];
 
 function AuthNotice({ session }) {
   if (session) return <div className="auth-card">已登录：{session.user.email}</div>;
@@ -171,6 +173,7 @@ const pageSize = 10;
 
 export default function ProspectingPage() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
+  const fileInputRef = useRef(null);
   const [session, setSession] = useState(null);
   const [customers, setCustomers] = useState([]);
   const [selectedId, setSelectedId] = useState("");
@@ -298,12 +301,12 @@ export default function ProspectingPage() {
   }
 
   function handleImportClick() {
-    setNotice("批量导入功能待接入，当前先保留上传入口。");
+    fileInputRef.current?.click();
   }
 
   function downloadTemplate() {
     const csv = [
-      "公司名,国家,客户类型,官网,邮箱,LinkedIn,联系人,WhatsApp,来源渠道,备注",
+      importHeaders.join(","),
       "ABC Solar,Kenya,Solar Distributor,https://example.com,sales@example.com,https://linkedin.com/company/example,John,+254700000000,主动开发,重点跟进东非市场"
     ].join("\n");
 
@@ -317,6 +320,128 @@ export default function ProspectingPage() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
     setNotice("导入模板已下载。");
+  }
+
+  function parseCsvLine(line) {
+    const values = [];
+    let current = "";
+    let inQuotes = false;
+
+    for (let index = 0; index < line.length; index += 1) {
+      const char = line[index];
+      const nextChar = line[index + 1];
+
+      if (char === "\"") {
+        if (inQuotes && nextChar === "\"") {
+          current += "\"";
+          index += 1;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === "," && !inQuotes) {
+        values.push(current.trim());
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+
+    values.push(current.trim());
+    return values;
+  }
+
+  async function handleCsvUpload(event) {
+    setError("");
+    setNotice("");
+
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const content = await file.text();
+      const lines = content
+        .replace(/^\uFEFF/, "")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      if (lines.length < 2) {
+        setError("导入失败：请使用模板字段上传 CSV");
+        return;
+      }
+
+      const headers = parseCsvLine(lines[0]).map((item) => item.trim());
+      if (
+        headers.length < importHeaders.length
+        || importHeaders.some((header, index) => headers[index] !== header)
+      ) {
+        setError("导入失败：请使用模板字段上传 CSV");
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const rows = lines.slice(1);
+      const inserts = rows
+        .map((line) => {
+          const cols = parseCsvLine(line);
+          const companyName = cols[0]?.trim();
+          if (!companyName) return null;
+
+          const country = cols[1]?.trim() || "";
+          const customerType = cols[2]?.trim() || "Unknown";
+          const website = cols[3]?.trim() || "";
+          const email = cols[4]?.trim() || "";
+          const linkedin = cols[5]?.trim() || "";
+          const contactName = cols[6]?.trim() || "";
+          const whatsapp = cols[7]?.trim() || "";
+          const sourceChannel = cols[8]?.trim() || "主动开发";
+          const note = cols[9]?.trim() || "";
+
+          const contactLines = [
+            website ? `官网：${website}` : "",
+            email ? `邮箱：${email}` : "",
+            linkedin ? `LinkedIn：${linkedin}` : "",
+            contactName ? `联系人：${contactName}` : "",
+            whatsapp ? `WhatsApp：${whatsapp}` : "",
+            sourceChannel ? `来源渠道：${sourceChannel}` : "",
+            note ? `备注：${note}` : ""
+          ].filter(Boolean);
+
+          return {
+            customer_name: companyName,
+            country,
+            source: "主动开发",
+            customer_type: customerType,
+            stage: "Prospecting",
+            current_status: "未联系",
+            lead_level: "C",
+            next_action: "发送首封开发信",
+            current_next_action: "发送首封开发信",
+            original_message: contactLines.join("\n"),
+            question: note || "主动开发导入客户",
+            updated_at: now
+          };
+        })
+        .filter(Boolean);
+
+      if (inserts.length === 0) {
+        setError("导入失败：没有可导入的客户，请确认公司名不为空。");
+        return;
+      }
+
+      const { error: insertError } = await supabase.from("customers").insert(inserts);
+      if (insertError) {
+        setError(`导入失败：${insertError.message}`);
+        return;
+      }
+
+      await loadCustomers();
+      setNotice(`成功导入 ${inserts.length} 个目标客户`);
+    } catch {
+      setError("导入失败：请使用模板字段上传 CSV");
+    } finally {
+      event.target.value = "";
+    }
   }
 
   async function convertToFormalCustomer(customer) {
@@ -364,6 +489,14 @@ export default function ProspectingPage() {
 
       {!loading && session && (
         <>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            style={{ display: "none" }}
+            onChange={handleCsvUpload}
+          />
+
           <section className="panel">
             <div className="section-title">
               <h2>今日开发任务</h2>
@@ -395,10 +528,10 @@ export default function ProspectingPage() {
               <span>先支持 CSV 模板</span>
             </div>
             <p className="notice">
-              把从 Google Maps、LinkedIn、官网收集到的客户整理成 CSV/Excel 后导入，系统会加入目标客户池并从“未联系”阶段开始推进。
+              把从 Google Maps、LinkedIn、官网收集到的客户整理成 CSV 后导入，系统会加入目标客户池并从“未联系”阶段开始推进。
             </p>
             <div className="actions compact">
-              <button type="button" onClick={handleImportClick}>上传 CSV / Excel</button>
+              <button type="button" onClick={handleImportClick}>上传 CSV</button>
               <button type="button" onClick={downloadTemplate}>下载导入模板</button>
             </div>
             <div className="detail-grid" style={{ marginTop: 16 }}>
@@ -505,7 +638,7 @@ export default function ProspectingPage() {
                 </tbody>
               </table>
             </div>
-            {filteredTargetPool.length === 0 && <p className="empty">暂无目标客户。请先下载模板，整理客户名单后上传 CSV / Excel。</p>}
+            {filteredTargetPool.length === 0 && <p className="empty">暂无目标客户。请先下载模板，整理客户名单后上传 CSV。</p>}
             {filteredTargetPool.length > 0 && (
               <div className="actions compact" style={{ marginTop: 16, justifyContent: "space-between" }}>
                 <span>第 {page} / {totalPages} 页</span>
