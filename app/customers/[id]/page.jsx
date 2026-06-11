@@ -140,6 +140,76 @@ const emptyWorkflowForm = {
   followUpDate: ""
 };
 
+function addDays(dateLike, days) {
+  const date = dateLike ? new Date(dateLike) : new Date();
+  if (Number.isNaN(date.getTime())) {
+    const fallback = new Date();
+    fallback.setDate(fallback.getDate() + days);
+    return fallback;
+  }
+  date.setDate(date.getDate() + days);
+  return date;
+}
+
+function toDateText(dateLike) {
+  const date = typeof dateLike === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateLike)
+    ? new Date(`${dateLike}T00:00:00`)
+    : new Date(dateLike);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+}
+
+function isArchivedCustomer(customer) {
+  return customer?.current_status === "归档"
+    || customer?.stage === "Archived"
+    || customer?.stage === "归档";
+}
+
+function getCurrentBlockerText(customer) {
+  const stage = customer?.stage || "";
+  const status = customer?.current_status || "";
+
+  if (isArchivedCustomer(customer)) return "客户已归档，无需继续推进";
+  if (stage === "Prospecting" || status === "Prospecting" || customer?.source === "主动开发") {
+    return "主动开发客户，需要按开发节奏推进";
+  }
+  if (["新询盘", "New Inquiry"].includes(stage) || ["新询盘", "New Inquiry"].includes(status)) {
+    return "需要先判断客户类型和需求";
+  }
+  if (["待补信息", "Need Qualification"].includes(stage) || ["待补信息", "Need Qualification"].includes(status)) {
+    return "缺少关键信息，需要先问清楚";
+  }
+  if (["待报价", "Need Quotation"].includes(stage) || ["待报价", "Need Quotation"].includes(status)) {
+    return "可以准备报价";
+  }
+  if (["已报价", "Quoted", "Waiting Reply", "已报价未回复", "待客户回复"].includes(stage)
+    || ["已报价", "Quoted", "Waiting Reply", "已报价未回复", "待客户回复"].includes(status)) {
+    return "等待客户反馈，需要按期跟进";
+  }
+  return "根据当前进展继续推进客户";
+}
+
+function shouldShowQuotedActions(customer) {
+  const stage = customer?.stage || "";
+  const status = customer?.current_status || "";
+  return ["已报价", "Quoted"].includes(stage)
+    || ["已报价", "已报价未回复", "Quoted"].includes(status);
+}
+
+function shouldShowNewInquiryActions(customer) {
+  const stage = customer?.stage || "";
+  const status = customer?.current_status || "";
+  return ["新询盘", "New Inquiry"].includes(stage)
+    || ["新询盘", "New Inquiry"].includes(status);
+}
+
+function shouldShowWaitingReplyActions(customer) {
+  const stage = customer?.stage || "";
+  const status = customer?.current_status || "";
+  return ["Waiting Reply", "待客户回复"].includes(stage)
+    || ["Waiting Reply", "待客户回复"].includes(status);
+}
+
 function HistoryItem({ item, onSaveAsPlaybook }) {
   const canSaveAsPlaybook = playbookEligibleResults.includes(item.result_feedback);
 
@@ -238,6 +308,7 @@ export default function CustomerDetailPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
+  const [scheduleFollowUpDate, setScheduleFollowUpDate] = useState("");
 
   const customerId = params?.id;
   const recommendedScript = useMemo(() => {
@@ -612,6 +683,118 @@ export default function CustomerDetailPage() {
     await loadData();
   }
 
+  async function saveProgressAction({
+    customerPayload,
+    interactionStatus,
+    interactionNote,
+    successMessage
+  }) {
+    if (!customer || !session?.user) {
+      setError("请先登录后再推进客户。");
+      setSuccess("");
+      return;
+    }
+
+    setError("");
+    setSuccess("");
+    setIsSaving(true);
+
+    const now = new Date().toISOString();
+    const { error: customerUpdateError } = await supabase
+      .from("customers")
+      .update({
+        ...customerPayload,
+        updated_at: now
+      })
+      .eq("id", customer.id);
+
+    if (customerUpdateError) {
+      setIsSaving(false);
+      setError(customerUpdateError.message);
+      return;
+    }
+
+    const interactionPayload = {
+      user_id: session.user.id,
+      customer_id: customer.id,
+      original_message: customer.original_message,
+      our_reply: customer.our_reply,
+      interaction_status: interactionStatus,
+      operator_note: interactionNote,
+      created_at: now,
+      updated_at: now
+    };
+
+    const { error: interactionError } = await supabase
+      .from("interactions")
+      .insert(interactionPayload);
+
+    setIsSaving(false);
+
+    if (interactionError) {
+      setError(`客户状态已更新，但跟进记录写入失败：${interactionError.message}`);
+      await loadData();
+      return;
+    }
+
+    setSuccess(successMessage);
+    setScheduleFollowUpDate("");
+    await loadData();
+  }
+
+  async function markFollowedUp() {
+    const nextDate = addDays(new Date(), 3);
+    const followUpDateText = toDateText(nextDate);
+
+    await saveProgressAction({
+      customerPayload: {
+        last_contacted_at: new Date().toISOString(),
+        current_status: "待客户回复",
+        stage: "Waiting Reply",
+        current_next_action: "等待客户回复，必要时再次跟进",
+        next_action: customer?.next_action || customer?.current_next_action || null,
+        next_follow_up_at: nextDate.toISOString(),
+        follow_up_date: followUpDateText
+      },
+      interactionStatus: "follow_up",
+      interactionNote: "已完成一次跟进",
+      successMessage: "已标记为已跟进，3 天后再次提醒。"
+    });
+  }
+
+  async function scheduleNextFollowUp() {
+    if (!scheduleFollowUpDate) {
+      setError("请选择下次跟进日期。");
+      setSuccess("");
+      return;
+    }
+
+    await saveProgressAction({
+      customerPayload: {
+        next_follow_up_at: dateToFollowUpAt(scheduleFollowUpDate),
+        follow_up_date: scheduleFollowUpDate,
+        current_next_action: "按计划继续跟进"
+      },
+      interactionStatus: "follow_up_schedule",
+      interactionNote: `已安排下次跟进：${scheduleFollowUpDate}`,
+      successMessage: "已安排下次跟进。"
+    });
+  }
+
+  async function markCustomerReplied() {
+    await saveProgressAction({
+      customerPayload: {
+        last_customer_reply_at: new Date().toISOString(),
+        current_status: "已回复",
+        stage: "Customer Replied",
+        current_next_action: "根据客户回复判断是否需要报价、补信息或推进合作"
+      },
+      interactionStatus: "customer_reply",
+      interactionNote: "客户已回复，等待进一步判断",
+      successMessage: "已标记客户已回复。"
+    });
+  }
+
   async function saveQuote() {
     if (!session?.user || !customer) {
       setError("请先登录后再保存报价。");
@@ -706,6 +889,14 @@ export default function CustomerDetailPage() {
   const currentLeadLevel = getLeadLevel(customer || {});
   const currentAction = workflowForm.nextAction || getNextAction(customer || {});
   const localizedCurrentAction = formatProspectingActionDisplay(currentAction);
+  const persistedNextAction = customer?.current_next_action || customer?.next_action || workflowForm.nextAction;
+  const localizedPersistedAction = formatProspectingActionDisplay(persistedNextAction);
+  const blockerText = getCurrentBlockerText(customer || {});
+  const followUpDateDisplay = formatDateOnly(customer?.next_follow_up_at || customer?.follow_up_date || workflowForm.followUpDate);
+  const archivedCustomer = isArchivedCustomer(customer || {});
+  const showQuotedActions = shouldShowQuotedActions(customer || {});
+  const showNewInquiryActions = shouldShowNewInquiryActions(customer || {});
+  const showWaitingReplyActions = shouldShowWaitingReplyActions(customer || {});
   const suggestedMaterials = [
     currentType.includes("安装商") ? "电池规格书、安装照片、兼容性说明" : null,
     currentType.includes("经销") ? "产品目录、主推型号、渠道供货说明" : null,
@@ -728,6 +919,59 @@ export default function CustomerDetailPage() {
       {session ? <div className="auth-card">已登录：{session.user.email}</div> : <div className="auth-card">请先登录。</div>}
       {error && <div className="error">{error}</div>}
       {success && <div className="success">{success}</div>}
+
+      <section className="panel">
+        <div className="section-title">
+          <h2>当前推进</h2>
+          <span>先看当前该做什么，再进入下面各标签处理</span>
+        </div>
+        <div className="detail-grid">
+          <div className="detail-item"><strong>当前阶段</strong><p>{displayStage || displayStatus || "待判断"}</p></div>
+          <div className="detail-item"><strong>当前卡点</strong><p>{blockerText}</p></div>
+          <div className="detail-item"><strong>下一步动作</strong><p>{localizedPersistedAction}</p></div>
+          <div className="detail-item"><strong>下次跟进日期</strong><p>{followUpDateDisplay}</p></div>
+        </div>
+        {archivedCustomer ? (
+          <div className="notice-panel" style={{ marginTop: 16 }}>
+            <strong>客户已归档</strong>
+            <p>客户已归档，如需继续推进，请先恢复客户。</p>
+          </div>
+        ) : (
+          <>
+            <div className="actions" style={{ marginTop: 16, flexWrap: "wrap" }}>
+              {(showNewInquiryActions || (!showQuotedActions && !showWaitingReplyActions)) && (
+                <button
+                  className="primary"
+                  onClick={() => {
+                    setActiveTab("materials");
+                    setSuccess("已切换到资料与话术，可继续复制推荐英文话术。");
+                    setError("");
+                  }}
+                >
+                  生成跟进话术
+                </button>
+              )}
+              {(showQuotedActions || showNewInquiryActions || (!showWaitingReplyActions && !archivedCustomer)) && (
+                <button onClick={markFollowedUp} disabled={isSaving}>标记已跟进</button>
+              )}
+              {(showQuotedActions || showWaitingReplyActions || (!showNewInquiryActions && !archivedCustomer)) && (
+                <button onClick={markCustomerReplied} disabled={isSaving}>标记客户已回复</button>
+              )}
+              {!archivedCustomer && (
+                <>
+                  <input
+                    type="date"
+                    value={scheduleFollowUpDate}
+                    onChange={(event) => setScheduleFollowUpDate(event.target.value)}
+                    style={{ maxWidth: 220 }}
+                  />
+                  <button onClick={scheduleNextFollowUp} disabled={isSaving}>安排下次跟进</button>
+                </>
+              )}
+            </div>
+          </>
+        )}
+      </section>
 
       <section className="panel">
         <div className="tabs">
