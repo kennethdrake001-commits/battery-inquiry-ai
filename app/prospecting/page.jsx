@@ -24,10 +24,20 @@ const prospectingStages = [
 ];
 
 const importHeaders = ["公司名", "国家", "客户类型", "官网", "邮箱", "LinkedIn", "联系人", "WhatsApp", "来源渠道", "备注"];
+const reviewRanges = ["今天", "昨天", "本周", "上周", "本月", "上月", "自定义"];
 
 function AuthNotice({ session }) {
   if (session) return <div className="auth-card">已登录：{session.user.email}</div>;
   return <div className="auth-card">请先回到工作台登录邮箱账号。</div>;
+}
+
+function FieldLike({ label, children }) {
+  return (
+    <label className="field">
+      <span>{label}</span>
+      {children}
+    </label>
+  );
 }
 
 function formatDate(value) {
@@ -169,6 +179,80 @@ function getContactSummary(customer) {
   return parts.length ? parts.join(" / ") : "待补充";
 }
 
+function isProspectingCustomer(customer) {
+  return customer?.source === "主动开发" || customer?.stage === "Prospecting";
+}
+
+function startOfDay(date) {
+  const value = new Date(date);
+  value.setHours(0, 0, 0, 0);
+  return value;
+}
+
+function endOfDay(date) {
+  const value = new Date(date);
+  value.setHours(23, 59, 59, 999);
+  return value;
+}
+
+function formatPercent(numerator, denominator) {
+  if (!denominator) return "0%";
+  return `${Math.round((numerator / denominator) * 100)}%`;
+}
+
+function getRangeBounds(rangeKey, customStart, customEnd) {
+  const now = new Date();
+  const todayStart = startOfDay(now);
+  const todayEnd = endOfDay(now);
+
+  if (rangeKey === "今天") {
+    return { start: todayStart, end: todayEnd };
+  }
+
+  if (rangeKey === "昨天") {
+    const yesterday = new Date(todayStart);
+    yesterday.setDate(yesterday.getDate() - 1);
+    return { start: startOfDay(yesterday), end: endOfDay(yesterday) };
+  }
+
+  if (rangeKey === "本周") {
+    const start = new Date(todayStart);
+    const day = start.getDay() || 7;
+    start.setDate(start.getDate() - day + 1);
+    return { start: startOfDay(start), end: todayEnd };
+  }
+
+  if (rangeKey === "上周") {
+    const start = new Date(todayStart);
+    const day = start.getDay() || 7;
+    start.setDate(start.getDate() - day - 6);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    return { start: startOfDay(start), end: endOfDay(end) };
+  }
+
+  if (rangeKey === "本月") {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    return { start: startOfDay(start), end: todayEnd };
+  }
+
+  if (rangeKey === "上月") {
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth(), 0);
+    return { start: startOfDay(start), end: endOfDay(end) };
+  }
+
+  if (rangeKey === "自定义") {
+    if (!customStart || !customEnd) return { start: null, end: null };
+    return {
+      start: startOfDay(customStart),
+      end: endOfDay(customEnd)
+    };
+  }
+
+  return { start: null, end: null };
+}
+
 const pageSize = 10;
 
 export default function ProspectingPage() {
@@ -179,6 +263,9 @@ export default function ProspectingPage() {
   const [selectedId, setSelectedId] = useState("");
   const [selectedStage, setSelectedStage] = useState("");
   const [page, setPage] = useState(1);
+  const [reviewRange, setReviewRange] = useState("本月");
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -223,6 +310,10 @@ export default function ProspectingPage() {
     return customers.filter((customer) => customer.current_status !== "归档" && customer.stage !== "Archived");
   }, [customers]);
 
+  const prospectingCustomers = useMemo(() => {
+    return activeCustomers.filter((customer) => isProspectingCustomer(customer));
+  }, [activeCustomers]);
+
   const todayTasks = useMemo(() => {
     const today = new Date();
     today.setHours(23, 59, 59, 999);
@@ -244,14 +335,14 @@ export default function ProspectingPage() {
   }, [activeCustomers]);
 
   const targetPool = useMemo(() => {
-    return activeCustomers
+    return prospectingCustomers
       .filter((customer) => getProspectingStage(customer) !== "已转正式客户")
       .map((customer) => ({
         ...customer,
         prospectingStage: getProspectingStage(customer),
         prospectingAction: getProspectingNextAction(customer)
       }));
-  }, [activeCustomers]);
+  }, [prospectingCustomers]);
 
   const boardGroups = useMemo(() => {
     const map = Object.fromEntries(prospectingStages.map((stage) => [stage, []]));
@@ -260,6 +351,37 @@ export default function ProspectingPage() {
     });
     return map;
   }, [targetPool]);
+
+  const reviewStats = useMemo(() => {
+    const { start, end } = getRangeBounds(reviewRange, customStartDate, customEndDate);
+
+    const inRangeCustomers = prospectingCustomers.filter((customer) => {
+      if (!start || !end) return reviewRange !== "自定义";
+      const createdAt = customer.created_at ? new Date(customer.created_at) : null;
+      if (!createdAt || Number.isNaN(createdAt.getTime())) return false;
+      return createdAt.getTime() >= start.getTime() && createdAt.getTime() <= end.getTime();
+    });
+
+    const sentStatuses = ["已发第一封", "第一次跟进", "第二次跟进", "已回复", "有兴趣", "不合适", "已转正式客户"];
+    const repliedStatuses = ["已回复", "有兴趣", "不合适", "已转正式客户"];
+
+    const sentCount = inRangeCustomers.filter((customer) => sentStatuses.includes(customer.current_status)).length;
+    const repliedCount = inRangeCustomers.filter((customer) => repliedStatuses.includes(customer.current_status)).length;
+    const interestedCount = inRangeCustomers.filter((customer) => customer.current_status === "有兴趣").length;
+    const convertedCount = inRangeCustomers.filter((customer) => customer.current_status === "已转正式客户").length;
+    const unsuitableCount = inRangeCustomers.filter((customer) => customer.current_status === "不合适").length;
+
+    return [
+      { title: "新增目标客户", value: inRangeCustomers.length },
+      { title: "已发送开发信", value: sentCount },
+      { title: "已回复", value: repliedCount },
+      { title: "有兴趣", value: interestedCount },
+      { title: "已转正式客户", value: convertedCount },
+      { title: "不合适", value: unsuitableCount },
+      { title: "回复率", value: formatPercent(repliedCount, sentCount) },
+      { title: "转化率", value: formatPercent(convertedCount, sentCount) }
+    ];
+  }, [prospectingCustomers, reviewRange, customStartDate, customEndDate]);
 
   const filteredTargetPool = useMemo(() => {
     if (!selectedStage) return targetPool;
@@ -561,6 +683,53 @@ export default function ProspectingPage() {
             {todayTasks.length > 5 && (
               <p className="empty">还有 {todayTasks.length - 5} 个开发任务，查看全部。</p>
             )}
+          </section>
+
+          <section className="panel">
+            <div className="section-title">
+              <h2>开发数据复盘</h2>
+              <span>只统计主动开发客户</span>
+            </div>
+            <div className="tabs" style={{ flexWrap: "wrap" }}>
+              {reviewRanges.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => setReviewRange(item)}
+                  style={reviewRange === item
+                    ? { border: "1px solid #155eef", color: "#155eef", background: "#eff6ff", fontWeight: 700 }
+                    : { border: "1px solid #dbe5f1", color: "#1d2433", background: "#f8fafc" }}
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
+            {reviewRange === "自定义" && (
+              <div className="form-grid" style={{ marginTop: 16 }}>
+                <FieldLike label="开始日期">
+                  <input type="date" value={customStartDate} onChange={(event) => setCustomStartDate(event.target.value)} />
+                </FieldLike>
+                <FieldLike label="结束日期">
+                  <input type="date" value={customEndDate} onChange={(event) => setCustomEndDate(event.target.value)} />
+                </FieldLike>
+              </div>
+            )}
+            <div
+              className="summary-grid"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                gap: 12,
+                marginTop: 16
+              }}
+            >
+              {reviewStats.map((item) => (
+                <article key={item.title} className="notice-panel">
+                  <strong>{item.title}</strong>
+                  <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>{item.value}</div>
+                </article>
+              ))}
+            </div>
           </section>
 
           <section className="panel">
