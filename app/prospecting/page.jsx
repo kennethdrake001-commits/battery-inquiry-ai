@@ -3,29 +3,180 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import AppNav from "../../components/layout/AppNav";
+import { formatNextActionForDisplay } from "../../lib/displayText";
 import { getSupabaseBrowserClient } from "../../lib/supabaseClient";
 import {
   getCustomerName,
   getCustomerTypeLabel,
   getCustomerTypeValue,
   getLeadLevel,
-  getNextAction,
-  getProspectingLane
+  getSourceLabel,
+  isPartnerCandidate
 } from "../../lib/customerViews";
 
-const lanes = ["待开发", "已联系", "已回复", "可推进"];
+const prospectingStages = [
+  "未联系",
+  "已发第一封",
+  "第一次跟进",
+  "第二次跟进",
+  "已回复",
+  "有兴趣",
+  "不合适",
+  "已转正式客户"
+];
 
 function AuthNotice({ session }) {
   if (session) return <div className="auth-card">已登录：{session.user.email}</div>;
   return <div className="auth-card">请先回到工作台登录邮箱账号。</div>;
 }
 
+function formatDate(value) {
+  if (!value) return "未设置";
+  try {
+    return new Date(value).toLocaleDateString("zh-CN");
+  } catch {
+    return "未设置";
+  }
+}
+
+function getProspectingStage(customer) {
+  const savedStatus = customer.current_status || "";
+  if (prospectingStages.includes(savedStatus)) return savedStatus;
+
+  if (savedStatus === "归档" || customer.stage === "Closed Lost") return "不合适";
+  if (customer.last_customer_reply_at) {
+    if (customer.stage === "Need Quotation" || customer.stage === "Negotiation" || customer.stage === "Trial Order") {
+      return "有兴趣";
+    }
+    return "已回复";
+  }
+
+  if (customer.last_contacted_at && customer.follow_up_date) {
+    const days = Math.floor((Date.now() - new Date(customer.last_contacted_at).getTime()) / (1000 * 60 * 60 * 24));
+    if (days >= 6) return "第二次跟进";
+    return "第一次跟进";
+  }
+
+  if (customer.last_contacted_at) return "已发第一封";
+  return "未联系";
+}
+
+function getProspectingNextAction(customer) {
+  const stage = getProspectingStage(customer);
+  if (customer.current_next_action || customer.next_action) {
+    return formatNextActionForDisplay(customer.current_next_action || customer.next_action);
+  }
+
+  switch (stage) {
+    case "未联系":
+      return "发送首封开发信，介绍主营产品并确认客户方向";
+    case "已发第一封":
+      return "等待 3 天后进行第一次跟进";
+    case "第一次跟进":
+      return "补充产品卖点、应用案例和可供货能力";
+    case "第二次跟进":
+      return "进行最后一次轻跟进，确认是否继续保持联系";
+    case "已回复":
+      return "判断客户是否有真实需求，并补齐数量、应用和采购时间";
+    case "有兴趣":
+      return "转入正式客户流程，准备资料、报价或样品推进";
+    case "不合适":
+      return "标记为暂不推进，保留档案备查";
+    case "已转正式客户":
+      return "进入正式客户详情页继续推进需求与报价";
+    default:
+      return "需要人工判断下一步动作";
+  }
+}
+
+function getProspectingScript(customer) {
+  const stage = getProspectingStage(customer);
+  const name = getCustomerName(customer);
+  const type = getCustomerTypeValue(customer);
+
+  if (stage === "未联系") {
+    return {
+      title: "首封开发信",
+      text: `Hi ${name}, we are a supplier of lithium battery energy storage solutions for solar projects and backup power. I noticed your company may be active in this market, so I wanted to ask whether you are currently sourcing home storage batteries, commercial battery systems, or related solar products. If yes, I can share our main models and offer details for your review.`
+    };
+  }
+
+  if (stage === "已发第一封" || stage === "第一次跟进") {
+    return {
+      title: "第一次跟进话术",
+      text: `Hi ${name}, just following up on my previous message. We supply LiFePO4 battery systems for solar installers and distributors, with support for common inverter brands and project applications. Please let me know if you are currently looking for any battery products, and I can send the most relevant models and pricing information.`
+    };
+  }
+
+  if (stage === "第二次跟进") {
+    return {
+      title: "第二次跟进话术",
+      text: `Hi ${name}, I’m checking in one more time in case battery storage products are still in your plan. If now is not the right time, no problem. If you want, I can still send a short product list so you have it on hand when needed.`
+    };
+  }
+
+  if (stage === "已回复") {
+    return {
+      title: "回复后需求确认",
+      text: `Hi ${name}, thanks for your reply. To recommend the right solution, may I know what battery capacity, quantity, and main application you are looking for? If you already have a target inverter brand or project type, I can check the most suitable option for you.`
+    };
+  }
+
+  if (stage === "有兴趣" && type === "Solar Distributor") {
+    return {
+      title: "经销商推进话术",
+      text: `Hi ${name}, thanks for your interest. I can send you our main battery models, distributor supply information, and recommended capacities for your market. Please let me know which capacity range and order quantity you are mainly evaluating, and I will prepare the most relevant offer for you.`
+    };
+  }
+
+  if (stage === "有兴趣" && type === "Solar Installer") {
+    return {
+      title: "安装商推进话术",
+      text: `Hi ${name}, thanks for your interest. I can send you the battery datasheet, installation photos, and inverter compatibility information for review. Please share the inverter brand and model you are using, and I will prepare the matching information for you.`
+    };
+  }
+
+  if (stage === "有兴趣") {
+    return {
+      title: "有兴趣客户推进话术",
+      text: `Hi ${name}, thanks for your interest. Please let me know the product capacity, target quantity, and delivery destination you need, and I will prepare the most suitable quotation and product information for you.`
+    };
+  }
+
+  return {
+    title: "通用开发话术",
+    text: `Hi ${name}, I’m following up to see whether your company is currently evaluating lithium battery storage products. If you share your target application, quantity, and market focus, I can prepare the most relevant product information for you.`
+  };
+}
+
+function getTaskReason(customer) {
+  const stage = getProspectingStage(customer);
+  if (stage === "未联系") return "今天应发送首封开发信";
+  if (stage === "已发第一封") return "首封已发，准备第一次跟进";
+  if (stage === "第一次跟进") return "已到第一次跟进节点";
+  if (stage === "第二次跟进") return "已到第二次跟进节点";
+  if (stage === "已回复") return "客户已回复，需要判断是否有真实需求";
+  if (stage === "有兴趣") return "客户表现出兴趣，需要尽快转入正式流程";
+  return "根据当前开发阶段继续推进";
+}
+
+function getFollowUpDate(customer) {
+  return customer.next_follow_up_at || customer.follow_up_date || customer.updated_at || customer.created_at || "";
+}
+
+function getContactSummary(customer) {
+  const parts = [customer.email, customer.website].filter(Boolean);
+  return parts.length ? parts.join(" / ") : "待补充";
+}
+
 export default function ProspectingPage() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [session, setSession] = useState(null);
   const [customers, setCustomers] = useState([]);
+  const [selectedId, setSelectedId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   useEffect(() => {
     async function init() {
@@ -42,37 +193,124 @@ export default function ProspectingPage() {
         return;
       }
 
-      const { data: rows, error: queryError } = await supabase
-        .from("customers")
-        .select("*")
-        .order("updated_at", { ascending: false });
-
-      if (queryError) {
-        setError(queryError.message);
-      } else {
-        setCustomers(rows || []);
-      }
+      await loadCustomers();
       setLoading(false);
     }
 
     init();
   }, [supabase]);
 
-  const groups = useMemo(() => {
-    const map = Object.fromEntries(lanes.map((lane) => [lane, []]));
-    customers.forEach((customer) => {
-      map[getProspectingLane(customer)].push(customer);
+  async function loadCustomers() {
+    const { data: rows, error: queryError } = await supabase
+      .from("customers")
+      .select("*")
+      .order("updated_at", { ascending: false });
+
+    if (queryError) {
+      setError(queryError.message);
+      return;
+    }
+
+    setCustomers(rows || []);
+  }
+
+  const activeCustomers = useMemo(() => {
+    return customers.filter((customer) => customer.current_status !== "归档" && customer.stage !== "Archived");
+  }, [customers]);
+
+  const todayTasks = useMemo(() => {
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+
+    return activeCustomers
+      .filter((customer) => {
+        const stage = getProspectingStage(customer);
+        if (stage === "不合适" || stage === "已转正式客户") return false;
+        if (stage === "未联系" || stage === "已回复" || stage === "有兴趣") return true;
+        const followUpAt = getFollowUpDate(customer);
+        return followUpAt ? new Date(followUpAt).getTime() <= today.getTime() : false;
+      })
+      .map((customer) => ({
+        ...customer,
+        prospectingStage: getProspectingStage(customer),
+        prospectingAction: getProspectingNextAction(customer),
+        taskReason: getTaskReason(customer)
+      }));
+  }, [activeCustomers]);
+
+  const targetPool = useMemo(() => {
+    return activeCustomers
+      .filter((customer) => getProspectingStage(customer) !== "已转正式客户")
+      .map((customer) => ({
+        ...customer,
+        prospectingStage: getProspectingStage(customer),
+        prospectingAction: getProspectingNextAction(customer)
+      }));
+  }, [activeCustomers]);
+
+  const boardGroups = useMemo(() => {
+    const map = Object.fromEntries(prospectingStages.map((stage) => [stage, []]));
+    targetPool.forEach((customer) => {
+      map[customer.prospectingStage].push(customer);
     });
     return map;
-  }, [customers]);
+  }, [targetPool]);
+
+  useEffect(() => {
+    if (!selectedId && targetPool[0]?.id) {
+      setSelectedId(targetPool[0].id);
+    }
+    if (selectedId && !targetPool.find((customer) => customer.id === selectedId)) {
+      setSelectedId(targetPool[0]?.id || "");
+    }
+  }, [selectedId, targetPool]);
+
+  const selectedCustomer = targetPool.find((customer) => customer.id === selectedId) || todayTasks[0] || null;
+  const selectedScript = selectedCustomer ? getProspectingScript(selectedCustomer) : null;
+
+  async function copyScript(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setNotice("英文开发信已复制。");
+    } catch {
+      setNotice("复制失败，请手动复制。");
+    }
+  }
+
+  async function convertToFormalCustomer(customer) {
+    setError("");
+    setNotice("");
+
+    const confirmed = window.confirm("确定将这个客户转为正式客户吗？转入后请在客户详情中继续推进需求和报价。");
+    if (!confirmed) return;
+
+    const now = new Date().toISOString();
+    const { error: updateError } = await supabase
+      .from("customers")
+      .update({
+        current_status: "已转正式客户",
+        stage: customer.stage && customer.stage !== "Archived" ? customer.stage : "Need Qualification",
+        current_next_action: customer.current_next_action || "补齐需求并推进正式报价",
+        updated_at: now
+      })
+      .eq("id", customer.id);
+
+    if (updateError) {
+      setError(`转为正式客户失败：${updateError.message}`);
+      return;
+    }
+
+    await loadCustomers();
+    setNotice("已转为正式客户。");
+  }
 
   return (
     <main className="app">
       <header className="hero">
         <div>
           <p className="eyebrow">主动开发</p>
-          <h1>主动开发看板</h1>
-          <p>用看板跟踪主动开发进度，不在这里堆完整客户资料。</p>
+          <h1>主动开发流程推进器</h1>
+          <p>从目标客户收集、开发信发送、跟进判断到转为正式客户，都集中在这里推进。</p>
         </div>
         <AppNav />
       </header>
@@ -80,30 +318,156 @@ export default function ProspectingPage() {
       <AuthNotice session={session} />
       {loading && <section className="panel">加载中...</section>}
       {error && <div className="error">{error}</div>}
+      {notice && <div className="success">{notice}</div>}
 
       {!loading && session && (
-        <section className="board">
-          {lanes.map((lane) => (
-            <div className="stage-column" key={lane}>
-              <h2>{lane}</h2>
-              <div className="card-list">
-                {(groups[lane] || []).map((customer) => (
-                  <article className="customer-card" key={customer.id}>
-                    <strong>{getCustomerName(customer)}</strong>
-                    <p>国家：{customer.country || "-"}</p>
-                    <p>客户类型：{getCustomerTypeLabel(getCustomerTypeValue(customer))}</p>
-                    <p>客户等级：{getLeadLevel(customer)}</p>
-                    <p className="action-text">{getNextAction(customer)}</p>
-                    <div className="actions compact">
-                      <Link href={`/customers/${customer.id}`}>查看客户</Link>
-                    </div>
-                  </article>
-                ))}
-                {(groups[lane] || []).length === 0 && <p className="empty">暂无客户</p>}
-              </div>
+        <>
+          <section className="panel">
+            <div className="section-title">
+              <h2>今日开发任务</h2>
+              <span>{todayTasks.length} 项</span>
             </div>
-          ))}
-        </section>
+            <div className="card-list">
+              {todayTasks.map((customer) => (
+                <article className="customer-card" key={customer.id}>
+                  <strong>{getCustomerName(customer)}</strong>
+                  <p>客户类型：{getCustomerTypeLabel(getCustomerTypeValue(customer))}</p>
+                  <p>当前阶段：{customer.prospectingStage}</p>
+                  <p>任务原因：{customer.taskReason}</p>
+                  <p>下一步动作：{customer.prospectingAction}</p>
+                  <p>下次跟进：{formatDate(getFollowUpDate(customer))}</p>
+                  <div className="actions compact">
+                    <button type="button" onClick={() => setSelectedId(customer.id)}>生成英文开发信</button>
+                    <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
+                    <button type="button" onClick={() => convertToFormalCustomer(customer)}>转为正式客户</button>
+                  </div>
+                </article>
+              ))}
+              {todayTasks.length === 0 && <p className="empty">今天暂无待推进的开发任务</p>}
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="section-title">
+              <h2>目标客户池</h2>
+              <span>{targetPool.length} 个目标客户</span>
+            </div>
+            <div className="table-wrap">
+              <table className="compact-table">
+                <thead>
+                  <tr>
+                    <th>公司名</th>
+                    <th>国家</th>
+                    <th>客户类型</th>
+                    <th>来源渠道</th>
+                    <th>邮箱 / 官网</th>
+                    <th>当前阶段</th>
+                    <th>下一步动作</th>
+                    <th>下次跟进日期</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {targetPool.map((customer) => (
+                    <tr key={customer.id}>
+                      <td>{getCustomerName(customer)}</td>
+                      <td>{customer.country || "待补充"}</td>
+                      <td><span className="soft-badge">{getCustomerTypeLabel(getCustomerTypeValue(customer))}</span></td>
+                      <td><span className="soft-badge">{getSourceLabel(customer.source)}</span></td>
+                      <td>{getContactSummary(customer)}</td>
+                      <td>{customer.prospectingStage}</td>
+                      <td className="truncate-cell">{customer.prospectingAction}</td>
+                      <td>{formatDate(getFollowUpDate(customer))}</td>
+                      <td>
+                        <div className="actions compact">
+                          <button type="button" onClick={() => setSelectedId(customer.id)}>生成英文开发信</button>
+                          <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
+                          <button type="button" onClick={() => convertToFormalCustomer(customer)}>转为正式客户</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {targetPool.length === 0 && <p className="empty">暂无目标客户</p>}
+          </section>
+
+          <section className="board">
+            {prospectingStages.map((stage) => (
+              <div className="stage-column" key={stage}>
+                <h2>{stage}</h2>
+                <div className="card-list">
+                  {(boardGroups[stage] || []).map((customer) => (
+                    <article className="customer-card" key={customer.id}>
+                      <strong>{getCustomerName(customer)}</strong>
+                      <p>国家：{customer.country || "待补充"}</p>
+                      <p>客户类型：{getCustomerTypeLabel(getCustomerTypeValue(customer))}</p>
+                      <p>来源渠道：{getSourceLabel(customer.source)}</p>
+                      <p>邮箱 / 官网：{getContactSummary(customer)}</p>
+                      <p>下一步动作：{customer.prospectingAction}</p>
+                      <p>下次跟进：{formatDate(getFollowUpDate(customer))}</p>
+                      <div className="actions compact">
+                        <button type="button" onClick={() => setSelectedId(customer.id)}>生成英文开发信</button>
+                        <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
+                        <button type="button" onClick={() => convertToFormalCustomer(customer)}>转为正式客户</button>
+                      </div>
+                    </article>
+                  ))}
+                  {(boardGroups[stage] || []).length === 0 && <p className="empty">暂无客户</p>}
+                </div>
+              </div>
+            ))}
+          </section>
+
+          <section className="form-grid">
+            <article className="panel">
+              <div className="section-title">
+                <h2>下一步动作</h2>
+                <span>{selectedCustomer ? getCustomerName(selectedCustomer) : "未选择客户"}</span>
+              </div>
+              {selectedCustomer ? (
+                <div className="detail-grid">
+                  <div className="detail-item"><strong>公司名</strong><p>{getCustomerName(selectedCustomer)}</p></div>
+                  <div className="detail-item"><strong>国家</strong><p>{selectedCustomer.country || "待补充"}</p></div>
+                  <div className="detail-item"><strong>客户类型</strong><p>{getCustomerTypeLabel(getCustomerTypeValue(selectedCustomer))}</p></div>
+                  <div className="detail-item"><strong>来源渠道</strong><p>{getSourceLabel(selectedCustomer.source)}</p></div>
+                  <div className="detail-item"><strong>当前阶段</strong><p>{getProspectingStage(selectedCustomer)}</p></div>
+                  <div className="detail-item"><strong>下次跟进日期</strong><p>{formatDate(getFollowUpDate(selectedCustomer))}</p></div>
+                  <div className="detail-item"><strong>开发优先级</strong><p>{getLeadLevel(selectedCustomer)}</p></div>
+                  <div className="detail-item"><strong>合作商候选</strong><p>{isPartnerCandidate(selectedCustomer) ? "是" : "否"}</p></div>
+                  <div className="detail-item" style={{ gridColumn: "1 / -1" }}>
+                    <strong>下一步动作</strong>
+                    <p>{getProspectingNextAction(selectedCustomer)}</p>
+                  </div>
+                </div>
+              ) : (
+                <p className="empty">请选择一个客户查看下一步动作</p>
+              )}
+            </article>
+
+            <article className="panel">
+              <div className="section-title">
+                <h2>英文开发信 / 跟进话术</h2>
+                <span>{selectedScript?.title || "未生成"}</span>
+              </div>
+              {selectedScript ? (
+                <>
+                  <div className="detail-item">
+                    <strong>{selectedScript.title}</strong>
+                    <p style={{ whiteSpace: "pre-wrap" }}>{selectedScript.text}</p>
+                  </div>
+                  <div className="actions compact">
+                    <button type="button" onClick={() => copyScript(selectedScript.text)}>复制英文开发信</button>
+                    {selectedCustomer && <Link href={`/customers/${selectedCustomer.id}`}>查看/编辑</Link>}
+                  </div>
+                </>
+              ) : (
+                <p className="empty">请选择一个客户生成英文开发信</p>
+              )}
+            </article>
+          </section>
+        </>
       )}
     </main>
   );
