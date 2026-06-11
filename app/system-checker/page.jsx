@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import AppNav from "../../components/layout/AppNav";
 
 const initialForm = {
   country: "",
@@ -273,14 +273,7 @@ export default function SystemCheckerPage() {
           <h1>系统搭配校验器</h1>
           <p>用于内部判断客户的电池、逆变器、太阳能板搭配是否合理。</p>
         </div>
-        <nav>
-          <Link href="/">客户录入</Link>
-          <Link href="/customers">客户列表</Link>
-          <Link href="/playbook">有效案例库</Link>
-          <Link href="/products">产品知识库</Link>
-          <Link href="/system-checker">系统搭配校验器</Link>
-          <Link href="/tasks">今日任务</Link>
-        </nav>
+        <AppNav />
       </header>
 
       <section className="panel notice-panel">

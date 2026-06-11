@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import AppNav from "../../components/layout/AppNav";
 import { getSupabaseBrowserClient } from "../../lib/supabaseClient";
 import { emptyProductForm, productStatusOptions } from "../../lib/options";
 
@@ -864,14 +864,7 @@ export default function ProductsPage() {
           <h1>产品知识库</h1>
           <p>维护产品参数、价格、图片和文件资料，供业务团队和 AI 安全调用。</p>
         </div>
-        <nav>
-          <Link href="/">客户录入</Link>
-          <Link href="/customers">客户列表</Link>
-          <Link href="/playbook">有效案例库</Link>
-          <Link href="/products">产品知识库</Link>
-          <Link href="/system-checker">系统搭配校验器</Link>
-          <Link href="/tasks">今日任务</Link>
-        </nav>
+        <AppNav />
       </header>
 
       {session ? <div className="auth-card">已登录：{session.user.email}</div> : <div className="auth-card">请先回到客户录入页登录邮箱账号。</div>}
