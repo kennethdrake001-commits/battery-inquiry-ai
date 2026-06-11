@@ -64,23 +64,9 @@ const fileSectionConfigs = [
 
 const productSections = ["壁挂式电池", "落地式电池", "一体机", "未分类产品", "归档产品"];
 const productCategoryOptions = ["壁挂式电池", "落地式电池", "一体机"];
-const inlineEditFields = [
+const simpleProductFields = [
   ["product_name", "产品名称"],
-  ["model", "产品型号"],
-  ["category", "产品分类"],
-  ["short_description", "简短描述", "textarea"],
-  ["voltage", "电压"],
-  ["capacity_ah", "容量 Ah"],
-  ["energy_kwh", "能量 kWh"],
-  ["base_price", "价格"],
-  ["currency", "币种"],
-  ["price_term", "贸易条款"],
-  ["port", "港口"],
-  ["moq", "MOQ"],
-  ["lead_time", "交期"],
-  ["certifications", "认证", "textarea"],
-  ["compatible_inverters", "兼容逆变器", "textarea"],
-  ["status", "状态", "select"]
+  ["category", "产品分类"]
 ];
 
 function Field({ label, children }) {
@@ -215,19 +201,6 @@ function getProductSection(product) {
   ) return "一体机";
 
   return "未分类产品";
-}
-
-function getPriceSummary(product) {
-  const price = product.base_price ?? product.fob_price;
-  const term = product.price_term || "";
-  const port = product.port || product.fob_port || "";
-
-  if (price === null || price === undefined || price === "") return "";
-
-  const parts = [`${product.currency || "USD"} ${price}`];
-  if (term) parts.push(term);
-  if (port) parts.push(port);
-  return parts.join(" / ");
 }
 
 function getUploadInputId(productId, assetType) {
@@ -686,6 +659,39 @@ export default function ProductsPage() {
     input?.click();
   }
 
+  function renderSimpleEditor() {
+    return (
+      <>
+        <div className="form-grid">
+          {simpleProductFields.map(renderField)}
+          <Field label="产品型号 / 简短描述">
+            <div style={{ display: "grid", gap: 8 }}>
+              <input
+                value={form.model}
+                placeholder="产品型号"
+                onChange={(event) => updateForm("model", event.target.value)}
+              />
+              <textarea
+                rows={3}
+                value={form.short_description}
+                placeholder="简短描述"
+                onChange={(event) => updateForm("short_description", event.target.value)}
+              />
+            </div>
+          </Field>
+          <Field label="内部备注">
+            <textarea
+              rows={4}
+              value={form.internal_notes || ""}
+              placeholder="记录价格变化、库存情况、资料问题、客户常问问题等"
+              onChange={(event) => updateForm("internal_notes", event.target.value)}
+            />
+          </Field>
+        </div>
+      </>
+    );
+  }
+
   return (
     <main className="app">
       <header className="hero">
@@ -724,15 +730,7 @@ export default function ProductsPage() {
                   <h3>新增产品</h3>
                   <span>填写产品资料后创建</span>
                 </div>
-                <h4>基础信息</h4>
-                <div className="form-grid">{basicFields.map(renderField)}</div>
-                <h4>技术参数</h4>
-                <div className="form-grid">{technicalFields.map(renderField)}</div>
-                <h4>价格信息</h4>
-                <div className="form-grid">{priceFields.map(renderField)}</div>
-                <Field label="内部备注">
-                  <textarea rows={3} value={form.internal_notes || ""} onChange={(event) => updateForm("internal_notes", event.target.value)} />
-                </Field>
+                {renderSimpleEditor()}
                 <div className="actions">
                   <button className="primary" onClick={saveProduct} disabled={saving}>
                     {saving ? "保存中..." : "创建产品"}
@@ -758,7 +756,6 @@ export default function ProductsPage() {
                         const mainImage = getMainImageForProduct(product.id);
                         const editOpen = editingProductId === product.id;
                         const internalNote = getInternalNoteValue(product);
-                        const priceSummary = getPriceSummary(product);
                         return (
                           <article key={product.id} className="detail-item" style={{ padding: 20 }}>
                             <div style={{ display: "grid", gridTemplateColumns: "280px minmax(0, 1fr)", gap: 20, alignItems: "start" }}>
@@ -860,13 +857,6 @@ export default function ProductsPage() {
                                   </div>
                                 </div>
 
-                                {priceSummary ? (
-                                  <div className="detail-item" style={{ marginBottom: 16 }}>
-                                    <strong>价格信息</strong>
-                                    <p>{priceSummary}</p>
-                                  </div>
-                                ) : null}
-
                                 <div className="detail-item" style={{ marginBottom: 16 }}>
                                   <div className="section-title" style={{ marginBottom: 8 }}>
                                     <strong>内部备注</strong>
@@ -965,10 +955,7 @@ export default function ProductsPage() {
                                       <h3>编辑产品</h3>
                                       <span>{`更新时间：${formatTime(product.updated_at)}`}</span>
                                     </div>
-                                    <div className="form-grid">{inlineEditFields.map(renderField)}</div>
-                                    <Field label="内部备注">
-                                      <textarea rows={3} value={form.internal_notes || ""} onChange={(event) => updateForm("internal_notes", event.target.value)} />
-                                    </Field>
+                                    {renderSimpleEditor()}
                                     <div className="actions">
                                       <button className="primary" onClick={saveProduct} disabled={saving}>
                                         {saving ? "保存中..." : "保存修改"}
