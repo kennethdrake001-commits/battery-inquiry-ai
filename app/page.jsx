@@ -104,6 +104,12 @@ function SummaryCard({ title, count, subtitle }) {
   );
 }
 
+function isArchivedCustomer(customer) {
+  return customer?.current_status === "归档"
+    || customer?.stage === "Archived"
+    || customer?.stage === "归档";
+}
+
 export default function HomePage() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [session, setSession] = useState(null);
@@ -147,7 +153,11 @@ export default function HomePage() {
     loadCustomers();
   }, [supabase, session]);
 
-  const tasks = useMemo(() => buildTaskRows(customers), [customers]);
+  const activeCustomers = useMemo(() => {
+    return customers.filter((customer) => !isArchivedCustomer(customer));
+  }, [customers]);
+
+  const tasks = useMemo(() => buildTaskRows(activeCustomers), [activeCustomers]);
 
   const dashboardCards = useMemo(() => {
     return [
@@ -158,17 +168,17 @@ export default function HomePage() {
       },
       {
         title: "今日待开发",
-        count: customers.filter((customer) => getProspectingLane(customer) === "待开发").length,
+        count: activeCustomers.filter((customer) => getProspectingLane(customer) === "待开发").length,
         subtitle: "今天可以主动触达的客户"
       },
       {
         title: "A级高价值客户",
-        count: customers.filter((customer) => getLeadLevel(customer) === "A").length,
+        count: activeCustomers.filter((customer) => getLeadLevel(customer) === "A").length,
         subtitle: "需要优先处理和重点关注"
       },
       {
         title: "已报价待回复",
-        count: customers.filter((customer) => {
+        count: activeCustomers.filter((customer) => {
           const stage = getStageValue(customer);
           return stage === "Quoted" || stage === "Waiting Reply" || customer.current_status === "已报价未回复";
         }).length,
@@ -176,20 +186,20 @@ export default function HomePage() {
       },
       {
         title: "合作商候选",
-        count: customers.filter((customer) => isPartnerCandidate(customer)).length,
+        count: activeCustomers.filter((customer) => isPartnerCandidate(customer)).length,
         subtitle: "重点看渠道、经销、贴牌机会"
       },
       {
         title: "C端待筛选",
-        count: customers.filter((customer) => isConsumerCandidate(customer)).length,
+        count: activeCustomers.filter((customer) => isConsumerCandidate(customer)).length,
         subtitle: "终端用户或待判断客户"
       }
     ];
-  }, [customers, tasks]);
+  }, [activeCustomers, tasks]);
 
   const actionRows = useMemo(() => {
     return tasks.slice(0, 5).map((task) => {
-      const customer = customers.find((item) => item.id === task.id) || null;
+      const customer = activeCustomers.find((item) => item.id === task.id) || null;
       return {
         id: task.id,
         priority: getTaskPriority(task, customer),
@@ -199,7 +209,7 @@ export default function HomePage() {
         nextAction: formatNextActionForDisplay(task.current_next_action || getNextAction(customer || task))
       };
     });
-  }, [customers, tasks]);
+  }, [activeCustomers, tasks]);
 
   const remainingTaskCount = Math.max(tasks.length - 5, 0);
 

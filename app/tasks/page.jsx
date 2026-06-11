@@ -35,6 +35,12 @@ function getTaskReasonLabel(reason = "") {
   return text;
 }
 
+function isArchivedCustomer(customer) {
+  return customer?.current_status === "归档"
+    || customer?.stage === "Archived"
+    || customer?.stage === "归档";
+}
+
 export default function TasksPage() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [session, setSession] = useState(null);
@@ -74,7 +80,11 @@ export default function TasksPage() {
     init();
   }, [supabase]);
 
-  const allTasks = useMemo(() => buildTaskRows(customers), [customers]);
+  const activeCustomers = useMemo(() => {
+    return customers.filter((customer) => !isArchivedCustomer(customer));
+  }, [customers]);
+
+  const allTasks = useMemo(() => buildTaskRows(activeCustomers), [activeCustomers]);
 
   const tasksByTab = useMemo(() => {
     return {
