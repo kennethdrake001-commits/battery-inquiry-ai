@@ -5,6 +5,8 @@ import Link from "next/link";
 import { getSupabaseBrowserClient } from "../../lib/supabaseClient";
 import { emptyProductForm, productStatusOptions } from "../../lib/options";
 
+const PRODUCT_ASSETS_BUCKET = "product-assets";
+
 const basicFields = [
   ["product_name", "产品名称"],
   ["model", "产品型号"],
@@ -89,8 +91,8 @@ function numberOrNull(value) {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-function bucketForAssetType(assetType) {
-  return ["main_image", "gallery_image"].includes(assetType) ? "product-images" : "product-files";
+function bucketForAssetType() {
+  return PRODUCT_ASSETS_BUCKET;
 }
 
 function isImageAsset(asset) {
@@ -219,6 +221,7 @@ export default function ProductsPage() {
   const [editingProductId, setEditingProductId] = useState("");
   const [editingNoteId, setEditingNoteId] = useState("");
   const [noteDrafts, setNoteDrafts] = useState({});
+  const [productMessages, setProductMessages] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingType, setUploadingType] = useState("");
@@ -327,6 +330,13 @@ export default function ProductsPage() {
     if (queryError) {
       setAssetsByProduct((current) => ({ ...current, [productId]: [] }));
       setError(queryError.message);
+      setProductMessages((current) => ({
+        ...current,
+        [productId]: {
+          ...(current[productId] || {}),
+          cardError: queryError.message
+        }
+      }));
       return;
     }
 
@@ -399,6 +409,29 @@ export default function ProductsPage() {
     setUploadQueue((current) => ({ ...current, [`${productId}:${assetType}`]: Array.from(files || []) }));
   }
 
+  function setProductMessage(productId, key, value) {
+    setProductMessages((current) => ({
+      ...current,
+      [productId]: {
+        ...(current[productId] || {}),
+        [key]: value
+      }
+    }));
+  }
+
+  function clearProductSectionMessages(productId, keys) {
+    setProductMessages((current) => {
+      const next = { ...(current[productId] || {}) };
+      keys.forEach((key) => {
+        next[key] = "";
+      });
+      return {
+        ...current,
+        [productId]: next
+      };
+    });
+  }
+
   async function uploadAssetGroup(product, config) {
     if (!session?.user || !product?.id) {
       setError("请先保存产品，再上传图片或文件。");
@@ -408,13 +441,12 @@ export default function ProductsPage() {
     const queueKey = `${product.id}:${config.type}`;
     const files = uploadQueue[queueKey] || [];
     if (!files.length) {
-      setError("请先选择要上传的文件。");
+      setProductMessage(product.id, `${config.type}Error`, "请先选择要上传的文件。");
       return;
     }
 
     setUploadingType(config.type);
-    setError("");
-    setSuccess("");
+    clearProductSectionMessages(product.id, [`${config.type}Error`, `${config.type}Success`, "cardError", "cardSuccess"]);
 
     try {
       let successCount = 0;
@@ -446,16 +478,26 @@ export default function ProductsPage() {
           if (assetError) throw assetError;
           successCount += 1;
         } catch (singleError) {
-          failedMessages.push(`${file.name}：${singleError.message || "上传失败"}`);
+          const rawMessage = singleError.message || "上传失败";
+          if (rawMessage.toLowerCase().includes("bucket not found")) {
+            failedMessages.push(`产品资料 bucket 不存在，请先在 Supabase Storage 创建 ${PRODUCT_ASSETS_BUCKET} bucket。`);
+          } else {
+            failedMessages.push(`${file.name}：${rawMessage}`);
+          }
         }
       }
 
       setUploadQueue((current) => ({ ...current, [queueKey]: [] }));
-      if (successCount > 0) setSuccess(`成功上传 ${successCount} 个文件`);
-      if (failedMessages.length > 0) setError(`部分文件上传失败：${failedMessages.join("；")}`);
+      if (successCount > 0) setProductMessage(product.id, `${config.type}Success`, `成功上传 ${successCount} 个文件。`);
+      if (failedMessages.length > 0) setProductMessage(product.id, `${config.type}Error`, `部分文件上传失败：${failedMessages.join("；")}`);
       await loadAssets(product.id);
     } catch (uploadError) {
-      setError(uploadError.message || "上传失败，请检查 Storage 配置。");
+      const rawMessage = uploadError.message || "上传失败，请检查 Storage 配置。";
+      const friendlyMessage = rawMessage.toLowerCase().includes("bucket not found")
+        ? `产品资料 bucket 不存在，请先在 Supabase Storage 创建 ${PRODUCT_ASSETS_BUCKET} bucket。`
+        : rawMessage;
+      setProductMessage(product.id, `${config.type}Error`, friendlyMessage);
+      setError(friendlyMessage);
     } finally {
       setUploadingType("");
     }
@@ -472,14 +514,18 @@ export default function ProductsPage() {
       .from(bucket)
       .createSignedUrl(asset.storage_path, 3600);
     if (urlError || !data?.signedUrl) {
-      setError(urlError?.message || "无法生成预览链接。");
+      const message = urlError?.message || "无法生成预览链接。";
+      setProductMessage(asset.product_id, `${asset.asset_type}Error`, message);
+      setError(message);
       return;
     }
+    setProductMessage(asset.product_id, `${asset.asset_type}Success`, "已生成预览/下载链接。");
     window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   }
 
   async function deleteAsset(asset) {
     if (!session?.user) {
+      setProductMessage(asset.product_id, `${asset.asset_type}Error`, "请先登录后再删除文件。");
       setError("请先登录后再删除文件。");
       return;
     }
@@ -487,17 +533,19 @@ export default function ProductsPage() {
     const bucket = bucketForAssetType(asset.asset_type);
     const { error: storageError } = await supabase.storage.from(bucket).remove([asset.storage_path]);
     if (storageError) {
+      setProductMessage(asset.product_id, `${asset.asset_type}Error`, storageError.message);
       setError(storageError.message);
       return;
     }
 
     const { error: deleteError } = await supabase.from("product_assets").delete().eq("id", asset.id);
     if (deleteError) {
+      setProductMessage(asset.product_id, `${asset.asset_type}Error`, deleteError.message);
       setError(deleteError.message);
       return;
     }
 
-    setSuccess("文件已删除。");
+    setProductMessage(asset.product_id, `${asset.asset_type}Success`, "文件已删除。");
     await loadAssets(asset.product_id);
   }
 
@@ -657,6 +705,21 @@ export default function ProductsPage() {
   function triggerFileSelect(productId, assetType) {
     const input = document.getElementById(getUploadInputId(productId, assetType));
     input?.click();
+  }
+
+  function renderInlineMessage(productId, keyPrefix) {
+    const messageGroup = productMessages[productId] || {};
+    const errorMessage = messageGroup[`${keyPrefix}Error`];
+    const successMessage = messageGroup[`${keyPrefix}Success`];
+
+    if (!errorMessage && !successMessage) return null;
+
+    return (
+      <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+        {errorMessage ? <div className="error" style={{ margin: 0 }}>{errorMessage}</div> : null}
+        {successMessage ? <div className="success" style={{ margin: 0 }}>{successMessage}</div> : null}
+      </div>
+    );
   }
 
   function renderSimpleEditor() {
@@ -834,6 +897,7 @@ export default function ProductsPage() {
                                     </button>
                                   </div>
                                 )}
+                                {renderInlineMessage(product.id, "main_image")}
                               </div>
 
                               <div style={{ minWidth: 0 }}>
@@ -944,6 +1008,7 @@ export default function ProductsPage() {
                                             ))}
                                           </div>
                                         )}
+                                        {renderInlineMessage(product.id, section.uploadTypes[0])}
                                       </div>
                                     );
                                   })}
