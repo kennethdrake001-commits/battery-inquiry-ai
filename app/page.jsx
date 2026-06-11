@@ -103,6 +103,20 @@ function isArchivedCustomer(customer) {
     || customer?.stage === "归档";
 }
 
+function isProspectingCustomer(customer) {
+  const source = String(customer?.source || "").trim().toLowerCase();
+  const customerSource = String(customer?.customer_source || "").trim().toLowerCase();
+  const stage = String(customer?.stage || "").trim().toLowerCase();
+  const currentStatus = String(customer?.current_status || "").trim().toLowerCase();
+  const customerType = String(customer?.customer_type || "").trim();
+
+  return source === "主动开发"
+    || customerSource === "主动开发"
+    || stage === "prospecting"
+    || currentStatus === "prospecting"
+    || (customerType === "太阳能经销商" && source === "主动开发");
+}
+
 export default function HomePage() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [session, setSession] = useState(null);
@@ -147,7 +161,7 @@ export default function HomePage() {
   }, [supabase, session]);
 
   const activeCustomers = useMemo(() => {
-    return customers.filter((customer) => !isArchivedCustomer(customer));
+    return customers.filter((customer) => !isArchivedCustomer(customer) && !isProspectingCustomer(customer));
   }, [customers]);
 
   const tasks = useMemo(() => buildTaskRows(activeCustomers), [activeCustomers]);
