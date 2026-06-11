@@ -5,7 +5,9 @@ const navItems = [
   { href: "/customers", label: "客户" },
   { href: "/prospecting", label: "主动开发" },
   { href: "/tasks", label: "任务" },
-  { href: "/quotes", label: "报价" }
+  { href: "/quotes", label: "报价" },
+  { href: "/products", label: "产品知识库" },
+  { href: "/system-checker", label: "系统计算器" }
 ];
 
 export default function AppNav() {
