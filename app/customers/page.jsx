@@ -23,14 +23,51 @@ function AuthNotice({ session }) {
 }
 
 const emptyFilters = {
+  keyword: "",
   country: "",
   customerType: "",
-  source: "",
+  sourceType: "",
   leadLevel: "",
   status: "",
   partnerCandidate: "",
+  onlyImportant: "否",
   showArchived: "否"
 };
+
+function isImportantCustomer(customer) {
+  return customer?.lead_level === "A" || customer?.priority === true || customer?.is_important === true;
+}
+
+function matchSourceType(customer, sourceType) {
+  const source = String(customer?.source || "").toLowerCase();
+  const stage = String(customer?.stage || "");
+
+  if (!sourceType) return true;
+  if (sourceType === "阿里询盘") {
+    return source.includes("alibaba") || source.includes("阿里");
+  }
+  if (sourceType === "主动开发") {
+    return customer?.source === "主动开发" || stage === "Prospecting";
+  }
+  if (sourceType === "邮件") {
+    return source.includes("email") || source.includes("邮件");
+  }
+  if (sourceType === "WhatsApp") {
+    return source.includes("whatsapp");
+  }
+  if (sourceType === "其他") {
+    return !(
+      source.includes("alibaba")
+      || source.includes("阿里")
+      || source.includes("email")
+      || source.includes("邮件")
+      || source.includes("whatsapp")
+      || customer?.source === "主动开发"
+      || stage === "Prospecting"
+    );
+  }
+  return true;
+}
 
 export default function CustomersPage() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
@@ -80,27 +117,41 @@ export default function CustomersPage() {
   }
 
   const filteredCustomers = useMemo(() => {
-    return customers.filter((customer) => {
-      const country = customer.country || "";
-      const type = getCustomerTypeValue(customer);
-      const source = customer.source || "";
-      const level = getLeadLevel(customer);
-      const status = getStageLabel(getStageValue(customer));
-      const partnerCandidate = isPartnerCandidate(customer);
-      const isArchived = customer.current_status === "归档" || customer.stage === "Archived";
+    return [...customers]
+      .filter((customer) => {
+        const country = customer.country || "";
+        const type = getCustomerTypeValue(customer);
+        const level = getLeadLevel(customer);
+        const status = getStageLabel(getStageValue(customer));
+        const partnerCandidate = isPartnerCandidate(customer);
+        const isArchived = customer.current_status === "归档" || customer.stage === "Archived";
+        const important = isImportantCustomer(customer);
+        const keyword = filters.keyword.trim().toLowerCase();
+        const nameText = String(customer.customer_name || customer.company_name || "").toLowerCase();
+        const messageText = String(customer.original_message || "").toLowerCase();
 
-      if (filters.showArchived !== "是" && isArchived) {
-        return false;
-      }
+        if (filters.showArchived !== "是" && isArchived) {
+          return false;
+        }
 
-      return (!filters.country || country === filters.country)
-        && (!filters.customerType || type === filters.customerType)
-        && (!filters.source || source === filters.source)
-        && (!filters.leadLevel || level === filters.leadLevel)
-        && (!filters.status || status === filters.status)
-        && (!filters.partnerCandidate
-          || (filters.partnerCandidate === "是" ? partnerCandidate : !partnerCandidate));
-    });
+        if (keyword && !nameText.includes(keyword) && !messageText.includes(keyword)) {
+          return false;
+        }
+
+        return (!filters.country || country === filters.country)
+          && (!filters.customerType || type === filters.customerType)
+          && matchSourceType(customer, filters.sourceType)
+          && (!filters.leadLevel || level === filters.leadLevel)
+          && (!filters.status || status === filters.status)
+          && (!filters.partnerCandidate
+            || (filters.partnerCandidate === "是" ? partnerCandidate : !partnerCandidate))
+          && (filters.onlyImportant !== "是" || important);
+      })
+      .sort((a, b) => {
+        const aTime = new Date(a.updated_at || a.created_at || 0).getTime();
+        const bTime = new Date(b.updated_at || b.created_at || 0).getTime();
+        return bTime - aTime;
+      });
   }, [customers, filters]);
 
   function updateFilter(field, value) {
@@ -132,6 +183,28 @@ export default function CustomersPage() {
     setNotice("客户已归档。可在“显示归档客户”中查看。");
   }
 
+  async function toggleImportantCustomer(customer) {
+    setError("");
+    setNotice("");
+
+    const nextLevel = isImportantCustomer(customer) ? "C" : "A";
+    const { error: updateError } = await supabase
+      .from("customers")
+      .update({
+        lead_level: nextLevel,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", customer.id);
+
+    if (updateError) {
+      setError(`更新重点客户失败：${updateError.message}`);
+      return;
+    }
+
+    await loadCustomers();
+    setNotice(nextLevel === "A" ? "客户已标记为重点跟进。" : "已取消重点跟进标记。");
+  }
+
   return (
     <main className="app">
       <header className="hero">
@@ -161,6 +234,10 @@ export default function CustomersPage() {
             </div>
             <div className="form-grid">
               <label className="field">
+                <span>客户名 / 公司名搜索</span>
+                <input value={filters.keyword} onChange={(event) => updateFilter("keyword", event.target.value)} placeholder="输入客户名或公司名" />
+              </label>
+              <label className="field">
                 <span>国家</span>
                 <input value={filters.country} onChange={(event) => updateFilter("country", event.target.value)} placeholder="输入国家筛选" />
               </label>
@@ -178,8 +255,15 @@ export default function CustomersPage() {
                 </select>
               </label>
               <label className="field">
-                <span>客户来源</span>
-                <input value={filters.source} onChange={(event) => updateFilter("source", event.target.value)} placeholder="如 Alibaba / Email" />
+                <span>客户来源类型</span>
+                <select value={filters.sourceType} onChange={(event) => updateFilter("sourceType", event.target.value)}>
+                  <option value="">全部</option>
+                  <option value="阿里询盘">阿里询盘</option>
+                  <option value="主动开发">主动开发</option>
+                  <option value="邮件">邮件</option>
+                  <option value="WhatsApp">WhatsApp</option>
+                  <option value="其他">其他</option>
+                </select>
               </label>
               <label className="field">
                 <span>客户等级</span>
@@ -205,6 +289,13 @@ export default function CustomersPage() {
               <label className="field">
                 <span>显示归档客户</span>
                 <select value={filters.showArchived} onChange={(event) => updateFilter("showArchived", event.target.value)}>
+                  <option value="否">否</option>
+                  <option value="是">是</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>只看重点客户</span>
+                <select value={filters.onlyImportant} onChange={(event) => updateFilter("onlyImportant", event.target.value)}>
                   <option value="否">否</option>
                   <option value="是">是</option>
                 </select>
@@ -239,13 +330,21 @@ export default function CustomersPage() {
                       <td>{customer.country || "-"}</td>
                       <td><span className="soft-badge">{getCustomerTypeLabel(getCustomerTypeValue(customer))}</span></td>
                       <td><span className="soft-badge">{getSourceLabel(customer.source)}</span></td>
-                      <td><span className={`level level-${getLeadLevel(customer)}`}>{getLeadLevel(customer)}</span></td>
+                      <td>
+                        <div className="actions compact" style={{ gap: 8, justifyContent: "flex-start" }}>
+                          <span className={`level level-${getLeadLevel(customer)}`}>{getLeadLevel(customer)}</span>
+                          {isImportantCustomer(customer) && <span className="soft-badge">重点</span>}
+                        </div>
+                      </td>
                       <td>{getStageLabel(getStageValue(customer))}</td>
                       <td className="truncate-cell">{formatNextActionForDisplay(customer.next_action || customer.current_next_action || getNextAction(customer))}</td>
                       <td>{isPartnerCandidate(customer) ? "是" : "否"}</td>
                       <td>
                         <div className="actions compact">
                           <Link href={`/customers/${customer.id}`}>查看详情</Link>
+                          <button type="button" onClick={() => toggleImportantCustomer(customer)}>
+                            {isImportantCustomer(customer) ? "取消重点" : "标记重点"}
+                          </button>
                           <button type="button" onClick={() => archiveCustomer(customer)}>归档</button>
                         </div>
                       </td>
