@@ -478,6 +478,40 @@ export default function ProspectingPage() {
     setNotice("已转为正式客户。");
   }
 
+  async function markFirstEmailSent(customer) {
+    setError("");
+    setNotice("");
+
+    if (!session?.user?.id) {
+      setError("请先登录后再操作。");
+      return;
+    }
+
+    const followUpAt = new Date();
+    followUpAt.setDate(followUpAt.getDate() + 3);
+    const now = new Date().toISOString();
+
+    const { error: updateError } = await supabase
+      .from("customers")
+      .update({
+        current_status: "已发第一封",
+        stage: "Prospecting",
+        next_action: "第一次跟进",
+        current_next_action: "第一次跟进",
+        next_follow_up_at: followUpAt.toISOString(),
+        updated_at: now
+      })
+      .eq("id", customer.id);
+
+    if (updateError) {
+      setError(`更新失败：${updateError.message}`);
+      return;
+    }
+
+    await loadCustomers();
+    setNotice("已标记为已发第一封，3 天后跟进");
+  }
+
   return (
     <main className="app">
       <header className="hero">
@@ -683,6 +717,9 @@ export default function ProspectingPage() {
                   </div>
                   <div className="actions compact">
                     <button type="button" onClick={() => copyScript(selectedScript.text)}>复制英文开发信</button>
+                    {getProspectingStage(selectedCustomer) === "未联系" && (
+                      <button type="button" onClick={() => markFirstEmailSent(selectedCustomer)}>标记已发送第一封</button>
+                    )}
                     <Link href={`/customers/${selectedCustomer.id}`}>查看/编辑客户</Link>
                   </div>
                 </>
