@@ -726,15 +726,30 @@ export default function ProspectingPage() {
               className="summary-grid"
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                gap: 12,
-                marginTop: 16
+                gridTemplateColumns: "repeat(8, minmax(0, 1fr))",
+                gap: 8,
+                marginTop: 16,
+                width: "100%",
+                minWidth: 0,
+                overflow: "hidden"
               }}
             >
               {reviewStats.map((item) => (
-                <article key={item.title} className="notice-panel">
-                  <strong>{item.title}</strong>
-                  <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>{item.value}</div>
+                <article
+                  key={item.title}
+                  className="notice-panel"
+                  style={{
+                    padding: "10px 8px",
+                    minWidth: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center"
+                  }}
+                >
+                  <strong style={{ fontSize: 12, lineHeight: 1.3 }}>{item.title}</strong>
+                  <div style={{ fontSize: 24, fontWeight: 700, marginTop: 6, lineHeight: 1.1 }}>{item.value}</div>
                 </article>
               ))}
             </div>
