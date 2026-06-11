@@ -14,13 +14,11 @@ import {
 
 const prospectingStages = [
   "未联系",
-  "已发第一封",
-  "第一次跟进",
-  "第二次跟进",
+  "已发首封",
+  "跟进中",
   "已回复",
-  "有兴趣",
-  "不合适",
-  "已转正式客户"
+  "已转正式客户",
+  "归档"
 ];
 
 const importHeaders = ["公司名", "国家", "客户类型", "官网", "邮箱", "LinkedIn", "联系人", "WhatsApp", "来源渠道", "备注"];
@@ -51,23 +49,18 @@ function formatDate(value) {
 
 function getProspectingStage(customer) {
   const savedStatus = customer.current_status || "";
-  if (prospectingStages.includes(savedStatus)) return savedStatus;
-
-  if (savedStatus === "归档" || customer.stage === "Closed Lost") return "不合适";
-  if (customer.last_customer_reply_at) {
-    if (customer.stage === "Need Quotation" || customer.stage === "Negotiation" || customer.stage === "Trial Order") {
-      return "有兴趣";
-    }
-    return "已回复";
+  if (savedStatus === "归档" || savedStatus === "不合适" || customer.stage === "Archived" || customer.stage === "Closed Lost") {
+    return "归档";
   }
+  if (savedStatus === "已转正式客户") return "已转正式客户";
+  if (savedStatus === "已回复" || savedStatus === "有兴趣") return "已回复";
+  if (savedStatus === "第一次跟进" || savedStatus === "第二次跟进") return "跟进中";
+  if (savedStatus === "已发第一封" || savedStatus === "已发首封") return "已发首封";
+  if (savedStatus === "未联系") return "未联系";
 
-  if (customer.last_contacted_at && customer.follow_up_date) {
-    const days = Math.floor((Date.now() - new Date(customer.last_contacted_at).getTime()) / (1000 * 60 * 60 * 24));
-    if (days >= 6) return "第二次跟进";
-    return "第一次跟进";
-  }
-
-  if (customer.last_contacted_at) return "已发第一封";
+  if (customer.last_customer_reply_at) return "已回复";
+  if (customer.last_contacted_at && customer.follow_up_date) return "跟进中";
+  if (customer.last_contacted_at) return "已发首封";
   return "未联系";
 }
 
@@ -80,20 +73,16 @@ function getProspectingNextAction(customer) {
   switch (stage) {
     case "未联系":
       return "发送首封开发信，介绍主营产品并确认客户方向";
-    case "已发第一封":
+    case "已发首封":
       return "等待 3 天后进行第一次跟进";
-    case "第一次跟进":
-      return "补充产品卖点、应用案例和可供货能力";
-    case "第二次跟进":
-      return "进行最后一次轻跟进，确认是否继续保持联系";
+    case "跟进中":
+      return "继续跟进客户，补充产品卖点、案例和可供货能力";
     case "已回复":
       return "判断客户是否有真实需求，并补齐数量、应用和采购时间";
-    case "有兴趣":
-      return "转入正式客户流程，准备资料、报价或样品推进";
-    case "不合适":
-      return "标记为暂不推进，保留档案备查";
     case "已转正式客户":
       return "进入正式客户详情页继续推进需求与报价";
+    case "归档":
+      return "该客户已归档，默认不再继续推进";
     default:
       return "需要人工判断下一步动作";
   }
@@ -111,45 +100,31 @@ function getProspectingScript(customer) {
     };
   }
 
-  if (stage === "已发第一封" || stage === "第一次跟进") {
+  if (stage === "已发首封" || stage === "跟进中") {
     return {
-      title: "第一次跟进话术",
+      title: "跟进开发信",
       text: `Hi ${name}, just following up on my previous message. We supply LiFePO4 battery systems for solar installers and distributors, with support for common inverter brands and project applications. Please let me know if you are currently looking for any battery products, and I can send the most relevant models and pricing information.`
     };
   }
 
-  if (stage === "第二次跟进") {
-    return {
-      title: "第二次跟进话术",
-      text: `Hi ${name}, I’m checking in one more time in case battery storage products are still in your plan. If now is not the right time, no problem. If you want, I can still send a short product list so you have it on hand when needed.`
-    };
-  }
-
   if (stage === "已回复") {
+    if (type === "Solar Distributor" || customer.current_status === "有兴趣") {
+      return {
+        title: "经销商推进话术",
+        text: `Hi ${name}, thanks for your interest. I can send you our main battery models, distributor supply information, and recommended capacities for your market. Please let me know which capacity range and order quantity you are mainly evaluating, and I will prepare the most relevant offer for you.`
+      };
+    }
+
+    if (type === "Solar Installer") {
+      return {
+        title: "安装商推进话术",
+        text: `Hi ${name}, thanks for your interest. I can send you the battery datasheet, installation photos, and inverter compatibility information for review. Please share the inverter brand and model you are using, and I will prepare the matching information for you.`
+      };
+    }
+
     return {
       title: "回复后需求确认",
       text: `Hi ${name}, thanks for your reply. To recommend the right solution, may I know what battery capacity, quantity, and main application you are looking for? If you already have a target inverter brand or project type, I can check the most suitable option for you.`
-    };
-  }
-
-  if (stage === "有兴趣" && type === "Solar Distributor") {
-    return {
-      title: "经销商推进话术",
-      text: `Hi ${name}, thanks for your interest. I can send you our main battery models, distributor supply information, and recommended capacities for your market. Please let me know which capacity range and order quantity you are mainly evaluating, and I will prepare the most relevant offer for you.`
-    };
-  }
-
-  if (stage === "有兴趣" && type === "Solar Installer") {
-    return {
-      title: "安装商推进话术",
-      text: `Hi ${name}, thanks for your interest. I can send you the battery datasheet, installation photos, and inverter compatibility information for review. Please share the inverter brand and model you are using, and I will prepare the matching information for you.`
-    };
-  }
-
-  if (stage === "有兴趣") {
-    return {
-      title: "有兴趣客户推进话术",
-      text: `Hi ${name}, thanks for your interest. Please let me know the product capacity, target quantity, and delivery destination you need, and I will prepare the most suitable quotation and product information for you.`
     };
   }
 
@@ -162,11 +137,11 @@ function getProspectingScript(customer) {
 function getTaskReason(customer) {
   const stage = getProspectingStage(customer);
   if (stage === "未联系") return "今天应发送首封开发信";
-  if (stage === "已发第一封") return "首封已发，准备第一次跟进";
-  if (stage === "第一次跟进") return "已到第一次跟进节点";
-  if (stage === "第二次跟进") return "已到第二次跟进节点";
+  if (stage === "已发首封") return "首封已发，准备第一次跟进";
+  if (stage === "跟进中") return "开发客户正在跟进中";
   if (stage === "已回复") return "客户已回复，需要判断是否有真实需求";
-  if (stage === "有兴趣") return "客户表现出兴趣，需要尽快转入正式流程";
+  if (stage === "已转正式客户") return "客户已转入正式客户流程";
+  if (stage === "归档") return "该客户已归档";
   return "根据当前开发阶段继续推进";
 }
 
@@ -306,23 +281,19 @@ export default function ProspectingPage() {
     setCustomers(rows || []);
   }
 
-  const activeCustomers = useMemo(() => {
-    return customers.filter((customer) => customer.current_status !== "归档" && customer.stage !== "Archived");
-  }, [customers]);
-
   const prospectingCustomers = useMemo(() => {
-    return activeCustomers.filter((customer) => isProspectingCustomer(customer));
-  }, [activeCustomers]);
+    return customers.filter((customer) => isProspectingCustomer(customer));
+  }, [customers]);
 
   const todayTasks = useMemo(() => {
     const today = new Date();
     today.setHours(23, 59, 59, 999);
 
-    return activeCustomers
+    return prospectingCustomers
       .filter((customer) => {
         const stage = getProspectingStage(customer);
-        if (stage === "不合适" || stage === "已转正式客户") return false;
-        if (stage === "未联系" || stage === "已回复" || stage === "有兴趣") return true;
+        if (stage === "归档" || stage === "已转正式客户") return false;
+        if (stage === "未联系" || stage === "已回复") return true;
         const followUpAt = getFollowUpDate(customer);
         return followUpAt ? new Date(followUpAt).getTime() <= today.getTime() : false;
       })
@@ -332,16 +303,14 @@ export default function ProspectingPage() {
         prospectingAction: getProspectingNextAction(customer),
         taskReason: getTaskReason(customer)
       }));
-  }, [activeCustomers]);
+  }, [prospectingCustomers]);
 
   const targetPool = useMemo(() => {
-    return prospectingCustomers
-      .filter((customer) => getProspectingStage(customer) !== "已转正式客户")
-      .map((customer) => ({
-        ...customer,
-        prospectingStage: getProspectingStage(customer),
-        prospectingAction: getProspectingNextAction(customer)
-      }));
+    return prospectingCustomers.map((customer) => ({
+      ...customer,
+      prospectingStage: getProspectingStage(customer),
+      prospectingAction: getProspectingNextAction(customer)
+    }));
   }, [prospectingCustomers]);
 
   const boardGroups = useMemo(() => {
@@ -362,23 +331,32 @@ export default function ProspectingPage() {
       return createdAt.getTime() >= start.getTime() && createdAt.getTime() <= end.getTime();
     });
 
-    const sentStatuses = ["已发第一封", "第一次跟进", "第二次跟进", "已回复", "有兴趣", "不合适", "已转正式客户"];
-    const repliedStatuses = ["已回复", "有兴趣", "不合适", "已转正式客户"];
+    const stageCounts = inRangeCustomers.reduce((map, customer) => {
+      const stage = getProspectingStage(customer);
+      map[stage] = (map[stage] || 0) + 1;
+      return map;
+    }, {});
 
-    const sentCount = inRangeCustomers.filter((customer) => sentStatuses.includes(customer.current_status)).length;
-    const repliedCount = inRangeCustomers.filter((customer) => repliedStatuses.includes(customer.current_status)).length;
-    const interestedCount = inRangeCustomers.filter((customer) => customer.current_status === "有兴趣").length;
-    const convertedCount = inRangeCustomers.filter((customer) => customer.current_status === "已转正式客户").length;
-    const unsuitableCount = inRangeCustomers.filter((customer) => customer.current_status === "不合适").length;
+    const sentCount = inRangeCustomers.filter((customer) => {
+      const stage = getProspectingStage(customer);
+      return stage !== "未联系";
+    }).length;
+    const repliedTotalCount = inRangeCustomers.filter((customer) => {
+      const stage = getProspectingStage(customer);
+      return stage === "已回复" || stage === "已转正式客户" || stage === "归档";
+    }).length;
+    const repliedCount = stageCounts["已回复"] || 0;
+    const convertedCount = stageCounts["已转正式客户"] || 0;
+    const archivedCount = stageCounts["归档"] || 0;
 
     return [
       { title: "新增目标客户", value: inRangeCustomers.length },
-      { title: "已发送开发信", value: sentCount },
+      { title: "已发首封", value: stageCounts["已发首封"] || 0 },
+      { title: "跟进中", value: stageCounts["跟进中"] || 0 },
       { title: "已回复", value: repliedCount },
-      { title: "有兴趣", value: interestedCount },
       { title: "已转正式客户", value: convertedCount },
-      { title: "不合适", value: unsuitableCount },
-      { title: "回复率", value: formatPercent(repliedCount, sentCount) },
+      { title: "归档", value: archivedCount },
+      { title: "回复率", value: formatPercent(repliedTotalCount, sentCount) },
       { title: "转化率", value: formatPercent(convertedCount, sentCount) }
     ];
   }, [prospectingCustomers, reviewRange, customStartDate, customEndDate]);
@@ -600,6 +578,36 @@ export default function ProspectingPage() {
     setNotice("已转为正式客户。");
   }
 
+  async function archiveProspectingCustomer(customer) {
+    setError("");
+    setNotice("");
+
+    const confirmed = window.confirm("确定将这个主动开发客户归档吗？归档后默认不再继续推进。");
+    if (!confirmed) return;
+
+    const now = new Date().toISOString();
+    const { error: updateError } = await supabase
+      .from("customers")
+      .update({
+        current_status: "归档",
+        stage: "Archived",
+        current_next_action: "已归档，默认不再继续推进",
+        updated_at: now
+      })
+      .eq("id", customer.id);
+
+    if (updateError) {
+      setError(`归档失败：${updateError.message}`);
+      return;
+    }
+
+    await loadCustomers();
+    if (selectedId === customer.id) {
+      setSelectedId("");
+    }
+    setNotice("客户已归档。");
+  }
+
   async function markFirstEmailSent(customer) {
     setError("");
     setNotice("");
@@ -631,7 +639,7 @@ export default function ProspectingPage() {
     }
 
     await loadCustomers();
-    setNotice("已标记为已发第一封，3 天后跟进");
+    setNotice("已标记为已发首封，3 天后跟进");
   }
 
   return (
@@ -885,11 +893,26 @@ export default function ProspectingPage() {
                     </div>
                   </div>
                   <div className="actions compact">
-                    <button type="button" onClick={() => copyScript(selectedScript.text)}>复制英文开发信</button>
                     {getProspectingStage(selectedCustomer) === "未联系" && (
-                      <button type="button" onClick={() => markFirstEmailSent(selectedCustomer)}>标记已发送第一封</button>
+                      <>
+                        <button type="button" onClick={() => copyScript(selectedScript.text)}>复制英文开发信</button>
+                        <button type="button" onClick={() => markFirstEmailSent(selectedCustomer)}>标记已发送首封</button>
+                        <Link href={`/customers/${selectedCustomer.id}`}>查看/编辑客户</Link>
+                      </>
                     )}
-                    <Link href={`/customers/${selectedCustomer.id}`}>查看/编辑客户</Link>
+                    {getProspectingStage(selectedCustomer) === "已回复" && (
+                      <>
+                        <button type="button" onClick={() => convertToFormalCustomer(selectedCustomer)}>转为正式客户</button>
+                        <button type="button" onClick={() => archiveProspectingCustomer(selectedCustomer)}>归档</button>
+                        <Link href={`/customers/${selectedCustomer.id}`}>查看/编辑客户</Link>
+                      </>
+                    )}
+                    {getProspectingStage(selectedCustomer) !== "未联系" && getProspectingStage(selectedCustomer) !== "已回复" && (
+                      <>
+                        <button type="button" onClick={() => copyScript(selectedScript.text)}>复制英文开发信</button>
+                        <Link href={`/customers/${selectedCustomer.id}`}>查看/编辑客户</Link>
+                      </>
+                    )}
                   </div>
                 </>
               )}
