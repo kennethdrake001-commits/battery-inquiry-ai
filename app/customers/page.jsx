@@ -410,12 +410,11 @@ export default function CustomersPage() {
               <div className="actions compact">
                 <Link className="primary" href="/customers/new">新增询盘客户</Link>
                 <button type="button" onClick={() => setShowProspectModal(true)}>新增主动开发客户</button>
-                <Link href="/prospecting">批量导入主动开发客户</Link>
                 <button type="button" onClick={() => setFilters(emptyFilters)}>清空筛选</button>
               </div>
             </div>
             <p className="subtle" style={{ marginTop: 0 }}>
-              先按客户范围查看，再用搜索快速找到客户。复杂条件放在高级筛选里。
+              客户列表统一管理询盘客户和主动开发客户。主动开发客户可通过“新增主动开发客户”录入，并在“主动开发客户”筛选中查看。
             </p>
             <div className="field" style={{ marginBottom: 16 }}>
               <span>客户范围</span>
