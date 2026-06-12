@@ -1564,32 +1564,34 @@ export default function CustomerDetailPage() {
         >
           <div style={{ display: "flex", flexDirection: "column", gap: 10, height: "100%" }}>
             <div className="section-title" style={{ marginBottom: 0 }}>
-              <h2 style={{ fontSize: 22, fontWeight: 700, color: "#0f172a" }}>客户判断</h2>
+              <h2 style={{ fontSize: 20, fontWeight: 700, color: "#0f172a" }}>客户判断</h2>
             </div>
-            <div style={{ borderRadius: 18, background: "#eff6ff", border: "1px solid #dbeafe", padding: 14, height: "100%" }}>
+            <div style={{ borderRadius: 18, background: "#eff6ff", border: "1px solid #dbeafe", padding: 14, height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 12 }}>
+              <div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
-                <strong style={{ fontSize: 26, lineHeight: 1, color: "#0f172a" }}>{customerScore.total}</strong>
-                <span style={{ color: "#475569", fontSize: 14 }}>/ 100</span>
+                <strong style={{ fontSize: 30, lineHeight: 1, color: "#0f172a" }}>{customerScore.total}</strong>
+                <span style={{ color: "#475569", fontSize: 16 }}>/ 100</span>
               </div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: "#2563eb", marginBottom: 4 }}>{customerGrade}</div>
-              <div style={{ color: "#475569", fontSize: 14, marginBottom: 10 }}>{customerPriorityLabel}</div>
-              <div style={{ color: "#334155", fontSize: 12, lineHeight: 1.6, marginBottom: 10 }}>
-                <strong style={{ display: "block", marginBottom: 3, fontSize: 13, fontWeight: 600, color: "#475569" }}>判断依据</strong>
+              <div style={{ fontSize: 17, fontWeight: 600, color: "#2563eb", marginBottom: 4 }}>{customerGrade}</div>
+              <div style={{ color: "#475569", fontSize: 13, marginBottom: 2 }}>{customerPriorityLabel}</div>
+              </div>
+              <div style={{ color: "#334155", fontSize: 13, lineHeight: 1.6 }}>
+                <strong style={{ display: "block", marginBottom: 4, fontSize: 13, fontWeight: 600, color: "#475569" }}>判断依据</strong>
                 <div>{judgementReason}</div>
               </div>
-              <div style={{ color: "#334155", fontSize: 12, lineHeight: 1.6 }}>
-                <strong style={{ display: "block", marginBottom: 3, fontSize: 13, fontWeight: 600, color: "#475569" }}>风险 / 关注点</strong>
+              <div style={{ color: "#334155", fontSize: 13, lineHeight: 1.6 }}>
+                <strong style={{ display: "block", marginBottom: 4, fontSize: 13, fontWeight: 600, color: "#475569" }}>风险 / 关注点</strong>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                   {riskFocusItems.map((item) => (
                     <span
                       key={item}
                       style={{
-                        fontSize: 12,
+                        fontSize: 11,
                         color: "#334155",
                         background: "#ffffff",
-                        border: "1px solid #dbeafe",
+                        border: "1px solid #e2e8f0",
                         borderRadius: 999,
-                        padding: "3px 8px"
+                        padding: "4px 10px"
                       }}
                     >
                       {item}
@@ -1604,7 +1606,7 @@ export default function CustomerDetailPage() {
             <div className="section-title" style={{ marginBottom: 0 }}>
               <h2 style={{ fontSize: 22, fontWeight: 700, color: "#0f172a" }}>当前推进</h2>
             </div>
-            <div className="detail-item" style={{ borderRadius: 18, background: "#f8fbff", padding: 16, border: "1px solid #dbeafe" }}>
+            <div className="detail-item" style={{ borderRadius: 18, background: "#f8fbff", padding: 16, border: "1px solid #dbeafe", minHeight: 132, display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>
               <strong style={{ color: "#64748b", fontSize: 13, fontWeight: 600, lineHeight: 1.4 }}>下一步动作</strong>
               <p
                 style={{
@@ -1624,11 +1626,11 @@ export default function CustomerDetailPage() {
                 {localizedPersistedAction}
               </p>
             </div>
-            <div className="detail-item" style={{ borderRadius: 16, background: "#fff7ed", padding: 12, border: "1px solid #fed7aa" }}>
+            <div className="detail-item" style={{ borderRadius: 16, background: "#fff7ed", padding: 14, border: "1px solid #fed7aa", minHeight: 108, display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>
               <strong style={{ color: "#9a3412", fontSize: 13, fontWeight: 600 }}>当前卡点</strong>
               <p
                 style={{
-                  marginTop: 4,
+                  marginTop: 10,
                   fontSize: 14,
                   lineHeight: 1.45,
                   color: "#7c2d12",
