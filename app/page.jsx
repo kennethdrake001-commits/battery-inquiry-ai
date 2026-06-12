@@ -511,6 +511,11 @@ export default function HomePage() {
   }, [visibleCustomers]);
 
   const summaryCards = useMemo(() => summaryGroups, [summaryGroups]);
+  const highPriorityRows = useMemo(() => {
+    return mapSummaryCustomers(
+      visibleCustomers.filter((customer) => isHighPriorityCustomer(customer) && needsProgress(customer))
+    ).slice(0, 5);
+  }, [visibleCustomers]);
   const prospectingRows = useMemo(() => {
     return mapSummaryCustomers(
       visibleCustomers.filter((customer) => isProspectingCustomer(customer) && needsProgress(customer))
@@ -755,34 +760,40 @@ export default function HomePage() {
             )}
           </section>
 
-          <section className="panel">
-            <div className="section-title">
-              <div>
-                <h2>主动开发待推进</h2>
-                <span>主动开发来源客户放在这里单独查看，不和成交推进核心指标并列</span>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+              gap: 16
+            }}
+          >
+            <section className="panel" style={{ margin: 0 }}>
+              <div className="section-title">
+                <div>
+                  <h2>重点客户</h2>
+                  <span>即使今天没有明确提醒日期，也应优先关注这些客户</span>
+                </div>
               </div>
-            </div>
 
-            {prospectingRows.length === 0 ? (
-              <p className="empty">暂无主动开发待推进客户</p>
-            ) : (
-              <div style={{ display: "grid", gap: 10 }}>
-                {prospectingRows.map((item) => (
-                  <article
-                    key={`prospecting-${item.id}`}
-                    style={{
-                      border: "1px solid rgba(226, 232, 240, 0.85)",
-                      borderRadius: 16,
-                      padding: "14px 16px",
-                      background: "#ffffff",
-                      boxShadow: "0 4px 12px rgba(15, 23, 42, 0.04)"
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
-                      <div style={{ minWidth: 0, flex: "1 1 520px" }}>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                          <strong style={{ fontSize: 16, color: "#0f172a" }}>{item.customerName}</strong>
-                          {item.isHighPriority && (
+              {highPriorityRows.length === 0 ? (
+                <p className="empty">暂无重点客户</p>
+              ) : (
+                <div style={{ display: "grid", gap: 10 }}>
+                  {highPriorityRows.map((item) => (
+                    <article
+                      key={`priority-${item.id}`}
+                      style={{
+                        border: "1px solid rgba(226, 232, 240, 0.85)",
+                        borderRadius: 16,
+                        padding: "14px 16px",
+                        background: "#ffffff",
+                        boxShadow: "0 4px 12px rgba(15, 23, 42, 0.04)"
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+                        <div style={{ minWidth: 0, flex: "1 1 260px" }}>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                            <strong style={{ fontSize: 16, color: "#0f172a" }}>{item.customerName}</strong>
                             <span
                               style={{
                                 fontSize: 12,
@@ -794,27 +805,88 @@ export default function HomePage() {
                                 border: "1px solid rgba(16, 185, 129, 0.2)"
                               }}
                             >
-                              高优先级
+                              重点客户
                             </span>
-                          )}
-                          <span className="soft-badge">{item.source || "主动开发"}</span>
-                          <span className="soft-badge">{item.customerType}</span>
-                          <span className="soft-badge">{item.currentStatus}</span>
+                            <span className="soft-badge">{item.source || "待补充"}</span>
+                            <span className="soft-badge">{item.customerType}</span>
+                            <span className="soft-badge">{item.currentStatus}</span>
+                          </div>
+                          <div style={{ display: "grid", gap: 6 }}>
+                            <div><strong>下一步建议：</strong>{item.nextAction || "暂无动作"}</div>
+                            <div><strong>下次跟进日期：</strong>{item.followUpDate}</div>
+                          </div>
                         </div>
-                        <div style={{ display: "grid", gap: 6 }}>
-                          <div><strong>下一步建议：</strong>{item.nextAction || "暂无动作"}</div>
-                          <div><strong>下次跟进日期：</strong>{item.followUpDate}</div>
+                        <div className="actions compact" style={{ justifyContent: "flex-end", flex: "0 1 auto" }}>
+                          <Link className="primary" href={`/customers/${item.id}`}>进入处理</Link>
                         </div>
                       </div>
-                      <div className="actions compact" style={{ justifyContent: "flex-end", flex: "0 1 auto" }}>
-                        <Link className="primary" href={`/customers/${item.id}`}>进入处理</Link>
-                      </div>
-                    </div>
-                  </article>
-                ))}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="panel" style={{ margin: 0 }}>
+              <div className="section-title">
+                <div>
+                  <h2>主动开发待推进</h2>
+                  <span>主动开发来源客户放在这里单独查看，不和成交推进核心指标并列</span>
+                </div>
               </div>
-            )}
-          </section>
+
+              {prospectingRows.length === 0 ? (
+                <p className="empty">暂无主动开发待推进客户</p>
+              ) : (
+                <div style={{ display: "grid", gap: 10 }}>
+                  {prospectingRows.map((item) => (
+                    <article
+                      key={`prospecting-${item.id}`}
+                      style={{
+                        border: "1px solid rgba(226, 232, 240, 0.85)",
+                        borderRadius: 16,
+                        padding: "14px 16px",
+                        background: "#ffffff",
+                        boxShadow: "0 4px 12px rgba(15, 23, 42, 0.04)"
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+                        <div style={{ minWidth: 0, flex: "1 1 260px" }}>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                            <strong style={{ fontSize: 16, color: "#0f172a" }}>{item.customerName}</strong>
+                            {item.isHighPriority && (
+                              <span
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  padding: "4px 8px",
+                                  borderRadius: 999,
+                                  background: "rgba(16, 185, 129, 0.12)",
+                                  color: "#047857",
+                                  border: "1px solid rgba(16, 185, 129, 0.2)"
+                                }}
+                              >
+                                重点客户
+                              </span>
+                            )}
+                            <span className="soft-badge">{item.source || "主动开发"}</span>
+                            <span className="soft-badge">{item.customerType}</span>
+                            <span className="soft-badge">{item.currentStatus}</span>
+                          </div>
+                          <div style={{ display: "grid", gap: 6 }}>
+                            <div><strong>下一步建议：</strong>{item.nextAction || "暂无动作"}</div>
+                            <div><strong>下次跟进日期：</strong>{item.followUpDate}</div>
+                          </div>
+                        </div>
+                        <div className="actions compact" style={{ justifyContent: "flex-end", flex: "0 1 auto" }}>
+                          <Link className="primary" href={`/customers/${item.id}`}>进入处理</Link>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
         </>
       )}
     </main>
