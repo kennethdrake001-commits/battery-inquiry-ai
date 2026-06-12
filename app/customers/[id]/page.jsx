@@ -1571,21 +1571,21 @@ export default function CustomerDetailPage() {
               <h2 style={{ fontSize: 22, fontWeight: 700, color: "#0f172a" }}>当前推进</h2>
             </div>
             <div className="detail-grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
-              <div className="detail-item" style={{ background: "#f8fbff", borderRadius: 16, padding: 14, border: "1px solid #dbeafe", minHeight: 92 }}>
-                <strong style={{ color: "#64748b", fontSize: 13, fontWeight: 600 }}>当前阶段</strong>
-                <p style={{ fontSize: 17, fontWeight: 600, marginTop: 6, color: "#0f172a", lineHeight: 1.35 }}>{displayStage || displayStatus || "待判断"}</p>
+              <div className="detail-item" style={{ display: "flex", flexDirection: "column", justifyContent: "flex-start", alignItems: "flex-start", background: "#f8fbff", borderRadius: 16, padding: 14, border: "1px solid #dbeafe", minHeight: 112 }}>
+                <strong style={{ color: "#64748b", fontSize: 13, fontWeight: 600, lineHeight: 1.4 }}>当前阶段</strong>
+                <p style={{ fontSize: 16, fontWeight: 600, marginTop: 12, color: "#0f172a", lineHeight: 1.35 }}>{displayStage || displayStatus || "待判断"}</p>
               </div>
-              <div className="detail-item" style={{ background: "#f8fbff", borderRadius: 16, padding: 14, border: "1px solid #dbeafe", minHeight: 92 }}>
-                <strong style={{ color: "#64748b", fontSize: 13, fontWeight: 600 }}>下一步动作</strong>
+              <div className="detail-item" style={{ display: "flex", flexDirection: "column", justifyContent: "flex-start", alignItems: "flex-start", background: "#f8fbff", borderRadius: 16, padding: 14, border: "1px solid #dbeafe", minHeight: 112 }}>
+                <strong style={{ color: "#64748b", fontSize: 13, fontWeight: 600, lineHeight: 1.4 }}>下一步动作</strong>
                 <p
                   style={{
-                    fontSize: 15,
+                    fontSize: 16,
                     fontWeight: 600,
-                    marginTop: 6,
+                    marginTop: 12,
                     color: "#0f172a",
                     lineHeight: 1.35,
-                    wordBreak: "break-word",
-                    overflowWrap: "anywhere",
+                    wordBreak: "normal",
+                    overflowWrap: "break-word",
                     display: "-webkit-box",
                     WebkitLineClamp: 2,
                     WebkitBoxOrient: "vertical",
@@ -1595,12 +1595,12 @@ export default function CustomerDetailPage() {
                   {localizedPersistedAction}
                 </p>
               </div>
-              <div className="detail-item" style={{ background: "#f8fbff", borderRadius: 16, padding: 14, border: "1px solid #dbeafe", minHeight: 92 }}>
-                <strong style={{ color: "#64748b", fontSize: 13, fontWeight: 600 }}>下次跟进</strong>
-                <p style={{ fontSize: 15, fontWeight: 600, marginTop: 6, color: "#0f172a", lineHeight: 1.35 }}>{followUpDateDisplay}</p>
+              <div className="detail-item" style={{ display: "flex", flexDirection: "column", justifyContent: "flex-start", alignItems: "flex-start", background: "#f8fbff", borderRadius: 16, padding: 14, border: "1px solid #dbeafe", minHeight: 112 }}>
+                <strong style={{ color: "#64748b", fontSize: 13, fontWeight: 600, lineHeight: 1.4 }}>下次跟进</strong>
+                <p style={{ fontSize: 16, fontWeight: 600, marginTop: 12, color: "#0f172a", lineHeight: 1.35 }}>{followUpDateDisplay}</p>
               </div>
             </div>
-            <div className="detail-item" style={{ borderRadius: 16, background: "#fff7ed", padding: 12, border: "1px solid #fed7aa" }}>
+            <div className="detail-item" style={{ borderRadius: 16, background: "#fff7ed", padding: 12, border: "1px solid #fed7aa", marginTop: 2 }}>
               <strong style={{ color: "#9a3412", fontSize: 13, fontWeight: 600 }}>当前卡点</strong>
               <p
                 style={{
