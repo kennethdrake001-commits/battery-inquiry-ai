@@ -55,7 +55,7 @@ const manualLeadInitialState = {
   email: "",
   whatsapp: "",
   note: "",
-  nextAction: "发送首封开发信"
+  nextAction: "筛选客户价值"
 };
 
 function AuthNotice({ session }) {
@@ -671,7 +671,7 @@ export default function ProspectingPage() {
             current_status: "未联系",
             lead_level: "C",
             next_action: "发送首封开发信",
-            current_next_action: "发送首封开发信",
+            current_next_action: "筛选客户价值",
             original_message: contactLines.join("\n"),
             question: note || "获客推进导入客户",
             updated_at: now
@@ -752,8 +752,8 @@ export default function ProspectingPage() {
       stage: "new_lead",
       current_status: "未联系",
       lead_level: "C",
-      next_action: manualLeadForm.nextAction.trim() || "发送首封开发信",
-      current_next_action: manualLeadForm.nextAction.trim() || "发送首封开发信",
+      next_action: manualLeadForm.nextAction.trim() || "筛选客户价值",
+      current_next_action: manualLeadForm.nextAction.trim() || "筛选客户价值",
       next_follow_up_at: now,
       follow_up_date: todayDate,
       original_message: contactLines.join("\n") || "主动开发新增目标客户",
@@ -1089,7 +1089,7 @@ export default function ProspectingPage() {
         <div>
           <p className="eyebrow">获客推进</p>
           <h1>获客推进系统</h1>
-          <p>管理 Google Maps、LinkedIn、FB、Email、WhatsApp 多渠道线索，并按阶段持续推进。</p>
+          <p>管理 Google Maps、LinkedIn、FB 等来源线索，筛选后再通过社媒、邮件或 WhatsApp 触达。</p>
         </div>
         <AppNav />
       </header>
@@ -1194,12 +1194,9 @@ export default function ProspectingPage() {
                     <th>公司名</th>
                     <th>国家</th>
                     <th>客户类型</th>
-                    <th>线索价值</th>
-                    <th>来源渠道</th>
+                    <th>来源</th>
                     <th>当前阶段</th>
                     <th>下一步动作</th>
-                    <th>最后一次动作</th>
-                    <th>无效原因</th>
                     <th>下次跟进日期</th>
                     <th>操作</th>
                   </tr>
@@ -1207,22 +1204,35 @@ export default function ProspectingPage() {
                 <tbody>
                   {pagedCustomers.map((customer) => (
                     <tr key={customer.id}>
-                      <td>{getCustomerName(customer)}</td>
-                      <td>{customer.country || "待补充"}</td>
-                      <td><span className="soft-badge">{getCustomerTypeLabel(getCustomerTypeValue(customer))}</span></td>
-                      <td>{customer.leadValueLabel}</td>
-                      <td>{customer.leadSourceLabel || "待补充"}</td>
-                      <td>{customer.prospectingStage}</td>
-                      <td className="truncate-cell">{customer.prospectingAction}</td>
                       <td>
                         <div style={{ display: "grid", gap: 4 }}>
-                          <span>{customer.lastActionRecord.content}</span>
+                          <span>{getCustomerName(customer)}</span>
                           <span className="notice" style={{ margin: 0 }}>
-                            {customer.lastActionRecord.date || "暂无时间"}
+                            线索价值：{customer.leadValueLabel}
                           </span>
                         </div>
                       </td>
-                      <td>{customer.prospectingStage === "无效" ? customer.invalidReasonLabel : "-"}</td>
+                      <td>{customer.country || "待补充"}</td>
+                      <td><span className="soft-badge">{getCustomerTypeLabel(getCustomerTypeValue(customer))}</span></td>
+                      <td>{customer.leadSourceLabel || "待补充"}</td>
+                      <td>
+                        <div style={{ display: "grid", gap: 4 }}>
+                          <span>{customer.prospectingStage}</span>
+                          <span className="notice" style={{ margin: 0 }}>
+                            最后动作：{customer.lastActionRecord.content}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="truncate-cell">
+                        <div style={{ display: "grid", gap: 4 }}>
+                          <span>{customer.prospectingAction}</span>
+                          {customer.prospectingStage === "无效" && (
+                            <span className="notice" style={{ margin: 0 }}>
+                              无效原因：{customer.invalidReasonLabel}
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td>{formatDate(getFollowUpDate(customer))}</td>
                       <td>
                         <div className="actions compact">
