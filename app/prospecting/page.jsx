@@ -37,6 +37,19 @@ const channelFilters = ["全部渠道", "Google Maps", "LinkedIn", "FB", "Email"
 const importHeaders = ["公司名", "国家", "客户类型", "官网", "邮箱", "LinkedIn", "联系人", "WhatsApp", "来源渠道", "备注"];
 const reviewRanges = ["今天", "昨天", "本周", "上周", "本月", "上月", "自定义"];
 const prospectingSources = ["Google Maps", "LinkedIn", "FB", "Website", "Referral", "主动开发"];
+const manualLeadInitialState = {
+  companyName: "",
+  country: "",
+  customerType: "Unknown",
+  sourceChannel: "Google Maps",
+  website: "",
+  linkedin: "",
+  facebook: "",
+  email: "",
+  whatsapp: "",
+  note: "",
+  nextAction: "发送首封开发信"
+};
 
 function AuthNotice({ session }) {
   if (session) return <div className="auth-card">已登录：{session.user.email}</div>;
@@ -267,6 +280,9 @@ export default function ProspectingPage() {
   const [showImportRules, setShowImportRules] = useState(false);
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
+  const [showCreateLeadModal, setShowCreateLeadModal] = useState(false);
+  const [savingLead, setSavingLead] = useState(false);
+  const [manualLeadForm, setManualLeadForm] = useState(manualLeadInitialState);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -449,6 +465,23 @@ export default function ProspectingPage() {
     fileInputRef.current?.click();
   }
 
+  function openCreateLeadModal() {
+    setError("");
+    setNotice("");
+    setManualLeadForm(manualLeadInitialState);
+    setShowCreateLeadModal(true);
+  }
+
+  function closeCreateLeadModal() {
+    if (savingLead) return;
+    setShowCreateLeadModal(false);
+    setManualLeadForm(manualLeadInitialState);
+  }
+
+  function updateManualLeadField(field, value) {
+    setManualLeadForm((current) => ({ ...current, [field]: value }));
+  }
+
   function downloadTemplate() {
     const csv = [
       importHeaders.join(","),
@@ -594,6 +627,73 @@ export default function ProspectingPage() {
     } finally {
       event.target.value = "";
     }
+  }
+
+  async function handleCreateLeadSubmit(event) {
+    event.preventDefault();
+    setError("");
+    setNotice("");
+
+    if (!session?.user?.id) {
+      setError("请先登录后再新增目标客户。");
+      return;
+    }
+
+    const companyName = manualLeadForm.companyName.trim();
+    if (!companyName) {
+      setError("请先填写公司名。");
+      return;
+    }
+
+    const contactLines = [
+      manualLeadForm.website ? `官网：${manualLeadForm.website.trim()}` : "",
+      manualLeadForm.linkedin ? `LinkedIn：${manualLeadForm.linkedin.trim()}` : "",
+      manualLeadForm.facebook ? `FB：${manualLeadForm.facebook.trim()}` : "",
+      manualLeadForm.email ? `邮箱：${manualLeadForm.email.trim()}` : "",
+      manualLeadForm.whatsapp ? `WhatsApp：${manualLeadForm.whatsapp.trim()}` : "",
+      `来源渠道：${manualLeadForm.sourceChannel}`,
+      manualLeadForm.note ? `备注：${manualLeadForm.note.trim()}` : ""
+    ].filter(Boolean);
+
+    const today = new Date();
+    const todayDate = today.toISOString().slice(0, 10);
+    const now = today.toISOString();
+
+    const payload = {
+      user_id: session.user.id,
+      customer_name: companyName,
+      country: manualLeadForm.country.trim(),
+      source: manualLeadForm.sourceChannel,
+      customer_type: manualLeadForm.customerType,
+      stage: "new_lead",
+      current_status: "未联系",
+      lead_level: "C",
+      next_action: manualLeadForm.nextAction.trim() || "发送首封开发信",
+      current_next_action: manualLeadForm.nextAction.trim() || "发送首封开发信",
+      next_follow_up_at: now,
+      follow_up_date: todayDate,
+      original_message: contactLines.join("\n") || "主动开发新增目标客户",
+      question: manualLeadForm.note.trim() || "主动开发新增目标客户",
+      updated_at: now
+    };
+
+    setSavingLead(true);
+    const { error: insertError } = await supabase.from("customers").insert(payload);
+    setSavingLead(false);
+
+    if (insertError) {
+      setError(`新增目标客户失败：${insertError.message}`);
+      return;
+    }
+
+    await loadCustomers();
+    setSelectedStage("新线索");
+    setSelectedChannel("全部渠道");
+    setPage(1);
+    setShowCreateLeadModal(false);
+    setManualLeadForm(manualLeadInitialState);
+    setNotice("目标客户已新增，已进入“新线索”。");
+    setTimeout(() => focusTargetPool(), 40);
   }
 
   async function convertToFormalCustomer(customer) {
@@ -834,12 +934,17 @@ export default function ProspectingPage() {
 
           <section className="panel" ref={targetPoolRef}>
             <div className="section-title">
-              <h2>目标客户池</h2>
-              <span>
-                {filteredTargetPool.length} 个目标客户
-                {selectedStage ? ` · 当前阶段：${selectedStage}` : ""}
-                {selectedChannel !== "全部渠道" ? ` · 当前渠道：${selectedChannel}` : ""}
-              </span>
+              <div>
+                <h2>目标客户池</h2>
+                <span>
+                  {filteredTargetPool.length} 个目标客户
+                  {selectedStage ? ` · 当前阶段：${selectedStage}` : ""}
+                  {selectedChannel !== "全部渠道" ? ` · 当前渠道：${selectedChannel}` : ""}
+                </span>
+              </div>
+              <div className="actions compact">
+                <button type="button" onClick={openCreateLeadModal}>新增目标客户</button>
+              </div>
             </div>
             <div className="tabs" style={{ flexWrap: "wrap", marginBottom: 12 }}>
               <button
@@ -1151,6 +1256,100 @@ export default function ProspectingPage() {
             </div>
           </section>
         </>
+      )}
+
+      {showCreateLeadModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15, 23, 42, 0.36)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            zIndex: 50
+          }}
+        >
+          <div
+            style={{
+              width: "min(860px, 100%)",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              background: "#ffffff",
+              borderRadius: 20,
+              boxShadow: "0 24px 80px rgba(15, 23, 42, 0.18)",
+              padding: 24
+            }}
+          >
+            <div className="section-title" style={{ marginBottom: 16 }}>
+              <div>
+                <h2>新增目标客户</h2>
+                <span>保存后默认进入“新线索”，下次跟进日期为今天。</span>
+              </div>
+              <button type="button" onClick={closeCreateLeadModal} style={{ border: "none", background: "transparent", color: "#475569", fontSize: 18 }}>
+                关闭
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateLeadSubmit}>
+              <div className="fields two-col">
+                <FieldLike label="公司名">
+                  <input value={manualLeadForm.companyName} onChange={(event) => updateManualLeadField("companyName", event.target.value)} placeholder="请输入公司名" />
+                </FieldLike>
+                <FieldLike label="国家">
+                  <input value={manualLeadForm.country} onChange={(event) => updateManualLeadField("country", event.target.value)} placeholder="请输入国家" />
+                </FieldLike>
+                <FieldLike label="客户类型">
+                  <select value={manualLeadForm.customerType} onChange={(event) => updateManualLeadField("customerType", event.target.value)}>
+                    <option value="Unknown">待判断</option>
+                    <option value="Solar Installer">Solar Installer</option>
+                    <option value="Solar Distributor">Solar Distributor</option>
+                    <option value="Battery Wholesaler">Battery Wholesaler</option>
+                    <option value="Inverter Distributor">Inverter Distributor</option>
+                    <option value="OEM / Brand Owner">OEM / Brand Owner</option>
+                    <option value="End User">End User</option>
+                  </select>
+                </FieldLike>
+                <FieldLike label="来源渠道">
+                  <select value={manualLeadForm.sourceChannel} onChange={(event) => updateManualLeadField("sourceChannel", event.target.value)}>
+                    {channelFilters.filter((item) => item !== "全部渠道").map((channel) => (
+                      <option key={channel} value={channel}>{channel}</option>
+                    ))}
+                  </select>
+                </FieldLike>
+                <FieldLike label="网站">
+                  <input value={manualLeadForm.website} onChange={(event) => updateManualLeadField("website", event.target.value)} placeholder="https://example.com" />
+                </FieldLike>
+                <FieldLike label="LinkedIn">
+                  <input value={manualLeadForm.linkedin} onChange={(event) => updateManualLeadField("linkedin", event.target.value)} placeholder="LinkedIn 链接" />
+                </FieldLike>
+                <FieldLike label="FB">
+                  <input value={manualLeadForm.facebook} onChange={(event) => updateManualLeadField("facebook", event.target.value)} placeholder="Facebook 链接" />
+                </FieldLike>
+                <FieldLike label="Email">
+                  <input value={manualLeadForm.email} onChange={(event) => updateManualLeadField("email", event.target.value)} placeholder="sales@example.com" />
+                </FieldLike>
+                <FieldLike label="WhatsApp">
+                  <input value={manualLeadForm.whatsapp} onChange={(event) => updateManualLeadField("whatsapp", event.target.value)} placeholder="+86 ..." />
+                </FieldLike>
+                <FieldLike label="下一步动作">
+                  <input value={manualLeadForm.nextAction} onChange={(event) => updateManualLeadField("nextAction", event.target.value)} placeholder="例如：发送首封开发信" />
+                </FieldLike>
+                <FieldLike label="备注">
+                  <textarea value={manualLeadForm.note} onChange={(event) => updateManualLeadField("note", event.target.value)} placeholder="补充记录这个线索的来源、网站观察、客户特点等" rows={4} />
+                </FieldLike>
+              </div>
+
+              <div className="actions" style={{ marginTop: 20, justifyContent: "flex-end" }}>
+                <button type="button" onClick={closeCreateLeadModal} disabled={savingLead}>取消</button>
+                <button type="submit" disabled={savingLead}>
+                  {savingLead ? "保存中..." : "保存目标客户"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </main>
   );
