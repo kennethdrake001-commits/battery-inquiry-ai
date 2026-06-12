@@ -18,6 +18,14 @@ import {
   getStageValue,
   isPartnerCandidate
 } from "../../../lib/customerViews";
+import {
+  getChannelStatusLabel,
+  getLeadProgressStageLabel,
+  getLeadProgressStageValue,
+  getLeadSourceLabel,
+  getLeadSourceValue,
+  isLeadProgressCustomer
+} from "../../../lib/leadProgress";
 
 const resultOptions = ["客户已回复", "客户未回复", "进入报价", "进入 PI", "成交", "失败", "暂不确定"];
 const playbookEligibleResults = ["客户已回复", "进入报价", "进入 PI", "成交"];
@@ -65,36 +73,7 @@ function formatDateOnly(value) {
   return `${year}-${month}-${day}`;
 }
 
-function isProspectingCustomer(customer) {
-  return customer?.source === "主动开发"
-    || customer?.stage === "Prospecting";
-}
-
-function formatProspectingStageDisplay(customer, fallbackStage) {
-  if (isProspectingCustomer(customer)) {
-    return "主动开发中";
-  }
-  return fallbackStage;
-}
-
-function formatProspectingStatusDisplay(customer, fallbackStatus) {
-  const status = customer?.current_status || "";
-  if ([
-    "未联系",
-    "已发第一封",
-    "第一次跟进",
-    "第二次跟进",
-    "已回复",
-    "有兴趣",
-    "不合适",
-    "已转正式客户"
-  ].includes(status)) {
-    return status;
-  }
-  return fallbackStatus;
-}
-
-function formatProspectingActionDisplay(action) {
+function formatCustomerActionDisplay(action) {
   if (!action) return "暂无动作";
   const text = `${action}`.trim();
   if (text === "发送首封开发信") return "发送首封开发信";
@@ -195,10 +174,20 @@ function isArchivedCustomer(customer) {
 function getCurrentBlockerText(customer) {
   const stage = customer?.stage || "";
   const status = customer?.current_status || "";
+  const leadStage = getLeadProgressStageValue(customer);
 
   if (isArchivedCustomer(customer)) return "客户已归档，无需继续推进";
+  if (leadStage === "new_lead") return "这是新线索，需要先判断客户价值和触达方式";
+  if (leadStage === "contacted") return "客户已触达，等待通过、回复或下一轮跟进";
+  if (leadStage === "engaged") return "客户已有互动，建议继续破冰并确认业务方向";
+  if (leadStage === "has_need") return "客户已有明确需求，建议补充规格并准备报价";
+  if (leadStage === "material_sent") return "资料已发送，需要确认是否收到以及是否需要报价";
+  if (leadStage === "quoted") return "报价已发出，建议按计划跟进反馈";
+  if (leadStage === "follow_up") return "客户正在跟进中，需要持续推进下一步";
+  if (leadStage === "won") return "客户已进入成交阶段，继续按成交流程推进";
+  if (leadStage === "lost" || leadStage === "invalid") return "当前线索已结束，不需要继续推进";
   if (stage === "Prospecting" || status === "Prospecting" || customer?.source === "主动开发") {
-    return "主动开发客户，需要按开发节奏推进";
+    return "这是获客推进客户，需要按多渠道节奏持续推进";
   }
   if (["新询盘", "New Inquiry"].includes(stage) || ["新询盘", "New Inquiry"].includes(status)) {
     return "需要先判断客户类型和需求";
@@ -219,7 +208,9 @@ function getCurrentBlockerText(customer) {
 function shouldShowQuotedActions(customer) {
   const stage = customer?.stage || "";
   const status = customer?.current_status || "";
-  return ["已报价", "Quoted"].includes(stage)
+  const leadStage = getLeadProgressStageValue(customer);
+  return leadStage === "quoted"
+    || ["已报价", "Quoted"].includes(stage)
     || ["已报价", "已报价未回复", "Quoted"].includes(status);
 }
 
@@ -883,13 +874,10 @@ export default function CustomerDetailPage() {
     setIsSaving(true);
 
     const now = new Date().toISOString();
-    const { error: customerUpdateError } = await supabase
-      .from("customers")
-      .update({
-        ...customerPayload,
-        updated_at: now
-      })
-      .eq("id", customer.id);
+    const { error: customerUpdateError } = await updateCustomerWithExistingFields({
+      ...customerPayload,
+      updated_at: now
+    });
 
     if (customerUpdateError) {
       setIsSaving(false);
@@ -923,6 +911,140 @@ export default function CustomerDetailPage() {
     setSuccess(successMessage);
     setScheduleFollowUpDate("");
     await loadData();
+  }
+
+  async function markLinkedInInviteSent() {
+    const nextDate = addDays(new Date(), 3);
+    const followUpDateText = toDateText(nextDate);
+
+    await saveProgressAction({
+      customerPayload: {
+        linkedin_status: "connection_sent",
+        stage: "contacted",
+        current_status: "已触达",
+        current_next_action: "3天后查看是否通过",
+        next_action: "3天后查看是否通过",
+        next_follow_up_at: nextDate.toISOString(),
+        follow_up_date: followUpDateText
+      },
+      interactionStatus: "linkedin_invite_sent",
+      interactionNote: "已发送 LinkedIn 邀请",
+      successMessage: "已记录 LinkedIn 邀请，3 天后查看是否通过。"
+    });
+  }
+
+  async function markLinkedInConnected() {
+    const todayText = toDateText(new Date());
+
+    await saveProgressAction({
+      customerPayload: {
+        linkedin_status: "connected",
+        stage: "engaged",
+        current_status: "有互动",
+        current_next_action: "发送 LinkedIn 破冰私信",
+        next_action: "发送 LinkedIn 破冰私信",
+        next_follow_up_at: dateToFollowUpAt(todayText),
+        follow_up_date: todayText
+      },
+      interactionStatus: "linkedin_connected",
+      interactionNote: "LinkedIn 已通过",
+      successMessage: "已标记 LinkedIn 通过，可立即发送破冰私信。"
+    });
+  }
+
+  async function markFacebookMessageSent() {
+    const nextDate = addDays(new Date(), 3);
+    const followUpDateText = toDateText(nextDate);
+
+    await saveProgressAction({
+      customerPayload: {
+        facebook_status: "message_sent",
+        stage: "contacted",
+        current_status: "已触达",
+        current_next_action: "3天后跟进 FB 私信",
+        next_action: "3天后跟进 FB 私信",
+        next_follow_up_at: nextDate.toISOString(),
+        follow_up_date: followUpDateText
+      },
+      interactionStatus: "facebook_message_sent",
+      interactionNote: "已发送 FB 私信",
+      successMessage: "已记录 FB 私信，3 天后继续跟进。"
+    });
+  }
+
+  async function markMaterialSent() {
+    const nextDate = addDays(new Date(), 2);
+    const followUpDateText = toDateText(nextDate);
+
+    await saveProgressAction({
+      customerPayload: {
+        email_status: "material_sent",
+        stage: "material_sent",
+        current_status: "已发资料",
+        current_next_action: "询问是否收到资料，是否需要报价",
+        next_action: "询问是否收到资料，是否需要报价",
+        next_follow_up_at: nextDate.toISOString(),
+        follow_up_date: followUpDateText
+      },
+      interactionStatus: "material_sent",
+      interactionNote: "已发送产品资料",
+      successMessage: "已标记为已发资料，2 天后提醒继续跟进。"
+    });
+  }
+
+  async function markQuoteSent() {
+    const nextDate = addDays(new Date(), 3);
+    const followUpDateText = toDateText(nextDate);
+
+    await saveProgressAction({
+      customerPayload: {
+        email_status: "quotation_sent",
+        stage: "quoted",
+        current_status: "已报价",
+        current_next_action: "跟进报价反馈",
+        next_action: "跟进报价反馈",
+        last_quote_at: new Date().toISOString(),
+        next_follow_up_at: nextDate.toISOString(),
+        follow_up_date: followUpDateText
+      },
+      interactionStatus: "quotation_sent",
+      interactionNote: "已发送报价",
+      successMessage: "已标记为已发送报价，3 天后提醒跟进。"
+    });
+  }
+
+  async function markHasNeed() {
+    const todayText = toDateText(new Date());
+
+    await saveProgressAction({
+      customerPayload: {
+        stage: "has_need",
+        current_status: "有需求",
+        current_next_action: "准备报价或确认详细需求",
+        next_action: "准备报价或确认详细需求",
+        next_follow_up_at: dateToFollowUpAt(todayText),
+        follow_up_date: todayText
+      },
+      interactionStatus: "has_need",
+      interactionNote: "已标记客户有需求",
+      successMessage: "已标记客户有需求，可继续准备报价。"
+    });
+  }
+
+  async function markInvalidLead() {
+    await saveProgressAction({
+      customerPayload: {
+        stage: "invalid",
+        current_status: "无效",
+        current_next_action: null,
+        next_action: null,
+        next_follow_up_at: null,
+        follow_up_date: null
+      },
+      interactionStatus: "invalid_lead",
+      interactionNote: "已标记为无效线索",
+      successMessage: "已标记为无效客户。"
+    });
   }
 
   async function markFollowedUp() {
@@ -1065,21 +1187,27 @@ export default function CustomerDetailPage() {
 
   if (loading) return <main className="app"><section className="panel">加载中...</section></main>;
 
+  const leadProgressCustomer = isLeadProgressCustomer(customer || {});
   const currentStage = getStageLabel(getStageValue(customer || {}));
-  const displayStage = formatProspectingStageDisplay(customer || {}, currentStage);
-  const displayStatus = formatProspectingStatusDisplay(customer || {}, currentStage);
+  const displayStage = leadProgressCustomer ? getLeadProgressStageLabel(customer || {}) : currentStage;
+  const displayStatus = customer?.current_status || displayStage || currentStage;
   const currentType = getCustomerTypeLabel(getCustomerTypeValue(customer || {}));
   const currentLeadLevel = getLeadLevel(customer || {});
   const currentAction = workflowForm.nextAction || getNextAction(customer || {});
-  const localizedCurrentAction = formatProspectingActionDisplay(currentAction);
+  const localizedCurrentAction = formatCustomerActionDisplay(currentAction);
   const persistedNextAction = customer?.current_next_action || customer?.next_action || workflowForm.nextAction;
-  const localizedPersistedAction = formatProspectingActionDisplay(persistedNextAction);
+  const localizedPersistedAction = formatCustomerActionDisplay(persistedNextAction);
   const blockerText = getCurrentBlockerText(customer || {});
   const followUpDateDisplay = formatDateOnly(customer?.next_follow_up_at || customer?.follow_up_date || workflowForm.followUpDate);
   const archivedCustomer = isArchivedCustomer(customer || {});
   const showQuotedActions = shouldShowQuotedActions(customer || {});
   const showNewInquiryActions = shouldShowNewInquiryActions(customer || {});
   const showWaitingReplyActions = shouldShowWaitingReplyActions(customer || {});
+  const leadSourceLabel = getLeadSourceLabel(getLeadSourceValue(customer || {}));
+  const linkedinStatusLabel = getChannelStatusLabel("linkedin_status", customer?.linkedin_status, customer || {});
+  const facebookStatusLabel = getChannelStatusLabel("facebook_status", customer?.facebook_status, customer || {});
+  const emailStatusLabel = getChannelStatusLabel("email_status", customer?.email_status, customer || {});
+  const whatsappStatusLabel = getChannelStatusLabel("whatsapp_status", customer?.whatsapp_status, customer || {});
 
   return (
     <main className="app">
@@ -1087,7 +1215,7 @@ export default function CustomerDetailPage() {
         <div>
           <p className="eyebrow">客户详情</p>
           <h1>{customer?.customer_name || "客户详情"}</h1>
-          <p>{customer?.country || "未知国家"} · {customer?.source || "未知来源"}</p>
+          <p>{customer?.country || "未知国家"} · {leadSourceLabel || customer?.source || "未知来源"}</p>
         </div>
         <AppNav />
       </header>
@@ -1102,10 +1230,17 @@ export default function CustomerDetailPage() {
           <span>先看当前该做什么，再进入下面各标签处理</span>
         </div>
         <div className="detail-grid">
-          <div className="detail-item"><strong>当前阶段</strong><p>{displayStage || displayStatus || "待判断"}</p></div>
+          <div className="detail-item"><strong>当前阶段</strong><p><span className="soft-badge">{displayStage || displayStatus || "待判断"}</span></p></div>
+          <div className="detail-item"><strong>来源渠道</strong><p>{leadSourceLabel}</p></div>
+          <div className="detail-item"><strong>客户类型</strong><p>{currentType}</p></div>
+          <div className="detail-item"><strong>国家</strong><p>{customer?.country || "待补充"}</p></div>
           <div className="detail-item"><strong>当前卡点</strong><p>{blockerText}</p></div>
           <div className="detail-item"><strong>下一步动作</strong><p>{localizedPersistedAction}</p></div>
           <div className="detail-item"><strong>下次跟进日期</strong><p>{followUpDateDisplay}</p></div>
+          <div className="detail-item"><strong>LinkedIn 状态</strong><p>{linkedinStatusLabel}</p></div>
+          <div className="detail-item"><strong>FB 状态</strong><p>{facebookStatusLabel}</p></div>
+          <div className="detail-item"><strong>Email 状态</strong><p>{emailStatusLabel}</p></div>
+          <div className="detail-item"><strong>WhatsApp 状态</strong><p>{whatsappStatusLabel}</p></div>
         </div>
         {archivedCustomer ? (
           <div className="notice-panel" style={{ marginTop: 16 }}>
@@ -1115,10 +1250,21 @@ export default function CustomerDetailPage() {
         ) : (
           <>
             <div className="actions" style={{ marginTop: 16, flexWrap: "wrap" }}>
-              {(showQuotedActions || showNewInquiryActions || (!showWaitingReplyActions && !archivedCustomer)) && (
+              {leadProgressCustomer && (
+                <>
+                  <button onClick={markLinkedInInviteSent} disabled={isSaving}>已发送 LinkedIn 邀请</button>
+                  <button onClick={markLinkedInConnected} disabled={isSaving}>LinkedIn 已通过</button>
+                  <button onClick={markFacebookMessageSent} disabled={isSaving}>已发送 FB 私信</button>
+                  <button onClick={markMaterialSent} disabled={isSaving}>已发送产品资料</button>
+                  <button onClick={markQuoteSent} disabled={isSaving}>已发送报价</button>
+                  <button onClick={markHasNeed} disabled={isSaving}>标记有需求</button>
+                  <button onClick={markInvalidLead} disabled={isSaving}>标记无效</button>
+                </>
+              )}
+              {!leadProgressCustomer && (showQuotedActions || showNewInquiryActions || (!showWaitingReplyActions && !archivedCustomer)) && (
                 <button onClick={markFollowedUp} disabled={isSaving}>标记已跟进</button>
               )}
-              {(showQuotedActions || showWaitingReplyActions || (!showNewInquiryActions && !archivedCustomer)) && (
+              {!leadProgressCustomer && (showQuotedActions || showWaitingReplyActions || (!showNewInquiryActions && !archivedCustomer)) && (
                 <button onClick={markCustomerReplied} disabled={isSaving}>标记客户已回复</button>
               )}
               {!archivedCustomer && (
@@ -1129,7 +1275,7 @@ export default function CustomerDetailPage() {
                     onChange={(event) => setScheduleFollowUpDate(event.target.value)}
                     style={{ maxWidth: 220 }}
                   />
-                  <button onClick={scheduleNextFollowUp} disabled={isSaving}>安排下次跟进</button>
+                  <button onClick={scheduleNextFollowUp} disabled={isSaving}>设置下次跟进</button>
                 </>
               )}
             </div>
@@ -1185,23 +1331,23 @@ export default function CustomerDetailPage() {
               <h2>概览</h2>
               <span>只看当前阶段判断和下一步</span>
             </div>
-            {isProspectingCustomer(customer || {}) && (
+            {leadProgressCustomer && (
               <div className="notice-panel" style={{ marginBottom: 16 }}>
-                <strong>主动开发提醒</strong>
-                <p>这是主动开发客户，请在主动开发页推进开发信、跟进和转正式客户。</p>
+                <strong>获客推进提醒</strong>
+                <p>这是获客推进客户，请按来源渠道、互动状态和下次跟进时间持续推进。</p>
               </div>
             )}
             <div className="detail-grid">
               <div className="detail-item"><strong>客户名</strong><p>{customer?.customer_name || "待补充"}</p></div>
               <div className="detail-item"><strong>国家</strong><p>{customer?.country || "待补充"}</p></div>
               <div className="detail-item"><strong>客户类型</strong><p>{currentType}</p></div>
-              <div className="detail-item"><strong>来源</strong><p>{customer?.source || "待补充"}</p></div>
+              <div className="detail-item"><strong>来源</strong><p>{leadSourceLabel || customer?.source || "待补充"}</p></div>
               <div className="detail-item"><strong>客户评分 / 等级</strong><p>{customer?.latest_analysis?.customerScore || "-"} / {currentLeadLevel}</p></div>
               <div className="detail-item"><strong>当前阶段</strong><p>{displayStage}</p></div>
               <div className="detail-item"><strong>当前状态</strong><p>{displayStatus}</p></div>
               <div className="detail-item"><strong>下一步建议</strong><p>{localizedCurrentAction}</p></div>
               <div className="detail-item"><strong>下次跟进日期</strong><p>{formatDateOnly(workflowForm.followUpDate || customer?.next_follow_up_at)}</p></div>
-              <div className="detail-item"><strong>合作商候选标记</strong><p>{isProspectingCustomer(customer || {}) ? "待判断" : (isPartnerCandidate(customer || {}) ? "是" : "否")}</p></div>
+              <div className="detail-item"><strong>合作商候选标记</strong><p>{leadProgressCustomer ? "待判断" : (isPartnerCandidate(customer || {}) ? "是" : "否")}</p></div>
             </div>
           </section>
 

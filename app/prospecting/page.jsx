@@ -6,6 +6,12 @@ import AppNav from "../../components/layout/AppNav";
 import { formatNextActionForDisplay } from "../../lib/displayText";
 import { getSupabaseBrowserClient } from "../../lib/supabaseClient";
 import {
+  getLeadProgressStageLabel,
+  getLeadProgressStageValue,
+  getLeadSourceLabel,
+  getLeadSourceValue
+} from "../../lib/leadProgress";
+import {
   getCustomerName,
   getCustomerTypeLabel,
   getCustomerTypeValue,
@@ -13,16 +19,21 @@ import {
 } from "../../lib/customerViews";
 
 const prospectingStages = [
-  "未联系",
-  "已发首封",
+  "新线索",
+  "已触达",
+  "有互动",
+  "有需求",
+  "已发资料",
+  "已报价",
   "跟进中",
-  "已回复",
-  "已转正式客户",
-  "归档"
+  "成交",
+  "丢单",
+  "无效"
 ];
 
 const importHeaders = ["公司名", "国家", "客户类型", "官网", "邮箱", "LinkedIn", "联系人", "WhatsApp", "来源渠道", "备注"];
 const reviewRanges = ["今天", "昨天", "本周", "上周", "本月", "上月", "自定义"];
+const prospectingSources = ["Google Maps", "LinkedIn", "FB", "Website", "Referral", "主动开发"];
 
 function AuthNotice({ session }) {
   if (session) return <div className="auth-card">已登录：{session.user.email}</div>;
@@ -48,41 +59,47 @@ function formatDate(value) {
 }
 
 function getProspectingStage(customer) {
-  const savedStatus = customer.current_status || "";
-  if (savedStatus === "归档" || savedStatus === "不合适" || customer.stage === "Archived" || customer.stage === "Closed Lost") {
-    return "归档";
-  }
-  if (savedStatus === "已转正式客户") return "已转正式客户";
-  if (savedStatus === "已回复" || savedStatus === "有兴趣") return "已回复";
-  if (savedStatus === "第一次跟进" || savedStatus === "第二次跟进") return "跟进中";
-  if (savedStatus === "已发第一封" || savedStatus === "已发首封") return "已发首封";
-  if (savedStatus === "未联系") return "未联系";
+  return getLeadProgressStageLabel(customer);
+}
 
-  if (customer.last_customer_reply_at) return "已回复";
-  if (customer.last_contacted_at && customer.follow_up_date) return "跟进中";
-  if (customer.last_contacted_at) return "已发首封";
-  return "未联系";
+function isProspectingCustomer(customer) {
+  const source = getLeadSourceValue(customer);
+  const rawSource = `${customer?.source || ""}`.trim();
+  return prospectingSources.includes(source)
+    || prospectingSources.includes(rawSource)
+    || customer?.stage === "Prospecting"
+    || customer?.current_status === "Prospecting"
+    || Boolean(customer?.linkedin_status)
+    || Boolean(customer?.facebook_status)
+    || Boolean(customer?.whatsapp_status);
 }
 
 function getProspectingNextAction(customer) {
-  const stage = getProspectingStage(customer);
+  const stageValue = getLeadProgressStageValue(customer);
   if (customer.current_next_action || customer.next_action) {
     return formatNextActionForDisplay(customer.current_next_action || customer.next_action);
   }
 
-  switch (stage) {
-    case "未联系":
-      return "发送首封开发信，介绍主营产品并确认客户方向";
-    case "已发首封":
-      return "等待 3 天后进行第一次跟进";
-    case "跟进中":
-      return "继续跟进客户，补充产品卖点、案例和可供货能力";
-    case "已回复":
-      return "判断客户是否有真实需求，并补齐数量、应用和采购时间";
-    case "已转正式客户":
-      return "进入正式客户详情页继续推进需求与报价";
-    case "归档":
-      return "该客户已归档，默认不再继续推进";
+  switch (stageValue) {
+    case "new_lead":
+      return "发送首封开发信，确认客户是否在做储能或太阳能相关业务";
+    case "contacted":
+      return "等待对方响应，或按渠道节奏继续补一次触达";
+    case "engaged":
+      return "继续互动，确认客户是否有明确采购方向";
+    case "has_need":
+      return "确认容量、数量、逆变器和目标市场，准备进入报价";
+    case "material_sent":
+      return "询问是否收到资料，是否需要进一步报价";
+    case "quoted":
+      return "跟进报价反馈，确认价格、运费和规格问题";
+    case "follow_up":
+      return "继续按计划跟进，推动进入有需求或报价阶段";
+    case "won":
+      return "客户已进入成交阶段，转到正式客户流程继续推进";
+    case "lost":
+    case "invalid":
+      return "该线索已结束，默认不再继续推进";
     default:
       return "需要人工判断下一步动作";
   }
@@ -93,22 +110,22 @@ function getProspectingScript(customer) {
   const name = getCustomerName(customer);
   const type = getCustomerTypeValue(customer);
 
-  if (stage === "未联系") {
+  if (stage === "新线索") {
     return {
       title: "首封开发信",
       text: `Hi ${name}, we are a supplier of lithium battery energy storage solutions for solar projects and backup power. I noticed your company may be active in this market, so I wanted to ask whether you are currently sourcing home storage batteries, commercial battery systems, or related solar products. If yes, I can share our main models and offer details for your review.`
     };
   }
 
-  if (stage === "已发首封" || stage === "跟进中") {
+  if (stage === "已触达" || stage === "跟进中") {
     return {
       title: "跟进开发信",
       text: `Hi ${name}, just following up on my previous message. We supply LiFePO4 battery systems for solar installers and distributors, with support for common inverter brands and project applications. Please let me know if you are currently looking for any battery products, and I can send the most relevant models and pricing information.`
     };
   }
 
-  if (stage === "已回复") {
-    if (type === "Solar Distributor" || customer.current_status === "有兴趣") {
+  if (["有互动", "有需求", "已发资料", "已报价"].includes(stage)) {
+    if (type === "Solar Distributor") {
       return {
         title: "经销商推进话术",
         text: `Hi ${name}, thanks for your interest. I can send you our main battery models, distributor supply information, and recommended capacities for your market. Please let me know which capacity range and order quantity you are mainly evaluating, and I will prepare the most relevant offer for you.`
@@ -136,13 +153,16 @@ function getProspectingScript(customer) {
 
 function getTaskReason(customer) {
   const stage = getProspectingStage(customer);
-  if (stage === "未联系") return "今天应发送首封开发信";
-  if (stage === "已发首封") return "首封已发，准备第一次跟进";
-  if (stage === "跟进中") return "开发客户正在跟进中";
-  if (stage === "已回复") return "客户已回复，需要判断是否有真实需求";
-  if (stage === "已转正式客户") return "客户已转入正式客户流程";
-  if (stage === "归档") return "该客户已归档";
-  return "根据当前开发阶段继续推进";
+  if (stage === "新线索") return "需要先筛选并触达这条线索";
+  if (stage === "已触达") return "已触达客户，等待响应或安排下一次沟通";
+  if (stage === "有互动") return "客户已有互动，需要进一步判断是否有明确需求";
+  if (stage === "有需求") return "客户有明确需求，应尽快确认规格和数量";
+  if (stage === "已发资料") return "资料已发送，需跟进是否收到及是否要报价";
+  if (stage === "已报价") return "报价已发送，需要按期跟进";
+  if (stage === "跟进中") return "线索正在跟进推进";
+  if (stage === "成交") return "线索已进入成交阶段";
+  if (stage === "丢单" || stage === "无效") return "该线索已结束";
+  return "根据当前获客阶段继续推进";
 }
 
 function getFollowUpDate(customer) {
@@ -152,10 +172,6 @@ function getFollowUpDate(customer) {
 function getContactSummary(customer) {
   const parts = [customer.email, customer.website].filter(Boolean);
   return parts.length ? parts.join(" / ") : "待补充";
-}
-
-function isProspectingCustomer(customer) {
-  return customer?.source === "主动开发" || customer?.stage === "Prospecting";
 }
 
 function startOfDay(date) {
@@ -293,8 +309,8 @@ export default function ProspectingPage() {
     return prospectingCustomers
       .filter((customer) => {
         const stage = getProspectingStage(customer);
-        if (stage === "归档" || stage === "已转正式客户") return false;
-        if (stage === "未联系" || stage === "已回复") return true;
+        if (["无效", "成交", "丢单"].includes(stage)) return false;
+        if (["新线索", "有互动", "有需求"].includes(stage)) return true;
         const followUpAt = getFollowUpDate(customer);
         return followUpAt ? new Date(followUpAt).getTime() <= today.getTime() : false;
       })
@@ -338,21 +354,18 @@ export default function ProspectingPage() {
       return map;
     }, {});
 
-    const sentCount = inRangeCustomers.filter((customer) => {
-      const stage = getProspectingStage(customer);
-      return stage !== "未联系";
-    }).length;
+    const sentCount = inRangeCustomers.filter((customer) => ["已触达", "有互动", "有需求", "已发资料", "已报价", "跟进中", "成交", "丢单", "无效"].includes(getProspectingStage(customer))).length;
     const repliedTotalCount = inRangeCustomers.filter((customer) => {
       const stage = getProspectingStage(customer);
-      return stage === "已回复" || stage === "已转正式客户" || stage === "归档";
+      return ["有互动", "有需求", "已发资料", "已报价", "跟进中", "成交", "丢单", "无效"].includes(stage);
     }).length;
-    const repliedCount = stageCounts["已回复"] || 0;
-    const convertedCount = stageCounts["已转正式客户"] || 0;
-    const archivedCount = stageCounts["归档"] || 0;
+    const repliedCount = stageCounts["有互动"] || 0;
+    const convertedCount = stageCounts["成交"] || 0;
+    const archivedCount = stageCounts["无效"] || 0;
 
     return [
       { title: "新增目标客户", value: inRangeCustomers.length },
-      { title: "已发首封", value: stageCounts["已发首封"] || 0 },
+      { title: "已发首封", value: stageCounts["已触达"] || 0 },
       { title: "跟进中", value: stageCounts["跟进中"] || 0 },
       { title: "已回复", value: repliedCount },
       { title: "已转正式客户", value: convertedCount },
@@ -501,7 +514,7 @@ export default function ProspectingPage() {
           const linkedin = cols[5]?.trim() || "";
           const contactName = cols[6]?.trim() || "";
           const whatsapp = cols[7]?.trim() || "";
-          const sourceChannel = cols[8]?.trim() || "主动开发";
+          const sourceChannel = cols[8]?.trim() || "Google Maps";
           const note = cols[9]?.trim() || "";
 
           const contactLines = [
@@ -518,15 +531,15 @@ export default function ProspectingPage() {
             user_id: session.user.id,
             customer_name: companyName,
             country,
-            source: "主动开发",
+            source: sourceChannel,
             customer_type: customerType,
-            stage: "Prospecting",
+            stage: "new_lead",
             current_status: "未联系",
             lead_level: "C",
             next_action: "发送首封开发信",
             current_next_action: "发送首封开发信",
             original_message: contactLines.join("\n"),
-            question: note || "主动开发导入客户",
+            question: note || "获客推进导入客户",
             updated_at: now
           };
         })
@@ -564,7 +577,7 @@ export default function ProspectingPage() {
       .from("customers")
       .update({
         current_status: "已转正式客户",
-        stage: customer.stage && customer.stage !== "Archived" ? customer.stage : "Need Qualification",
+        stage: "Need Qualification",
         current_next_action: customer.current_next_action || "补齐需求并推进正式报价",
         updated_at: now
       })
@@ -590,9 +603,11 @@ export default function ProspectingPage() {
     const { error: updateError } = await supabase
       .from("customers")
       .update({
-        current_status: "归档",
-        stage: "Archived",
-        current_next_action: "已归档，默认不再继续推进",
+        current_status: "无效",
+        stage: "invalid",
+        current_next_action: "",
+        next_action: "",
+        next_follow_up_at: null,
         updated_at: now
       })
       .eq("id", customer.id);
@@ -625,11 +640,13 @@ export default function ProspectingPage() {
     const { error: updateError } = await supabase
       .from("customers")
       .update({
-        current_status: "已发第一封",
-        stage: "Prospecting",
-        next_action: "第一次跟进",
-        current_next_action: "第一次跟进",
+        current_status: "已触达",
+        stage: "contacted",
+        email_status: "not_sent",
+        next_action: "3天后查看是否有回复",
+        current_next_action: "3天后查看是否有回复",
         next_follow_up_at: followUpAt.toISOString(),
+        follow_up_date: followUpAt.toISOString().slice(0, 10),
         updated_at: now
       })
       .eq("id", customer.id);
@@ -647,9 +664,9 @@ export default function ProspectingPage() {
     <main className="app">
       <header className="hero">
         <div>
-          <p className="eyebrow">主动开发</p>
-          <h1>主动开发流程推进器</h1>
-          <p>从目标客户收集、开发信发送、跟进判断到转为正式客户，都集中在这里推进。</p>
+          <p className="eyebrow">获客推进</p>
+          <h1>获客推进系统</h1>
+          <p>管理 Google Maps、LinkedIn、FB、Email、WhatsApp 多渠道线索，并按阶段持续推进。</p>
         </div>
         <AppNav />
       </header>
@@ -671,7 +688,7 @@ export default function ProspectingPage() {
 
           <section className="panel">
             <div className="section-title">
-              <h2>今日开发任务</h2>
+              <h2>今日获客任务</h2>
               <span>{todayTasks.length} 项</span>
             </div>
             <div className="card-list">
@@ -687,17 +704,17 @@ export default function ProspectingPage() {
                   </div>
                 </article>
               ))}
-              {todayTasks.length === 0 && <p className="empty">今天暂无待推进的开发任务</p>}
+              {todayTasks.length === 0 && <p className="empty">今天暂无待推进的获客任务</p>}
             </div>
             {todayTasks.length > 5 && (
-              <p className="empty">还有 {todayTasks.length - 5} 个开发任务，查看全部。</p>
+              <p className="empty">还有 {todayTasks.length - 5} 个获客任务，查看全部。</p>
             )}
           </section>
 
           <section className="panel">
             <div className="section-title">
-              <h2>开发数据复盘</h2>
-              <span>只统计主动开发客户</span>
+              <h2>获客数据复盘</h2>
+              <span>只统计获客推进线索</span>
             </div>
             <div className="tabs" style={{ flexWrap: "wrap" }}>
               {reviewRanges.map((item) => (
@@ -761,7 +778,7 @@ export default function ProspectingPage() {
               <span>先支持 CSV 模板</span>
             </div>
             <p className="notice">
-              导入后默认进入“未联系”，下一步为“发送首封开发信”。
+              导入后默认进入“新线索”，下一步为“发送首封开发信”。
             </p>
             <div className="actions compact">
               <button type="button" onClick={handleImportClick}>上传 CSV</button>
@@ -779,7 +796,7 @@ export default function ProspectingPage() {
                 <div className="detail-item"><strong>默认阶段</strong><p>未联系</p></div>
                 <div className="detail-item"><strong>默认下一步动作</strong><p>发送首封开发信</p></div>
                 <div className="detail-item"><strong>默认下次跟进日期</strong><p>空</p></div>
-                <div className="detail-item"><strong>默认客户来源</strong><p>主动开发</p></div>
+                <div className="detail-item"><strong>默认客户来源</strong><p>获客推进</p></div>
               </div>
             )}
           </section>
@@ -879,7 +896,7 @@ export default function ProspectingPage() {
             {filteredTargetPool.length === 0 && <p className="empty">暂无目标客户。请先下载模板，整理客户名单后上传 CSV。</p>}
             {filteredTargetPool.length > 0 && (
               <div className="actions compact" style={{ marginTop: 16, justifyContent: "space-between" }}>
-                <span>第 {page} / {totalPages} 页</span>
+              <span>第 {page} / {totalPages} 页</span>
                 <div className="actions compact">
                   <button type="button" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>
                     上一页
@@ -903,6 +920,7 @@ export default function ProspectingPage() {
                   <div className="detail-grid">
                     <div className="detail-item"><strong>当前客户名</strong><p>{getCustomerName(selectedCustomer)}</p></div>
                     <div className="detail-item"><strong>当前阶段</strong><p>{getProspectingStage(selectedCustomer)}</p></div>
+                    <div className="detail-item"><strong>来源渠道</strong><p>{getLeadSourceLabel(getLeadSourceValue(selectedCustomer)) || getSourceLabel(selectedCustomer.source)}</p></div>
                     <div className="detail-item" style={{ gridColumn: "1 / -1" }}>
                       <strong>下一步动作</strong>
                       <p>{getProspectingNextAction(selectedCustomer)}</p>
@@ -913,21 +931,28 @@ export default function ProspectingPage() {
                     </div>
                   </div>
                   <div className="actions compact">
-                    {getProspectingStage(selectedCustomer) === "未联系" && (
+                    {getProspectingStage(selectedCustomer) === "新线索" && (
                       <>
                         <button type="button" onClick={() => copyScript(selectedScript.text)}>复制英文开发信</button>
                         <button type="button" onClick={() => markFirstEmailSent(selectedCustomer)}>标记已发送首封</button>
                         <Link href={`/customers/${selectedCustomer.id}`}>查看/编辑客户</Link>
                       </>
                     )}
-                    {getProspectingStage(selectedCustomer) === "已回复" && (
+                    {["已触达", "有互动", "有需求", "已发资料", "已报价", "跟进中"].includes(getProspectingStage(selectedCustomer)) && (
+                      <>
+                        <button type="button" onClick={() => copyScript(selectedScript.text)}>复制英文开发信</button>
+                        <Link href={`/customers/${selectedCustomer.id}`}>查看/编辑客户</Link>
+                        <button type="button" onClick={() => convertToFormalCustomer(selectedCustomer)}>转为正式客户</button>
+                      </>
+                    )}
+                    {["成交", "无效", "丢单"].includes(getProspectingStage(selectedCustomer)) && (
                       <>
                         <button type="button" onClick={() => convertToFormalCustomer(selectedCustomer)}>转为正式客户</button>
                         <button type="button" onClick={() => archiveProspectingCustomer(selectedCustomer)}>归档</button>
                         <Link href={`/customers/${selectedCustomer.id}`}>查看/编辑客户</Link>
                       </>
                     )}
-                    {getProspectingStage(selectedCustomer) !== "未联系" && getProspectingStage(selectedCustomer) !== "已回复" && (
+                    {!["新线索", "已触达", "成交", "无效", "丢单", "有互动", "有需求", "已发资料", "已报价", "跟进中"].includes(getProspectingStage(selectedCustomer)) && (
                       <>
                         <button type="button" onClick={() => copyScript(selectedScript.text)}>复制英文开发信</button>
                         <Link href={`/customers/${selectedCustomer.id}`}>查看/编辑客户</Link>

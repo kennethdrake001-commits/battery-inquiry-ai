@@ -10,15 +10,18 @@ import {
   getCustomerName,
   getCustomerTypeLabel,
   getCustomerTypeValue,
-  getLeadLevel,
   getNextAction,
-  getProspectingLane,
   getStageLabel,
   getStageValue,
-  getTaskPriority,
-  isConsumerCandidate,
-  isPartnerCandidate
+  getTaskPriority
 } from "../lib/customerViews";
+import {
+  getLeadProgressStageLabel,
+  getLeadProgressStageValue,
+  isClosedLeadStage,
+  isHighPotentialLead,
+  isLeadProgressCustomer
+} from "../lib/leadProgress";
 
 function AuthPanel({ session, onSessionChange }) {
   const [email, setEmail] = useState("");
@@ -116,18 +119,15 @@ function isArchivedCustomer(customer) {
     || customer?.stage === "归档";
 }
 
-function isProspectingCustomer(customer) {
-  const source = String(customer?.source || "").trim().toLowerCase();
-  const customerSource = String(customer?.customer_source || "").trim().toLowerCase();
-  const stage = String(customer?.stage || "").trim().toLowerCase();
-  const currentStatus = String(customer?.current_status || "").trim().toLowerCase();
-  const customerType = String(customer?.customer_type || "").trim();
+function isDueForFollowUp(customer, today = new Date()) {
+  const dateValue = customer?.next_follow_up_at || customer?.follow_up_date;
+  if (!dateValue) return false;
+  const followUpDate = new Date(dateValue);
+  if (Number.isNaN(followUpDate.getTime())) return false;
 
-  return source === "主动开发"
-    || customerSource === "主动开发"
-    || stage === "prospecting"
-    || currentStatus === "prospecting"
-    || (customerType === "太阳能经销商" && source === "主动开发");
+  const endOfToday = new Date(today);
+  endOfToday.setHours(23, 59, 59, 999);
+  return followUpDate.getTime() <= endOfToday.getTime();
 }
 
 export default function HomePage() {
@@ -174,141 +174,88 @@ export default function HomePage() {
     loadCustomers();
   }, [supabase, session]);
 
-  const activeCustomers = useMemo(() => {
-    return customers.filter((customer) => !isArchivedCustomer(customer) && !isProspectingCustomer(customer));
+  const visibleCustomers = useMemo(() => {
+    return customers.filter((customer) => !isArchivedCustomer(customer));
   }, [customers]);
 
-  const tasks = useMemo(() => buildTaskRows(activeCustomers), [activeCustomers]);
+  const leadProgressCustomers = useMemo(() => {
+    return visibleCustomers.filter((customer) => isLeadProgressCustomer(customer));
+  }, [visibleCustomers]);
 
-  const taskCustomers = useMemo(() => {
-    return tasks.map((task) => {
-      const customer = activeCustomers.find((item) => item.id === task.id) || null;
-      return {
-        id: task.id,
-        customerName: task.customer_name,
-        customerType: getCustomerTypeLabel(getCustomerTypeValue(customer || task)),
-        currentStatus: getStageLabel(getStageValue(customer || task)),
-        nextAction: formatNextActionForDisplay(task.current_next_action || getNextAction(customer || task)),
-        followUpDate: formatDateOnly(task.next_follow_up_at || customer?.next_follow_up_at || customer?.follow_up_date)
-      };
-    });
-  }, [activeCustomers, tasks]);
+  const tasks = useMemo(() => buildTaskRows(visibleCustomers), [visibleCustomers]);
 
-  const developingCustomers = useMemo(() => {
-    return activeCustomers
-      .filter((customer) => getProspectingLane(customer) === "待开发")
-      .map((customer) => ({
-        id: customer.id,
-        customerName: getCustomerName(customer),
-        customerType: getCustomerTypeLabel(getCustomerTypeValue(customer)),
-        currentStatus: getStageLabel(getStageValue(customer)),
-        nextAction: formatNextActionForDisplay(customer.current_next_action || getNextAction(customer)),
-        followUpDate: formatDateOnly(customer.next_follow_up_at || customer.follow_up_date)
-      }));
-  }, [activeCustomers]);
-
-  const highValueCustomers = useMemo(() => {
-    return activeCustomers
-      .filter((customer) => getLeadLevel(customer) === "A")
-      .map((customer) => ({
-        id: customer.id,
-        customerName: getCustomerName(customer),
-        customerType: getCustomerTypeLabel(getCustomerTypeValue(customer)),
-        currentStatus: getStageLabel(getStageValue(customer)),
-        nextAction: formatNextActionForDisplay(customer.current_next_action || getNextAction(customer)),
-        followUpDate: formatDateOnly(customer.next_follow_up_at || customer.follow_up_date)
-      }));
-  }, [activeCustomers]);
-
-  const quotedWaitingCustomers = useMemo(() => {
-    return activeCustomers
-      .filter((customer) => {
-        const stage = getStageValue(customer);
-        return stage === "Quoted" || stage === "Waiting Reply" || customer.current_status === "已报价未回复";
-      })
-      .map((customer) => ({
-        id: customer.id,
-        customerName: getCustomerName(customer),
-        customerType: getCustomerTypeLabel(getCustomerTypeValue(customer)),
-        currentStatus: getStageLabel(getStageValue(customer)),
-        nextAction: formatNextActionForDisplay(customer.current_next_action || getNextAction(customer)),
-        followUpDate: formatDateOnly(customer.next_follow_up_at || customer.follow_up_date)
-      }));
-  }, [activeCustomers]);
-
-  const partnerCandidateCustomers = useMemo(() => {
-    return activeCustomers
-      .filter((customer) => isPartnerCandidate(customer))
-      .map((customer) => ({
-        id: customer.id,
-        customerName: getCustomerName(customer),
-        customerType: getCustomerTypeLabel(getCustomerTypeValue(customer)),
-        currentStatus: getStageLabel(getStageValue(customer)),
-        nextAction: formatNextActionForDisplay(customer.current_next_action || getNextAction(customer)),
-        followUpDate: formatDateOnly(customer.next_follow_up_at || customer.follow_up_date)
-      }));
-  }, [activeCustomers]);
-
-  const consumerCandidateCustomers = useMemo(() => {
-    return activeCustomers
-      .filter((customer) => isConsumerCandidate(customer))
-      .map((customer) => ({
-        id: customer.id,
-        customerName: getCustomerName(customer),
-        customerType: getCustomerTypeLabel(getCustomerTypeValue(customer)),
-        currentStatus: getStageLabel(getStageValue(customer)),
-        nextAction: formatNextActionForDisplay(customer.current_next_action || getNextAction(customer)),
-        followUpDate: formatDateOnly(customer.next_follow_up_at || customer.follow_up_date)
-      }));
-  }, [activeCustomers]);
+  function mapSummaryCustomers(list) {
+    return list.map((customer) => ({
+      id: customer.id,
+      customerName: getCustomerName(customer),
+      country: customer.country || "待补充",
+      customerType: getCustomerTypeLabel(getCustomerTypeValue(customer)),
+      currentStatus: isLeadProgressCustomer(customer)
+        ? getLeadProgressStageLabel(customer)
+        : getStageLabel(getStageValue(customer)),
+      nextAction: formatNextActionForDisplay(customer.current_next_action || customer.next_action || getNextAction(customer)),
+      followUpDate: formatDateOnly(customer.next_follow_up_at || customer.follow_up_date)
+    }));
+  }
 
   const summaryGroups = useMemo(() => {
+    const todayFollowUpCustomers = leadProgressCustomers.filter((customer) => {
+      return !isClosedLeadStage(customer) && isDueForFollowUp(customer);
+    });
+    const newLeadCustomers = leadProgressCustomers.filter((customer) => getLeadProgressStageValue(customer) === "new_lead");
+    const linkedinConnectedCustomers = leadProgressCustomers.filter((customer) => `${customer.linkedin_status || ""}` === "connected");
+    const facebookMessageSentCustomers = leadProgressCustomers.filter((customer) => `${customer.facebook_status || ""}` === "message_sent");
+    const hasNeedCustomers = leadProgressCustomers.filter((customer) => getLeadProgressStageValue(customer) === "has_need");
+    const quotedFollowUpCustomers = leadProgressCustomers.filter((customer) => {
+      return getLeadProgressStageValue(customer) === "quoted" || `${customer.email_status || ""}` === "quotation_sent";
+    });
+    const highPotentialCustomers = leadProgressCustomers.filter((customer) => isHighPotentialLead(customer));
+
     return [
       {
         key: "today-follow-up",
         title: "今日待跟进",
-        subtitle: "来自当前客户流程的实际动作",
-        customers: taskCustomers
+        subtitle: "今天应该处理的客户推进事项",
+        customers: mapSummaryCustomers(todayFollowUpCustomers)
       },
       {
-        key: "today-develop",
-        title: "今日待开发",
-        subtitle: "今天可以主动触达的客户",
-        customers: developingCustomers
+        key: "new-lead",
+        title: "新线索待筛选",
+        subtitle: "刚进入系统，待判断价值与类型",
+        customers: mapSummaryCustomers(newLeadCustomers)
       },
       {
-        key: "high-value",
-        title: "A级高价值客户",
-        subtitle: "需要优先处理和重点关注",
-        customers: highValueCustomers
+        key: "linkedin-connected",
+        title: "LinkedIn 已通过未私信",
+        subtitle: "适合立刻发 LinkedIn 破冰私信",
+        customers: mapSummaryCustomers(linkedinConnectedCustomers)
       },
       {
-        key: "quoted-waiting",
-        title: "已报价待回复",
-        subtitle: "报价已发出，等待客户反馈",
-        customers: quotedWaitingCustomers
+        key: "facebook-message-sent",
+        title: "FB 已私信未回复",
+        subtitle: "需要按节奏继续跟进 FB 对话",
+        customers: mapSummaryCustomers(facebookMessageSentCustomers)
       },
       {
-        key: "partner-candidate",
-        title: "合作商候选",
-        subtitle: "重点看渠道、经销、贴牌机会",
-        customers: partnerCandidateCustomers
+        key: "has-need",
+        title: "有需求未报价",
+        subtitle: "已有明确需求，但还没推进到报价",
+        customers: mapSummaryCustomers(hasNeedCustomers)
       },
       {
-        key: "consumer-candidate",
-        title: "C端待筛选",
-        subtitle: "终端用户或待判断客户",
-        customers: consumerCandidateCustomers
+        key: "quoted-follow-up",
+        title: "已报价待跟进",
+        subtitle: "报价已发出，需要跟进反馈",
+        customers: mapSummaryCustomers(quotedFollowUpCustomers)
+      },
+      {
+        key: "high-potential",
+        title: "高潜客户",
+        subtitle: "安装商/经销商类高价值推进客户",
+        customers: mapSummaryCustomers(highPotentialCustomers)
       }
     ];
-  }, [
-    taskCustomers,
-    developingCustomers,
-    highValueCustomers,
-    quotedWaitingCustomers,
-    partnerCandidateCustomers,
-    consumerCandidateCustomers
-  ]);
+  }, [leadProgressCustomers]);
 
   const dashboardCards = useMemo(() => {
     return summaryGroups.map((group) => ({
@@ -321,17 +268,19 @@ export default function HomePage() {
 
   const actionRows = useMemo(() => {
     return tasks.slice(0, 5).map((task) => {
-      const customer = activeCustomers.find((item) => item.id === task.id) || null;
+      const customer = visibleCustomers.find((item) => item.id === task.id) || null;
       return {
         id: task.id,
         priority: getTaskPriority(task, customer),
         customerName: task.customer_name,
         customerType: getCustomerTypeLabel(getCustomerTypeValue(customer || task)),
-        currentStatus: getStageLabel(getStageValue(customer || task)),
+        currentStatus: customer && isLeadProgressCustomer(customer)
+          ? getLeadProgressStageLabel(customer)
+          : getStageLabel(getStageValue(customer || task)),
         nextAction: formatNextActionForDisplay(task.current_next_action || getNextAction(customer || task))
       };
     });
-  }, [activeCustomers, tasks]);
+  }, [tasks, visibleCustomers]);
 
   const remainingTaskCount = Math.max(tasks.length - 5, 0);
   const activeSummary = summaryGroups.find((group) => group.key === activeSummaryKey) || null;
@@ -358,7 +307,7 @@ export default function HomePage() {
               <h2>核心提醒</h2>
               <span>只看今天真正要处理的事情</span>
             </div>
-            <div className="task-grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+            <div className="task-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
               {dashboardCards.map((card) => (
                 <button
                   key={card.key}
@@ -445,6 +394,7 @@ export default function HomePage() {
                   <thead>
                     <tr>
                       <th>客户名</th>
+                      <th>国家</th>
                       <th>客户类型</th>
                       <th>当前状态</th>
                       <th>下一步动作</th>
@@ -456,6 +406,7 @@ export default function HomePage() {
                     {activeSummary.customers.map((item) => (
                       <tr key={item.id}>
                         <td>{item.customerName}</td>
+                        <td>{item.country}</td>
                         <td>{item.customerType}</td>
                         <td>{item.currentStatus}</td>
                         <td className="truncate-cell">{item.nextAction}</td>

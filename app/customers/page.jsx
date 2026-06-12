@@ -16,6 +16,13 @@ import {
   getStageValue,
   isPartnerCandidate
 } from "../../lib/customerViews";
+import {
+  getChannelStatusLabel,
+  getLeadProgressStageLabel,
+  getLeadSourceLabel,
+  getLeadSourceValue,
+  isLeadProgressCustomer
+} from "../../lib/leadProgress";
 
 function AuthNotice({ session }) {
   if (session) return <div className="auth-card">已登录：{session.user.email}</div>;
@@ -26,9 +33,12 @@ const emptyFilters = {
   keyword: "",
   country: "",
   customerType: "",
-  sourceType: "",
+  leadSource: "",
   leadLevel: "",
   status: "",
+  nextAction: "",
+  followUpRange: "",
+  channelStatus: "",
   partnerCandidate: "",
   onlyImportant: "否",
   showArchived: "否"
@@ -38,35 +48,22 @@ function isImportantCustomer(customer) {
   return customer?.lead_level === "A" || customer?.priority === true || customer?.is_important === true;
 }
 
-function matchSourceType(customer, sourceType) {
-  const source = String(customer?.source || "").toLowerCase();
-  const stage = String(customer?.stage || "");
+function matchLeadSource(customer, leadSource) {
+  if (!leadSource) return true;
+  return `${getLeadSourceValue(customer)}` === leadSource;
+}
 
-  if (!sourceType) return true;
-  if (sourceType === "阿里询盘") {
-    return source.includes("alibaba") || source.includes("阿里");
-  }
-  if (sourceType === "主动开发") {
-    return customer?.source === "主动开发" || stage === "Prospecting";
-  }
-  if (sourceType === "邮件") {
-    return source.includes("email") || source.includes("邮件");
-  }
-  if (sourceType === "WhatsApp") {
-    return source.includes("whatsapp");
-  }
-  if (sourceType === "其他") {
-    return !(
-      source.includes("alibaba")
-      || source.includes("阿里")
-      || source.includes("email")
-      || source.includes("邮件")
-      || source.includes("whatsapp")
-      || customer?.source === "主动开发"
-      || stage === "Prospecting"
-    );
-  }
-  return true;
+function formatDateOnly(value) {
+  if (!value) return "待安排";
+  const text = `${value}`.trim();
+  if (!text) return "待安排";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return text;
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export default function CustomersPage() {
@@ -122,13 +119,26 @@ export default function CustomersPage() {
         const country = customer.country || "";
         const type = getCustomerTypeValue(customer);
         const level = getLeadLevel(customer);
-        const status = getStageLabel(getStageValue(customer));
+        const status = isLeadProgressCustomer(customer)
+          ? getLeadProgressStageLabel(customer)
+          : getStageLabel(getStageValue(customer));
         const partnerCandidate = isPartnerCandidate(customer);
         const isArchived = customer.current_status === "归档" || customer.stage === "Archived";
         const important = isImportantCustomer(customer);
         const keyword = filters.keyword.trim().toLowerCase();
         const nameText = String(customer.customer_name || customer.company_name || "").toLowerCase();
         const messageText = String(customer.original_message || "").toLowerCase();
+        const nextActionText = formatNextActionForDisplay(customer.current_next_action || customer.next_action || getNextAction(customer)).toLowerCase();
+        const followUpText = customer.next_follow_up_at || customer.follow_up_date || "";
+        const followUpDate = followUpText ? new Date(followUpText) : null;
+        const today = new Date();
+        today.setHours(23, 59, 59, 999);
+        const channelText = [
+          getChannelStatusLabel("linkedin_status", customer.linkedin_status, customer),
+          getChannelStatusLabel("facebook_status", customer.facebook_status, customer),
+          getChannelStatusLabel("email_status", customer.email_status, customer),
+          getChannelStatusLabel("whatsapp_status", customer.whatsapp_status, customer)
+        ].join(" ").toLowerCase();
 
         if (filters.showArchived !== "是" && isArchived) {
           return false;
@@ -140,9 +150,17 @@ export default function CustomersPage() {
 
         return (!filters.country || country === filters.country)
           && (!filters.customerType || type === filters.customerType)
-          && matchSourceType(customer, filters.sourceType)
+          && matchLeadSource(customer, filters.leadSource)
           && (!filters.leadLevel || level === filters.leadLevel)
           && (!filters.status || status === filters.status)
+          && (!filters.nextAction || nextActionText.includes(filters.nextAction.trim().toLowerCase()))
+          && (!filters.channelStatus || channelText.includes(filters.channelStatus.trim().toLowerCase()))
+          && (
+            !filters.followUpRange
+            || (filters.followUpRange === "今日及以前" && followUpDate && followUpDate.getTime() <= today.getTime())
+            || (filters.followUpRange === "已安排" && followUpText)
+            || (filters.followUpRange === "未安排" && !followUpText)
+          )
           && (!filters.partnerCandidate
             || (filters.partnerCandidate === "是" ? partnerCandidate : !partnerCandidate))
           && (filters.onlyImportant !== "是" || important);
@@ -255,14 +273,12 @@ export default function CustomersPage() {
                 </select>
               </label>
               <label className="field">
-                <span>客户来源类型</span>
-                <select value={filters.sourceType} onChange={(event) => updateFilter("sourceType", event.target.value)}>
+                <span>来源渠道</span>
+                <select value={filters.leadSource} onChange={(event) => updateFilter("leadSource", event.target.value)}>
                   <option value="">全部</option>
-                  <option value="阿里询盘">阿里询盘</option>
-                  <option value="主动开发">主动开发</option>
-                  <option value="邮件">邮件</option>
-                  <option value="WhatsApp">WhatsApp</option>
-                  <option value="其他">其他</option>
+                  {["Google Maps", "LinkedIn", "FB", "Alibaba", "Website", "Referral", "Email", "WhatsApp", "主动开发", "Other"].map((item) => (
+                    <option key={item} value={item}>{getLeadSourceLabel(item) || getSourceLabel(item)}</option>
+                  ))}
                 </select>
               </label>
               <label className="field">
@@ -276,7 +292,29 @@ export default function CustomersPage() {
               </label>
               <label className="field">
                 <span>当前状态</span>
-                <input value={filters.status} onChange={(event) => updateFilter("status", event.target.value)} placeholder="如 待报价 / 已报价" />
+                <select value={filters.status} onChange={(event) => updateFilter("status", event.target.value)}>
+                  <option value="">全部</option>
+                  {["新线索", "已触达", "有互动", "有需求", "已发资料", "已报价", "跟进中", "成交", "丢单", "无效"].map((item) => (
+                    <option key={item} value={item}>{item}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>下一步动作</span>
+                <input value={filters.nextAction} onChange={(event) => updateFilter("nextAction", event.target.value)} placeholder="输入下一步动作关键词" />
+              </label>
+              <label className="field">
+                <span>下次跟进时间</span>
+                <select value={filters.followUpRange} onChange={(event) => updateFilter("followUpRange", event.target.value)}>
+                  <option value="">全部</option>
+                  <option value="今日及以前">今日及以前</option>
+                  <option value="已安排">已安排</option>
+                  <option value="未安排">未安排</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>渠道状态</span>
+                <input value={filters.channelStatus} onChange={(event) => updateFilter("channelStatus", event.target.value)} placeholder="如 已发送连接 / 已私信 / 已回复" />
               </label>
               <label className="field">
                 <span>是否合作商候选</span>
@@ -319,6 +357,7 @@ export default function CustomersPage() {
                     <th>客户等级</th>
                     <th>当前状态</th>
                     <th>下一步动作</th>
+                    <th>下次跟进时间</th>
                     <th>合作商候选</th>
                     <th>操作</th>
                   </tr>
@@ -329,15 +368,16 @@ export default function CustomersPage() {
                       <td>{getCustomerName(customer)}</td>
                       <td>{customer.country || "-"}</td>
                       <td><span className="soft-badge">{getCustomerTypeLabel(getCustomerTypeValue(customer))}</span></td>
-                      <td><span className="soft-badge">{getSourceLabel(customer.source)}</span></td>
+                      <td><span className="soft-badge">{getLeadSourceLabel(getLeadSourceValue(customer)) || getSourceLabel(customer.source)}</span></td>
                       <td>
                         <div className="actions compact" style={{ gap: 8, justifyContent: "flex-start" }}>
                           <span className={`level level-${getLeadLevel(customer)}`}>{getLeadLevel(customer)}</span>
                           {isImportantCustomer(customer) && <span className="soft-badge">重点</span>}
                         </div>
                       </td>
-                      <td>{getStageLabel(getStageValue(customer))}</td>
+                      <td>{isLeadProgressCustomer(customer) ? getLeadProgressStageLabel(customer) : getStageLabel(getStageValue(customer))}</td>
                       <td className="truncate-cell">{formatNextActionForDisplay(customer.next_action || customer.current_next_action || getNextAction(customer))}</td>
+                      <td>{formatDateOnly(customer.next_follow_up_at || customer.follow_up_date)}</td>
                       <td>{isPartnerCandidate(customer) ? "是" : "否"}</td>
                       <td>
                         <div className="actions compact">

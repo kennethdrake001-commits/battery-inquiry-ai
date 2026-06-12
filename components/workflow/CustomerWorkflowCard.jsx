@@ -20,6 +20,16 @@ const customerTypeLabelMap = {
 };
 
 const stageLabelMap = {
+  new_lead: "新线索",
+  contacted: "已触达",
+  engaged: "有互动",
+  has_need: "有需求",
+  material_sent: "已发资料",
+  quoted: "已报价",
+  follow_up: "跟进中",
+  won: "成交",
+  lost: "丢单",
+  invalid: "无效",
   "New Inquiry": "新询盘",
   "Need Qualification": "待补信息",
   "Need Shipping Check": "待运费核算",
