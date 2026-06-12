@@ -1607,12 +1607,12 @@ export default function CustomerDetailPage() {
               <h2 style={{ fontSize: 22, fontWeight: 700, color: "#0f172a" }}>当前推进</h2>
             </div>
             <div style={{ display: "grid", gridTemplateRows: "1fr 1fr", gap: 10, flex: 1, minHeight: 0 }}>
-              <div className="detail-item" style={{ borderRadius: 18, background: "#f8fbff", padding: 16, border: "1px solid #dbeafe", minHeight: 0, display: "flex", flexDirection: "column", justifyContent: "flex-start", height: "100%" }}>
+              <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 16, border: "1px solid #e2e8f0", minHeight: 0, display: "flex", flexDirection: "column", justifyContent: "flex-start", height: "100%" }}>
                 <strong style={{ color: "#64748b", fontSize: 13, fontWeight: 600, lineHeight: 1.4 }}>下一步动作</strong>
                 <p
                   style={{
-                    fontSize: 20,
-                    fontWeight: 700,
+                    fontSize: 19,
+                    fontWeight: 600,
                     marginTop: 10,
                     color: "#0f172a",
                     lineHeight: 1.3,
@@ -1627,14 +1627,15 @@ export default function CustomerDetailPage() {
                   {localizedPersistedAction}
                 </p>
               </div>
-              <div className="detail-item" style={{ borderRadius: 16, background: "#fff7ed", padding: 14, border: "1px solid #fed7aa", minHeight: 0, display: "flex", flexDirection: "column", justifyContent: "flex-start", height: "100%" }}>
-                <strong style={{ color: "#9a3412", fontSize: 13, fontWeight: 600 }}>当前卡点</strong>
+              <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 16, border: "1px solid #e2e8f0", minHeight: 0, display: "flex", flexDirection: "column", justifyContent: "flex-start", height: "100%" }}>
+                <strong style={{ color: "#64748b", fontSize: 13, fontWeight: 600, lineHeight: 1.4 }}>当前卡点</strong>
                 <p
                   style={{
                     marginTop: 10,
-                    fontSize: 14,
-                    lineHeight: 1.45,
-                    color: "#7c2d12",
+                    fontSize: 19,
+                    fontWeight: 600,
+                    lineHeight: 1.3,
+                    color: "#0f172a",
                     display: "-webkit-box",
                     WebkitLineClamp: 2,
                     WebkitBoxOrient: "vertical",
