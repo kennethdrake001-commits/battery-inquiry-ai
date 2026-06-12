@@ -1321,14 +1321,7 @@ export default function CustomerDetailPage() {
   const blockerText = getCurrentBlockerText(customer || {});
   const followUpDateDisplay = formatDateOnly(customer?.next_follow_up_at || customer?.follow_up_date || workflowForm.followUpDate);
   const archivedCustomer = isArchivedCustomer(customer || {});
-  const showQuotedActions = shouldShowQuotedActions(customer || {});
-  const showNewInquiryActions = shouldShowNewInquiryActions(customer || {});
-  const showWaitingReplyActions = shouldShowWaitingReplyActions(customer || {});
   const leadSourceLabel = getLeadSourceLabel(getLeadSourceValue(customer || {}));
-  const linkedinStatusLabel = getChannelStatusLabel("linkedin_status", customer?.linkedin_status, customer || {});
-  const facebookStatusLabel = getChannelStatusLabel("facebook_status", customer?.facebook_status, customer || {});
-  const emailStatusLabel = getChannelStatusLabel("email_status", customer?.email_status, customer || {});
-  const whatsappStatusLabel = getChannelStatusLabel("whatsapp_status", customer?.whatsapp_status, customer || {});
   const latestInteraction = interactions[0] || null;
   const latestInteractionSummary = latestInteraction
     ? [latestInteraction.result_feedback || latestInteraction.interaction_status, latestInteraction.operator_note].filter(Boolean).join(" / ")
@@ -1337,7 +1330,9 @@ export default function CustomerDetailPage() {
   const needQuoteLabel = quotes.length > 0 || ["已报价", "Quoted", "已报价未回复", "待报价"].includes(customer?.current_status) || ["Quoted", "Need Quotation"].includes(customer?.stage)
     ? "是"
     : "待判断";
-  const showLeadProgressButtons = leadProgressCustomer && ["new_lead", "contacted", "responded", "invalid"].includes(leadProgressStage);
+  const showLeadNewButtons = !archivedCustomer && leadProgressCustomer && leadProgressStage === "new_lead";
+  const showLeadContactedButtons = !archivedCustomer && leadProgressCustomer && leadProgressStage === "contacted";
+  const showLeadRespondedButtons = !archivedCustomer && leadProgressCustomer && leadProgressStage === "responded";
   const showSalesProgressButtons = !archivedCustomer && (
     (leadProgressCustomer && ["has_need", "material_sent", "quoted", "follow_up", "won"].includes(leadProgressStage))
     || (!leadProgressCustomer && ["Need Qualification", "Need Quotation", "Quoted", "Waiting Reply", "Negotiation", "Trial Order", "Closed Won"].includes(customer?.stage))
@@ -1364,7 +1359,7 @@ export default function CustomerDetailPage() {
           <h2>当前推进</h2>
           <span>先看当前该做什么，再进入下面各标签处理</span>
         </div>
-        <div className="detail-grid">
+        <div className="detail-grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", marginBottom: 12 }}>
           <div className="detail-item" style={{ background: "#f8fbff", borderRadius: 16, padding: 16 }}>
             <strong>当前阶段</strong>
             <p><span className="soft-badge">{displayStage || displayStatus || "待判断"}</span></p>
@@ -1377,14 +1372,11 @@ export default function CustomerDetailPage() {
             <strong>下次跟进日期</strong>
             <p>{followUpDateDisplay}</p>
           </div>
-          <div className="detail-item"><strong>来源渠道</strong><p>{leadSourceLabel}</p></div>
+        </div>
+        <div className="detail-grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
           <div className="detail-item"><strong>客户类型</strong><p>{currentType}</p></div>
           <div className="detail-item"><strong>国家</strong><p>{customer?.country || "待补充"}</p></div>
           <div className="detail-item"><strong>当前卡点</strong><p>{blockerText}</p></div>
-          <div className="detail-item"><strong>LinkedIn 状态</strong><p>{linkedinStatusLabel}</p></div>
-          <div className="detail-item"><strong>FB 状态</strong><p>{facebookStatusLabel}</p></div>
-          <div className="detail-item"><strong>Email 状态</strong><p>{emailStatusLabel}</p></div>
-          <div className="detail-item"><strong>WhatsApp 状态</strong><p>{whatsappStatusLabel}</p></div>
         </div>
         {archivedCustomer ? (
           <div className="notice-panel" style={{ marginTop: 16 }}>
@@ -1394,10 +1386,20 @@ export default function CustomerDetailPage() {
         ) : (
           <>
             <div className="actions" style={{ marginTop: 16, flexWrap: "wrap" }}>
-              {showLeadProgressButtons && (
+              {showLeadNewButtons && (
                 <>
                   <button onClick={markLeadContacted} disabled={isSaving}>标记已触达</button>
+                  <button onClick={markInvalidLead} disabled={isSaving}>标记无效</button>
+                </>
+              )}
+              {showLeadContactedButtons && (
+                <>
                   <button onClick={markLeadResponded} disabled={isSaving}>标记有回应</button>
+                  <button onClick={markInvalidLead} disabled={isSaving}>标记无效</button>
+                </>
+              )}
+              {showLeadRespondedButtons && (
+                <>
                   <button onClick={markHasNeed} disabled={isSaving}>标记有需求</button>
                   <button onClick={markInvalidLead} disabled={isSaving}>标记无效</button>
                 </>
@@ -1406,15 +1408,7 @@ export default function CustomerDetailPage() {
                 <>
                   <button onClick={markMaterialSent} disabled={isSaving}>已发送产品资料</button>
                   <button onClick={markQuoteSent} disabled={isSaving}>已发送报价</button>
-                  <button onClick={markWon} disabled={isSaving}>标记成交</button>
-                  <button onClick={markLost} disabled={isSaving}>标记丢单</button>
                 </>
-              )}
-              {!leadProgressCustomer && !showSalesProgressButtons && (showQuotedActions || showNewInquiryActions || (!showWaitingReplyActions && !archivedCustomer)) && (
-                <button onClick={markFollowedUp} disabled={isSaving}>标记已跟进</button>
-              )}
-              {!leadProgressCustomer && !showSalesProgressButtons && (showQuotedActions || showWaitingReplyActions || (!showNewInquiryActions && !archivedCustomer)) && (
-                <button onClick={markCustomerReplied} disabled={isSaving}>标记客户已回复</button>
               )}
               {!archivedCustomer && (
                 <>
