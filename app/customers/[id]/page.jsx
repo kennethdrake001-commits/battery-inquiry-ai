@@ -886,7 +886,7 @@ export default function CustomerDetailPage() {
       followUpDate: recommendation.followUpDate || current.followUpDate,
       leadLevel: recommendation.leadLevel || current.leadLevel
     }));
-    setSuccess("已生成推荐下一步动作。");
+    setSuccess("已生成下一步建议，请确认后保存客户流程。");
     setError("");
   }
 
@@ -1469,9 +1469,7 @@ export default function CustomerDetailPage() {
   const displayStatus = customer?.current_status || displayStage || currentStage;
   const currentType = getCustomerTypeLabel(getCustomerTypeValue(customer || {}));
   const currentLeadLevel = getLeadLevel(customer || {});
-  const currentAction = workflowForm.nextAction || getNextAction(customer || {});
-  const localizedCurrentAction = formatCustomerActionDisplay(currentAction);
-  const persistedNextAction = customer?.current_next_action || customer?.next_action || workflowForm.nextAction;
+  const persistedNextAction = workflowForm.nextAction || customer?.current_next_action || customer?.next_action || getNextAction(customer || {});
   const localizedPersistedAction = formatCustomerActionDisplay(persistedNextAction);
   const blockerText = getCurrentBlockerText(customer || {});
   const followUpDateDisplay = formatDateOnly(customer?.next_follow_up_at || customer?.follow_up_date || workflowForm.followUpDate);
@@ -1523,7 +1521,7 @@ export default function CustomerDetailPage() {
             borderRadius: 24,
             padding: 18,
             display: "grid",
-            gridTemplateColumns: "minmax(220px, 0.26fr) minmax(340px, 0.44fr) minmax(240px, 0.3fr)",
+            gridTemplateColumns: "minmax(240px, 1.1fr) minmax(380px, 1.8fr) minmax(200px, 0.9fr)",
             gap: 16,
             alignItems: "start",
             border: "1px solid #e2e8f0",
