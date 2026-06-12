@@ -227,6 +227,93 @@ function getInvalidReason(customer) {
   return "未填写原因";
 }
 
+function getQuestionMetaValue(text, label) {
+  if (!text || !label) return "";
+  const source = `${text}`;
+  const matched = source.match(new RegExp(`${label}[:：]\\s*([^\\n]+)`));
+  return matched?.[1]?.trim() || "";
+}
+
+function upsertQuestionMeta(text, label, value) {
+  const source = `${text || ""}`.trim();
+  const cleaned = source
+    .split("\n")
+    .filter((line) => line.trim() && !line.startsWith(`${label}：`) && !line.startsWith(`${label}:`))
+    .join("\n")
+    .trim();
+
+  if (!value) return cleaned;
+  return [cleaned, `${label}：${value}`].filter(Boolean).join("\n");
+}
+
+function getLastActionRecord(customer) {
+  const content = getQuestionMetaValue(customer?.question, "最后动作");
+  if (!content) {
+    return {
+      content: "暂无动作记录",
+      date: ""
+    };
+  }
+
+  return {
+    content,
+    date: customer?.updated_at ? formatDate(customer.updated_at) : ""
+  };
+}
+
+function normalizeComparableValue(value) {
+  return `${value || ""}`
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/[\s/._-]+/g, "");
+}
+
+function isSimilarCompanyName(a, b) {
+  const normalizedA = normalizeComparableValue(a);
+  const normalizedB = normalizeComparableValue(b);
+  if (!normalizedA || !normalizedB) return false;
+  if (normalizedA === normalizedB) return true;
+  if (normalizedA.length >= 6 && normalizedB.length >= 6) {
+    return normalizedA.includes(normalizedB) || normalizedB.includes(normalizedA);
+  }
+  return false;
+}
+
+function getStoredContactValue(customer, label) {
+  const directMap = {
+    官网: customer?.website,
+    邮箱: customer?.email,
+    WhatsApp: customer?.whatsapp,
+    LinkedIn: customer?.linkedin,
+    FB: customer?.facebook
+  };
+
+  if (directMap[label]) return `${directMap[label]}`.trim();
+  return getQuestionMetaValue(customer?.original_message, label) || "";
+}
+
+function findPotentialDuplicateCustomers(form, customers) {
+  const companyName = form.companyName.trim();
+  const website = form.website.trim();
+  const email = form.email.trim();
+  const whatsapp = form.whatsapp.trim();
+  const linkedin = form.linkedin.trim();
+  const facebook = form.facebook.trim();
+
+  return customers.filter((customer) => {
+    const matchedByName = companyName && isSimilarCompanyName(companyName, getCustomerName(customer));
+    const matchedByWebsite = website && normalizeComparableValue(website) === normalizeComparableValue(getStoredContactValue(customer, "官网"));
+    const matchedByEmail = email && normalizeComparableValue(email) === normalizeComparableValue(getStoredContactValue(customer, "邮箱"));
+    const matchedByWhatsapp = whatsapp && normalizeComparableValue(whatsapp) === normalizeComparableValue(getStoredContactValue(customer, "WhatsApp"));
+    const matchedByLinkedin = linkedin && normalizeComparableValue(linkedin) === normalizeComparableValue(getStoredContactValue(customer, "LinkedIn"));
+    const matchedByFacebook = facebook && normalizeComparableValue(facebook) === normalizeComparableValue(getStoredContactValue(customer, "FB"));
+
+    return matchedByName || matchedByWebsite || matchedByEmail || matchedByWhatsapp || matchedByLinkedin || matchedByFacebook;
+  });
+}
+
 function getFollowUpDate(customer) {
   return customer.next_follow_up_at || customer.follow_up_date || customer.updated_at || customer.created_at || "";
 }
@@ -404,7 +491,8 @@ export default function ProspectingPage() {
       prospectingAction: getProspectingStage(customer) === "无效" ? getInvalidLeadAction() : getProspectingNextAction(customer),
       leadSourceLabel: getLeadSourceLabel(getLeadSourceValue(customer)) || getSourceLabel(customer.source),
       leadValueLabel: getLeadValueLabel(customer),
-      invalidReasonLabel: getInvalidReason(customer)
+      invalidReasonLabel: getInvalidReason(customer),
+      lastActionRecord: getLastActionRecord(customer)
     }));
   }, [prospectingCustomers]);
 
@@ -697,6 +785,20 @@ export default function ProspectingPage() {
       return;
     }
 
+    const duplicateCustomers = findPotentialDuplicateCustomers(manualLeadForm, customers);
+    if (duplicateCustomers.length > 0) {
+      const duplicateSummary = duplicateCustomers
+        .slice(0, 3)
+        .map((customer) => `- ${getCustomerName(customer)}｜${customer.country || "待补充"}｜${getLeadSourceLabel(getLeadSourceValue(customer)) || getSourceLabel(customer.source) || "待补充"}｜${getProspectingStage(customer)}`)
+        .join("\n");
+
+      const confirmed = window.confirm(
+        `可能已存在相同目标客户，是否继续保存？\n\n疑似重复客户：\n${duplicateSummary}`
+      );
+
+      if (!confirmed) return;
+    }
+
     const contactLines = [
       manualLeadForm.website ? `官网：${manualLeadForm.website.trim()}` : "",
       manualLeadForm.linkedin ? `LinkedIn：${manualLeadForm.linkedin.trim()}` : "",
@@ -752,7 +854,9 @@ export default function ProspectingPage() {
     setError("");
     setNotice("");
 
-    const confirmed = window.confirm("确定将这个客户转为正式客户吗？转入后请在客户详情中继续推进需求和报价。");
+    const confirmed = window.confirm(
+      "确认转为正式客户？\n\n建议只有当客户出现以下情况时再转为正式客户：\n- 明确询价\n- 索要产品资料\n- 询问认证、清关、报价或样品\n- 有真实项目需求\n- 已经开始有效沟通"
+    );
     if (!confirmed) return;
 
     const now = new Date().toISOString();
@@ -846,6 +950,7 @@ export default function ProspectingPage() {
     const followUpAt = new Date();
     followUpAt.setDate(followUpAt.getDate() + 3);
     const now = new Date().toISOString();
+    const nextQuestion = upsertQuestionMeta(customer.question, "最后动作", "已完成首次触达");
 
     const { error: updateError } = await supabase
       .from("customers")
@@ -853,10 +958,11 @@ export default function ProspectingPage() {
         current_status: "已触达",
         stage: "contacted",
         email_status: "not_sent",
-        next_action: "3天后查看是否有回复",
-        current_next_action: "3天后查看是否有回复",
+        next_action: "3天后检查是否回复",
+        current_next_action: "3天后检查是否回复",
         next_follow_up_at: followUpAt.toISOString(),
         follow_up_date: followUpAt.toISOString().slice(0, 10),
+        question: nextQuestion,
         updated_at: now
       })
       .eq("id", customer.id);
@@ -896,15 +1002,17 @@ export default function ProspectingPage() {
   }
 
   async function markEngaged(customer) {
+    const today = new Date();
     await updateProspectingCustomer(
       customer,
       {
         current_status: "有互动",
         stage: "engaged",
-        current_next_action: "继续确认客户具体需求",
-        next_action: "继续确认客户具体需求",
-        next_follow_up_at: new Date().toISOString(),
-        follow_up_date: new Date().toISOString().slice(0, 10)
+        current_next_action: "确认客户需求并发送资料",
+        next_action: "确认客户需求并发送资料",
+        next_follow_up_at: today.toISOString(),
+        follow_up_date: today.toISOString().slice(0, 10),
+        question: upsertQuestionMeta(customer.question, "最后动作", "客户已有互动")
       },
       "已标记为有互动。"
     );
@@ -912,22 +1020,24 @@ export default function ProspectingPage() {
 
   async function markFollowUp(customer) {
     const followUpAt = new Date();
-    followUpAt.setDate(followUpAt.getDate() + 2);
+    followUpAt.setDate(followUpAt.getDate() + 7);
     await updateProspectingCustomer(
       customer,
       {
         current_status: "跟进中",
         stage: "follow_up",
-        current_next_action: "跟进未回复客户",
-        next_action: "跟进未回复客户",
+        current_next_action: "7天后进行轻跟进",
+        next_action: "7天后进行轻跟进",
         next_follow_up_at: followUpAt.toISOString(),
-        follow_up_date: followUpAt.toISOString().slice(0, 10)
+        follow_up_date: followUpAt.toISOString().slice(0, 10),
+        question: upsertQuestionMeta(customer.question, "最后动作", "已跟进未回复客户")
       },
       "已安排未回复客户跟进。"
     );
   }
 
   async function markHasNeed(customer) {
+    const today = new Date();
     await updateProspectingCustomer(
       customer,
       {
@@ -935,8 +1045,9 @@ export default function ProspectingPage() {
         stage: "has_need",
         current_next_action: "准备报价或确认详细需求",
         next_action: "准备报价或确认详细需求",
-        next_follow_up_at: new Date().toISOString(),
-        follow_up_date: new Date().toISOString().slice(0, 10)
+        next_follow_up_at: today.toISOString(),
+        follow_up_date: today.toISOString().slice(0, 10),
+        question: upsertQuestionMeta(customer.question, "最后动作", "已确认客户有需求")
       },
       "已标记为有需求。"
     );
@@ -951,10 +1062,11 @@ export default function ProspectingPage() {
         current_status: "已发资料",
         stage: "material_sent",
         email_status: "material_sent",
-        current_next_action: "询问是否收到资料，是否需要报价",
-        next_action: "询问是否收到资料，是否需要报价",
+        current_next_action: "2天后跟进是否收到资料",
+        next_action: "2天后跟进是否收到资料",
         next_follow_up_at: followUpAt.toISOString(),
-        follow_up_date: followUpAt.toISOString().slice(0, 10)
+        follow_up_date: followUpAt.toISOString().slice(0, 10),
+        question: upsertQuestionMeta(customer.question, "最后动作", "已发送产品资料")
       },
       "已标记为已发资料。"
     );
@@ -969,10 +1081,11 @@ export default function ProspectingPage() {
         current_status: "已报价",
         stage: "quoted",
         email_status: "quotation_sent",
-        current_next_action: "跟进报价反馈",
-        next_action: "跟进报价反馈",
+        current_next_action: "3天后跟进报价反馈",
+        next_action: "3天后跟进报价反馈",
         next_follow_up_at: followUpAt.toISOString(),
-        follow_up_date: followUpAt.toISOString().slice(0, 10)
+        follow_up_date: followUpAt.toISOString().slice(0, 10),
+        question: upsertQuestionMeta(customer.question, "最后动作", "已发送报价")
       },
       "已标记为已报价。"
     );
@@ -982,8 +1095,11 @@ export default function ProspectingPage() {
     const reason = window.prompt(`请选择或填写无效原因：\n${invalidReasonOptions.join(" / ")}`, customer.invalidReasonLabel === "未填写原因" ? "" : customer.invalidReasonLabel);
     if (reason === null) return;
     const trimmedReason = reason.trim() || "其他";
-    const existingQuestion = `${customer.question || ""}`.replace(/无效原因[:：]\s*[^\n]+/g, "").trim();
-    const nextQuestion = [existingQuestion, `无效原因：${trimmedReason}`].filter(Boolean).join("\n");
+    const nextQuestion = upsertQuestionMeta(
+      upsertQuestionMeta(customer.question, "无效原因", trimmedReason),
+      "最后动作",
+      "已标记为无效"
+    );
 
     await updateProspectingCustomer(
       customer,
@@ -1176,6 +1292,7 @@ export default function ProspectingPage() {
                     <th>来源渠道</th>
                     <th>当前阶段</th>
                     <th>下一步动作</th>
+                    <th>最后一次动作</th>
                     <th>无效原因</th>
                     <th>下次跟进日期</th>
                     <th>操作</th>
@@ -1191,6 +1308,14 @@ export default function ProspectingPage() {
                       <td>{customer.leadSourceLabel || "待补充"}</td>
                       <td>{customer.prospectingStage}</td>
                       <td className="truncate-cell">{customer.prospectingAction}</td>
+                      <td>
+                        <div style={{ display: "grid", gap: 4 }}>
+                          <span>{customer.lastActionRecord.content}</span>
+                          <span className="notice" style={{ margin: 0 }}>
+                            {customer.lastActionRecord.date || "暂无时间"}
+                          </span>
+                        </div>
+                      </td>
                       <td>{customer.prospectingStage === "无效" ? customer.invalidReasonLabel : "-"}</td>
                       <td>{formatDate(getFollowUpDate(customer))}</td>
                       <td>
