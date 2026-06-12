@@ -97,6 +97,19 @@ function SummaryCard({ title, count, subtitle }) {
   );
 }
 
+function formatDateOnly(value) {
+  if (!value) return "待安排";
+  const text = `${value}`.trim();
+  if (!text) return "待安排";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return text;
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function isArchivedCustomer(customer) {
   return customer?.current_status === "归档"
     || customer?.stage === "Archived"
@@ -123,6 +136,7 @@ export default function HomePage() {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [activeSummaryKey, setActiveSummaryKey] = useState("");
 
   useEffect(() => {
     if (!supabase) return;
@@ -166,43 +180,144 @@ export default function HomePage() {
 
   const tasks = useMemo(() => buildTaskRows(activeCustomers), [activeCustomers]);
 
-  const dashboardCards = useMemo(() => {
+  const taskCustomers = useMemo(() => {
+    return tasks.map((task) => {
+      const customer = activeCustomers.find((item) => item.id === task.id) || null;
+      return {
+        id: task.id,
+        customerName: task.customer_name,
+        customerType: getCustomerTypeLabel(getCustomerTypeValue(customer || task)),
+        currentStatus: getStageLabel(getStageValue(customer || task)),
+        nextAction: formatNextActionForDisplay(task.current_next_action || getNextAction(customer || task)),
+        followUpDate: formatDateOnly(task.next_follow_up_at || customer?.next_follow_up_at || customer?.follow_up_date)
+      };
+    });
+  }, [activeCustomers, tasks]);
+
+  const developingCustomers = useMemo(() => {
+    return activeCustomers
+      .filter((customer) => getProspectingLane(customer) === "待开发")
+      .map((customer) => ({
+        id: customer.id,
+        customerName: getCustomerName(customer),
+        customerType: getCustomerTypeLabel(getCustomerTypeValue(customer)),
+        currentStatus: getStageLabel(getStageValue(customer)),
+        nextAction: formatNextActionForDisplay(customer.current_next_action || getNextAction(customer)),
+        followUpDate: formatDateOnly(customer.next_follow_up_at || customer.follow_up_date)
+      }));
+  }, [activeCustomers]);
+
+  const highValueCustomers = useMemo(() => {
+    return activeCustomers
+      .filter((customer) => getLeadLevel(customer) === "A")
+      .map((customer) => ({
+        id: customer.id,
+        customerName: getCustomerName(customer),
+        customerType: getCustomerTypeLabel(getCustomerTypeValue(customer)),
+        currentStatus: getStageLabel(getStageValue(customer)),
+        nextAction: formatNextActionForDisplay(customer.current_next_action || getNextAction(customer)),
+        followUpDate: formatDateOnly(customer.next_follow_up_at || customer.follow_up_date)
+      }));
+  }, [activeCustomers]);
+
+  const quotedWaitingCustomers = useMemo(() => {
+    return activeCustomers
+      .filter((customer) => {
+        const stage = getStageValue(customer);
+        return stage === "Quoted" || stage === "Waiting Reply" || customer.current_status === "已报价未回复";
+      })
+      .map((customer) => ({
+        id: customer.id,
+        customerName: getCustomerName(customer),
+        customerType: getCustomerTypeLabel(getCustomerTypeValue(customer)),
+        currentStatus: getStageLabel(getStageValue(customer)),
+        nextAction: formatNextActionForDisplay(customer.current_next_action || getNextAction(customer)),
+        followUpDate: formatDateOnly(customer.next_follow_up_at || customer.follow_up_date)
+      }));
+  }, [activeCustomers]);
+
+  const partnerCandidateCustomers = useMemo(() => {
+    return activeCustomers
+      .filter((customer) => isPartnerCandidate(customer))
+      .map((customer) => ({
+        id: customer.id,
+        customerName: getCustomerName(customer),
+        customerType: getCustomerTypeLabel(getCustomerTypeValue(customer)),
+        currentStatus: getStageLabel(getStageValue(customer)),
+        nextAction: formatNextActionForDisplay(customer.current_next_action || getNextAction(customer)),
+        followUpDate: formatDateOnly(customer.next_follow_up_at || customer.follow_up_date)
+      }));
+  }, [activeCustomers]);
+
+  const consumerCandidateCustomers = useMemo(() => {
+    return activeCustomers
+      .filter((customer) => isConsumerCandidate(customer))
+      .map((customer) => ({
+        id: customer.id,
+        customerName: getCustomerName(customer),
+        customerType: getCustomerTypeLabel(getCustomerTypeValue(customer)),
+        currentStatus: getStageLabel(getStageValue(customer)),
+        nextAction: formatNextActionForDisplay(customer.current_next_action || getNextAction(customer)),
+        followUpDate: formatDateOnly(customer.next_follow_up_at || customer.follow_up_date)
+      }));
+  }, [activeCustomers]);
+
+  const summaryGroups = useMemo(() => {
     return [
       {
+        key: "today-follow-up",
         title: "今日待跟进",
-        count: tasks.length,
-        subtitle: "来自当前客户流程的实际动作"
+        subtitle: "来自当前客户流程的实际动作",
+        customers: taskCustomers
       },
       {
+        key: "today-develop",
         title: "今日待开发",
-        count: activeCustomers.filter((customer) => getProspectingLane(customer) === "待开发").length,
-        subtitle: "今天可以主动触达的客户"
+        subtitle: "今天可以主动触达的客户",
+        customers: developingCustomers
       },
       {
+        key: "high-value",
         title: "A级高价值客户",
-        count: activeCustomers.filter((customer) => getLeadLevel(customer) === "A").length,
-        subtitle: "需要优先处理和重点关注"
+        subtitle: "需要优先处理和重点关注",
+        customers: highValueCustomers
       },
       {
+        key: "quoted-waiting",
         title: "已报价待回复",
-        count: activeCustomers.filter((customer) => {
-          const stage = getStageValue(customer);
-          return stage === "Quoted" || stage === "Waiting Reply" || customer.current_status === "已报价未回复";
-        }).length,
-        subtitle: "报价已发出，等待客户反馈"
+        subtitle: "报价已发出，等待客户反馈",
+        customers: quotedWaitingCustomers
       },
       {
+        key: "partner-candidate",
         title: "合作商候选",
-        count: activeCustomers.filter((customer) => isPartnerCandidate(customer)).length,
-        subtitle: "重点看渠道、经销、贴牌机会"
+        subtitle: "重点看渠道、经销、贴牌机会",
+        customers: partnerCandidateCustomers
       },
       {
+        key: "consumer-candidate",
         title: "C端待筛选",
-        count: activeCustomers.filter((customer) => isConsumerCandidate(customer)).length,
-        subtitle: "终端用户或待判断客户"
+        subtitle: "终端用户或待判断客户",
+        customers: consumerCandidateCustomers
       }
     ];
-  }, [activeCustomers, tasks]);
+  }, [
+    taskCustomers,
+    developingCustomers,
+    highValueCustomers,
+    quotedWaitingCustomers,
+    partnerCandidateCustomers,
+    consumerCandidateCustomers
+  ]);
+
+  const dashboardCards = useMemo(() => {
+    return summaryGroups.map((group) => ({
+      key: group.key,
+      title: group.title,
+      count: group.customers.length,
+      subtitle: group.subtitle
+    }));
+  }, [summaryGroups]);
 
   const actionRows = useMemo(() => {
     return tasks.slice(0, 5).map((task) => {
@@ -219,6 +334,7 @@ export default function HomePage() {
   }, [activeCustomers, tasks]);
 
   const remainingTaskCount = Math.max(tasks.length - 5, 0);
+  const activeSummary = summaryGroups.find((group) => group.key === activeSummaryKey) || null;
 
   return (
     <main className="app">
@@ -244,7 +360,15 @@ export default function HomePage() {
             </div>
             <div className="task-grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
               {dashboardCards.map((card) => (
-                <SummaryCard key={card.title} title={card.title} count={card.count} subtitle={card.subtitle} />
+                <button
+                  key={card.key}
+                  type="button"
+                  onClick={() => setActiveSummaryKey(card.key)}
+                  style={{ all: "unset", cursor: "pointer", display: "block" }}
+                  aria-label={`查看${card.title}客户列表`}
+                >
+                  <SummaryCard title={card.title} count={card.count} subtitle={card.subtitle} />
+                </button>
               ))}
             </div>
           </section>
@@ -300,6 +424,53 @@ export default function HomePage() {
             )}
           </section>
         </>
+      )}
+
+      {session && activeSummary && (
+        <div className="modal-backdrop">
+          <div
+            className="modal wide-modal"
+            style={{ maxWidth: 860, width: "min(860px, calc(100vw - 32px))", maxHeight: "80vh", overflow: "auto" }}
+          >
+            <div className="section-title" style={{ marginBottom: 16 }}>
+              <h2>{activeSummary.title}</h2>
+              <button onClick={() => setActiveSummaryKey("")}>关闭</button>
+            </div>
+
+            {activeSummary.customers.length === 0 ? (
+              <p className="empty">暂无对应客户</p>
+            ) : (
+              <div className="table-wrap">
+                <table className="compact-table">
+                  <thead>
+                    <tr>
+                      <th>客户名</th>
+                      <th>客户类型</th>
+                      <th>当前状态</th>
+                      <th>下一步动作</th>
+                      <th>跟进日期</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeSummary.customers.map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.customerName}</td>
+                        <td>{item.customerType}</td>
+                        <td>{item.currentStatus}</td>
+                        <td className="truncate-cell">{item.nextAction}</td>
+                        <td>{item.followUpDate}</td>
+                        <td>
+                          <Link href={`/customers/${item.id}`}>进入处理</Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </main>
   );
