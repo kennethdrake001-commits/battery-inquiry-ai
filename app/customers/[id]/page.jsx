@@ -457,6 +457,38 @@ function getCompletenessItems(customer) {
   return missing.length > 0 ? missing : ["暂无明显缺失信息"];
 }
 
+function getJudgementReason(customer) {
+  const missingItems = getCompletenessItems(customer);
+  const stageText = normalizeText(customer?.stage || customer?.current_status || customer?.status);
+  const hasManyMissing = missingItems.length >= 3 && missingItems[0] !== "暂无明显缺失信息";
+  const infoComplete = missingItems[0] === "暂无明显缺失信息" || missingItems.length <= 1;
+  const quoted = includesAny(stageText, ["quoted", "已报价", "已发送报价", "waiting reply", "待客户回复"]);
+  const responded = includesAny(stageText, ["responded", "已回复", "有回应", "engaged", "customer replied"]);
+  const invalid = includesAny(stageText, ["无效", "归档", "archived", "invalid"]);
+
+  if (invalid) return "客户已标记无效或暂缓，当前推进价值较低";
+  if (quoted) return "客户已进入报价后阶段，存在成交机会";
+  if (responded) return "客户已回复，具备继续沟通价值";
+  if (hasManyMissing) return "来源明确，但客户身份和需求信息不足";
+  if (infoComplete && !quoted) return "客户身份和需求较明确，具备继续推进价值";
+  return "客户信息仍需进一步确认";
+}
+
+function getRiskFocusItems(customer) {
+  const missingItems = getCompletenessItems(customer);
+  const stageText = normalizeText(customer?.stage || customer?.current_status || customer?.status);
+  const quoted = includesAny(stageText, ["quoted", "已报价", "已发送报价", "waiting reply", "待客户回复"]);
+  const responded = includesAny(stageText, ["responded", "已回复", "有回应", "engaged", "customer replied"]);
+  const invalid = includesAny(stageText, ["无效", "归档", "archived", "invalid"]);
+  const infoComplete = missingItems[0] === "暂无明显缺失信息" || missingItems.length <= 1;
+
+  if (invalid) return ["无需继续投入时间", "除非客户重新回复"];
+  if (quoted) return ["价格接受度", "付款方式", "交期确认", "方案配置"];
+  if (responded) return ["客户问题是否已处理", "方案是否需要更新", "是否需要补充资料"];
+  if (infoComplete) return ["预算", "贸易条款", "交期要求", "认证要求"];
+  return missingItems;
+}
+
 function HistoryItem({ item, onSaveAsPlaybook }) {
   const canSaveAsPlaybook = playbookEligibleResults.includes(item.result_feedback);
 
@@ -1488,6 +1520,8 @@ export default function CustomerDetailPage() {
   const customerPriorityLabel = getCustomerPriorityLabel(customerScore.total);
   const customerScoreReasons = getCustomerScoreReasons(customer || {});
   const completenessItems = getCompletenessItems(customer || {});
+  const judgementReason = getJudgementReason(customer || {});
+  const riskFocusItems = getRiskFocusItems(customer || {});
   const showLeadNewButtons = !archivedCustomer && leadProgressCustomer && leadProgressStage === "new_lead";
   const showLeadContactedButtons = !archivedCustomer && leadProgressCustomer && leadProgressStage === "contacted";
   const showLeadRespondedButtons = !archivedCustomer && leadProgressCustomer && leadProgressStage === "responded";
@@ -1530,7 +1564,7 @@ export default function CustomerDetailPage() {
         >
           <div style={{ display: "flex", flexDirection: "column", gap: 10, height: "100%" }}>
             <div className="section-title" style={{ marginBottom: 0 }}>
-              <h2 style={{ fontSize: 22, fontWeight: 700, color: "#0f172a" }}>客户评分</h2>
+              <h2 style={{ fontSize: 22, fontWeight: 700, color: "#0f172a" }}>客户判断</h2>
             </div>
             <div style={{ borderRadius: 18, background: "#eff6ff", border: "1px solid #dbeafe", padding: 14, height: "100%" }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
@@ -1540,13 +1574,13 @@ export default function CustomerDetailPage() {
               <div style={{ fontSize: 18, fontWeight: 700, color: "#2563eb", marginBottom: 4 }}>{customerGrade}</div>
               <div style={{ color: "#475569", fontSize: 14, marginBottom: 10 }}>{customerPriorityLabel}</div>
               <div style={{ color: "#334155", fontSize: 12, lineHeight: 1.6, marginBottom: 10 }}>
-                <strong style={{ display: "block", marginBottom: 3, fontSize: 13, fontWeight: 600, color: "#475569" }}>主要原因</strong>
-                <div>{customerScoreReasons.map((reason) => reason.replace(/^.*?：/, "").replace(/，.*/, "")).slice(0, 3).join("、")}</div>
+                <strong style={{ display: "block", marginBottom: 3, fontSize: 13, fontWeight: 600, color: "#475569" }}>判断依据</strong>
+                <div>{judgementReason}</div>
               </div>
               <div style={{ color: "#334155", fontSize: 12, lineHeight: 1.6 }}>
-                <strong style={{ display: "block", marginBottom: 3, fontSize: 13, fontWeight: 600, color: "#475569" }}>关键缺失</strong>
+                <strong style={{ display: "block", marginBottom: 3, fontSize: 13, fontWeight: 600, color: "#475569" }}>风险 / 关注点</strong>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {completenessItems.map((item) => (
+                  {riskFocusItems.map((item) => (
                     <span
                       key={item}
                       style={{
@@ -1606,16 +1640,6 @@ export default function CustomerDetailPage() {
               >
                 {blockerText}
               </p>
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "center", padding: "2px 2px 0" }}>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                <span style={{ color: "#64748b", fontSize: 13, fontWeight: 600 }}>当前阶段</span>
-                <span style={{ color: "#0f172a", fontSize: 14, fontWeight: 600, lineHeight: 1.35 }}>{displayStage || displayStatus || "待判断"}</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                <span style={{ color: "#64748b", fontSize: 13, fontWeight: 600 }}>下次跟进</span>
-                <span style={{ color: "#0f172a", fontSize: 14, fontWeight: 600, lineHeight: 1.35 }}>{followUpDateDisplay}</span>
-              </div>
             </div>
             {archivedCustomer && (
               <div className="notice-panel">
