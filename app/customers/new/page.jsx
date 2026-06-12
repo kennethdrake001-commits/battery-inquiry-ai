@@ -86,7 +86,6 @@ function AuthPanel({ session, onSessionChange }) {
   if (session) {
     return (
       <div className="auth-card">
-        <span>已登录：{session.user.email}</span>
         <button onClick={signOut}>退出登录</button>
       </div>
     );

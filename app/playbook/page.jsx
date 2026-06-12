@@ -94,7 +94,6 @@ export default function PlaybookPage() {
         </nav>
       </header>
 
-      {session ? <div className="auth-card">已登录：{session.user.email}</div> : <div className="auth-card">请先回到客户录入页登录邮箱账号。</div>}
       {loading && <section className="panel">加载有效案例中...</section>}
       {error && <div className="error">{error}</div>}
 

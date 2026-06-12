@@ -24,11 +24,6 @@ import {
   isLeadProgressCustomer
 } from "../../lib/leadProgress";
 
-function AuthNotice({ session }) {
-  if (session) return <div className="auth-card">已登录：{session.user.email}</div>;
-  return <div className="auth-card">请先回到工作台登录邮箱账号。</div>;
-}
-
 const emptyFilters = {
   customerScope: "全部客户",
   keyword: "",
@@ -357,8 +352,6 @@ export default function CustomersPage() {
         </div>
         <AppNav />
       </header>
-
-      <AuthNotice session={session} />
 
       {loading && <section className="panel">加载客户中...</section>}
       {error && <div className="error">{error}</div>}

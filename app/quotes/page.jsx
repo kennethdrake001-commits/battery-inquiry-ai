@@ -7,11 +7,6 @@ import { getSupabaseBrowserClient } from "../../lib/supabaseClient";
 import { formatDateTime } from "../../lib/followUp";
 import { getQuoteStatus } from "../../lib/customerViews";
 
-function AuthNotice({ session }) {
-  if (session) return <div className="auth-card">已登录：{session.user.email}</div>;
-  return <div className="auth-card">请先回到工作台登录邮箱账号。</div>;
-}
-
 export default function QuotesPage() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [session, setSession] = useState(null);
@@ -63,7 +58,6 @@ export default function QuotesPage() {
         <AppNav />
       </header>
 
-      <AuthNotice session={session} />
       {loading && <section className="panel">加载报价中...</section>}
       {error && <div className="error">{error}</div>}
 

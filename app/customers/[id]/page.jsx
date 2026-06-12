@@ -1350,7 +1350,6 @@ export default function CustomerDetailPage() {
         <AppNav />
       </header>
 
-      {session ? <div className="auth-card">已登录：{session.user.email}</div> : <div className="auth-card">请先登录。</div>}
       {error && <div className="error">{error}</div>}
       {success && <div className="success">{success}</div>}
 

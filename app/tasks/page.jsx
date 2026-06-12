@@ -9,11 +9,6 @@ import { formatDateTime } from "../../lib/followUp";
 import { formatNextActionForDisplay } from "../../lib/displayText";
 import { getTaskPriority } from "../../lib/customerViews";
 
-function AuthNotice({ session }) {
-  if (session) return <div className="auth-card">已登录：{session.user.email}</div>;
-  return <div className="auth-card">请先回到工作台登录邮箱账号。</div>;
-}
-
 function getTaskTab(task) {
   if (!task.next_follow_up_at) return "today";
   const now = new Date();
@@ -106,8 +101,6 @@ export default function TasksPage() {
         </div>
         <AppNav />
       </header>
-
-      <AuthNotice session={session} />
 
       {loading && <section className="panel">加载任务中...</section>}
       {error && <div className="error">{error}</div>}
