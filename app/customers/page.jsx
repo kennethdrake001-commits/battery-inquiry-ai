@@ -93,7 +93,11 @@ export default function CustomersPage() {
     country: "",
     customer_type: "Unknown",
     lead_source: "Google Maps",
-    contact_link: "",
+    website: "",
+    linkedin: "",
+    facebook: "",
+    whatsapp: "",
+    email: "",
     note: ""
   });
   const [loading, setLoading] = useState(true);
@@ -267,25 +271,43 @@ export default function CustomersPage() {
 
     const now = new Date().toISOString();
     const note = prospectForm.note.trim();
-    const contactLink = prospectForm.contact_link.trim();
     const leadSource = prospectForm.lead_source || "Google Maps";
+    const website = prospectForm.website.trim();
+    const linkedin = prospectForm.linkedin.trim();
+    const facebook = prospectForm.facebook.trim();
+    const whatsapp = prospectForm.whatsapp.trim();
+    const email = prospectForm.email.trim();
     const payload = {
       user_id: session.user.id,
       customer_name: customerName,
+      company_name: customerName,
       country: prospectForm.country.trim() || null,
       customer_type: prospectForm.customer_type || "Unknown",
       source: "主动开发",
       customer_source: "主动开发",
+      lead_source: leadSource,
+      website: website || null,
+      linkedin: linkedin || null,
+      facebook: facebook || null,
+      whatsapp: whatsapp || null,
+      email: email || null,
       stage: "Prospecting",
       current_status: "新线索",
       current_next_action: "判断是否值得触达",
       next_action: "判断是否值得触达",
       lead_level: "C",
+      notes: note || null,
+      note: note || null,
+      internal_note: note || null,
       question: note || null,
       original_message: [
         "客户来源：主动开发",
         `线索渠道：${leadSource}`,
-        contactLink ? `联系方式/主页：${contactLink}` : "",
+        website ? `官网：${website}` : "",
+        linkedin ? `LinkedIn：${linkedin}` : "",
+        facebook ? `Facebook：${facebook}` : "",
+        whatsapp ? `WhatsApp：${whatsapp}` : "",
+        email ? `邮箱：${email}` : "",
         note ? `备注：${note}` : ""
       ].filter(Boolean).join("\n"),
       updated_at: now
@@ -304,7 +326,11 @@ export default function CustomersPage() {
       country: "",
       customer_type: "Unknown",
       lead_source: "Google Maps",
-      contact_link: "",
+      website: "",
+      linkedin: "",
+      facebook: "",
+      whatsapp: "",
+      email: "",
       note: ""
     });
     setShowProspectModal(false);
@@ -614,9 +640,20 @@ export default function CustomersPage() {
                 type="button"
                 onClick={() => setShowProspectModal(false)}
                 aria-label="关闭弹窗"
-                style={{ minWidth: 44, paddingInline: 14 }}
+                style={{
+                  minWidth: 44,
+                  width: 44,
+                  height: 44,
+                  padding: 0,
+                  borderRadius: 999,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 24,
+                  lineHeight: 1
+                }}
               >
-                关闭
+                ×
               </button>
             </div>
             <div className="form-grid">
@@ -659,12 +696,44 @@ export default function CustomersPage() {
                   <option value="Other">其他</option>
                 </select>
               </label>
-              <label className="field field-span-2">
-                <span>联系方式 / 主页链接</span>
+              <label className="field">
+                <span>官网</span>
                 <input
-                  value={prospectForm.contact_link}
-                  onChange={(event) => updateProspectForm("contact_link", event.target.value)}
-                  placeholder="可填写官网、LinkedIn、FB、WhatsApp 或邮箱"
+                  value={prospectForm.website}
+                  onChange={(event) => updateProspectForm("website", event.target.value)}
+                  placeholder="输入公司官网，例如 https://example.com"
+                />
+              </label>
+              <label className="field">
+                <span>LinkedIn</span>
+                <input
+                  value={prospectForm.linkedin}
+                  onChange={(event) => updateProspectForm("linkedin", event.target.value)}
+                  placeholder="输入 LinkedIn 公司页或个人链接"
+                />
+              </label>
+              <label className="field">
+                <span>Facebook</span>
+                <input
+                  value={prospectForm.facebook}
+                  onChange={(event) => updateProspectForm("facebook", event.target.value)}
+                  placeholder="输入 Facebook 主页链接"
+                />
+              </label>
+              <label className="field">
+                <span>WhatsApp</span>
+                <input
+                  value={prospectForm.whatsapp}
+                  onChange={(event) => updateProspectForm("whatsapp", event.target.value)}
+                  placeholder="输入 WhatsApp 号码"
+                />
+              </label>
+              <label className="field">
+                <span>邮箱</span>
+                <input
+                  value={prospectForm.email}
+                  onChange={(event) => updateProspectForm("email", event.target.value)}
+                  placeholder="输入客户邮箱"
                 />
               </label>
               <label className="field field-span-2">
@@ -677,9 +746,9 @@ export default function CustomersPage() {
                 />
               </label>
             </div>
-            <div className="actions compact" style={{ justifyContent: "flex-end", marginTop: 16 }}>
+            <div className="actions compact" style={{ justifyContent: "flex-end", marginTop: 24, gap: 14, paddingTop: 8 }}>
               <button type="button" onClick={() => setShowProspectModal(false)}>取消</button>
-              <button className="primary" type="button" onClick={saveProspectCustomer} disabled={isSavingProspect}>
+              <button className="primary" type="button" onClick={saveProspectCustomer} disabled={isSavingProspect} style={{ minWidth: 168 }}>
                 {isSavingProspect ? "保存中..." : "保存主动开发客户"}
               </button>
             </div>
