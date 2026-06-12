@@ -184,7 +184,9 @@ export default function HomePage() {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [activeSummaryKey, setActiveSummaryKey] = useState("");
+  const [actionLoading, setActionLoading] = useState({});
 
   useEffect(() => {
     if (!supabase) return;
@@ -195,32 +197,160 @@ export default function HomePage() {
     return () => listener.subscription.unsubscribe();
   }, [supabase]);
 
-  useEffect(() => {
-    async function loadCustomers() {
-      if (!supabase || !session) {
-        setCustomers([]);
-        setLoading(false);
-        return;
-      }
+  async function loadCustomers(options = {}) {
+    const { silent = false } = options;
 
-      setLoading(true);
-      const { data: rows, error: queryError } = await supabase
-        .from("customers")
-        .select("*")
-        .order("updated_at", { ascending: false });
-
-      if (queryError) {
-        setCustomers([]);
-        setError(queryError.message);
-      } else {
-        setCustomers(rows || []);
-        setError("");
-      }
+    if (!supabase || !session) {
+      setCustomers([]);
       setLoading(false);
+      return;
     }
 
+    if (!silent) {
+      setLoading(true);
+    }
+
+    const { data: rows, error: queryError } = await supabase
+      .from("customers")
+      .select("*")
+      .order("updated_at", { ascending: false });
+
+    if (queryError) {
+      setCustomers([]);
+      setError(queryError.message);
+    } else {
+      setCustomers(rows || []);
+      setError("");
+    }
+
+    if (!silent) {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
     loadCustomers();
   }, [supabase, session]);
+
+  async function insertInteraction(payload) {
+    return supabase.from("interactions").insert(payload);
+  }
+
+  async function handleQuickAction(customerId, actionType) {
+    if (!customerId) {
+      setError("客户 ID 缺失，无法更新");
+      return;
+    }
+
+    if (!supabase || !session?.user) {
+      setError("请先登录后再处理客户");
+      return;
+    }
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const actionKey = `${customerId}:${actionType}`;
+    let customerUpdate = null;
+    let interactionPayload = null;
+    let successMessage = "";
+
+    if (actionType === "material-sent") {
+      const followUp = new Date(now);
+      followUp.setDate(followUp.getDate() + 3);
+      customerUpdate = {
+        last_contacted_at: nowIso,
+        current_status: "待客户回复",
+        stage: "Waiting Reply",
+        current_next_action: "等待客户回复，必要时再次跟进",
+        next_action: "等待客户回复，必要时再次跟进",
+        next_follow_up_at: followUp.toISOString(),
+        follow_up_date: formatDateOnly(followUp.toISOString()),
+        updated_at: nowIso
+      };
+      interactionPayload = {
+        customer_id: customerId,
+        interaction_status: "已发资料",
+        operator_note: "已发送资料，等待客户回复",
+        created_at: nowIso
+      };
+      successMessage = "已标记为已发资料，客户状态已更新。";
+    }
+
+    if (actionType === "quoted") {
+      const followUp = new Date(now);
+      followUp.setDate(followUp.getDate() + 2);
+      customerUpdate = {
+        last_quote_at: nowIso,
+        current_status: "已报价",
+        stage: "Quoted",
+        current_next_action: "报价已发送，2天后跟进客户反馈",
+        next_action: "报价已发送，2天后跟进客户反馈",
+        next_follow_up_at: followUp.toISOString(),
+        follow_up_date: formatDateOnly(followUp.toISOString()),
+        updated_at: nowIso
+      };
+      interactionPayload = {
+        customer_id: customerId,
+        interaction_status: "已报价",
+        operator_note: "已在工作台标记报价已发送，等待客户反馈",
+        created_at: nowIso
+      };
+      successMessage = "已标记为已报价，2天后会继续跟进。";
+    }
+
+    if (actionType === "archive") {
+      const confirmed = window.confirm("确认将该客户标记为无效并归档吗？");
+      if (!confirmed) return;
+
+      customerUpdate = {
+        current_status: "已归档",
+        stage: "Archived",
+        current_next_action: "已归档，无需继续跟进",
+        next_action: "已归档，无需继续跟进",
+        updated_at: nowIso
+      };
+      interactionPayload = {
+        customer_id: customerId,
+        interaction_status: "已归档",
+        operator_note: "在工作台标记为无效客户",
+        created_at: nowIso
+      };
+      successMessage = "客户已归档。";
+    }
+
+    if (!customerUpdate || !interactionPayload) {
+      setError("未识别的快捷动作");
+      return;
+    }
+
+    setActionLoading((current) => ({ ...current, [actionKey]: true }));
+    setError("");
+    setNotice("");
+
+    const { error: customerError } = await supabase
+      .from("customers")
+      .update(customerUpdate)
+      .eq("id", customerId);
+
+    if (customerError) {
+      setActionLoading((current) => ({ ...current, [actionKey]: false }));
+      setError(customerError.message);
+      return;
+    }
+
+    const { error: interactionError } = await insertInteraction(interactionPayload);
+
+    await loadCustomers({ silent: true });
+    setActionLoading((current) => ({ ...current, [actionKey]: false }));
+
+    if (interactionError) {
+      setNotice(successMessage);
+      setError(`客户状态已更新，但跟进记录写入失败：${interactionError.message}`);
+      return;
+    }
+
+    setNotice(successMessage);
+  }
 
   const visibleCustomers = useMemo(() => {
     return customers.filter((customer) => !isArchivedCustomer(customer));
@@ -381,6 +511,7 @@ export default function HomePage() {
       <AuthPanel session={session} onSessionChange={setSession} />
 
       {error && <div className="error">{error}</div>}
+      {notice && <div className="success">{notice}</div>}
 
       {session && (
         <>
@@ -584,14 +715,32 @@ export default function HomePage() {
                           <div><strong>跟进日期：</strong>{item.followUpDate}</div>
                         </div>
                       </div>
-                      <div className="actions compact" style={{ justifyContent: "flex-end", flex: "0 1 auto" }}>
-                        <Link className="primary" href={`/customers/${item.id}`}>进入处理</Link>
-                        <Link href={`/customers/${item.id}`}>设置跟进</Link>
-                        <Link href={`/customers/${item.id}`}>标记已发资料</Link>
-                        <Link href={`/customers/${item.id}`}>标记已报价</Link>
-                        <Link href={`/customers/${item.id}`}>标记无效</Link>
+                        <div className="actions compact" style={{ justifyContent: "flex-end", flex: "0 1 auto" }}>
+                          <Link className="primary" href={`/customers/${item.id}`}>进入处理</Link>
+                          <Link href={`/customers/${item.id}`}>设置跟进</Link>
+                          <button
+                            type="button"
+                            onClick={() => handleQuickAction(item.id, "material-sent")}
+                            disabled={actionLoading[`${item.id}:material-sent`]}
+                          >
+                            {actionLoading[`${item.id}:material-sent`] ? "处理中..." : "标记已发资料"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleQuickAction(item.id, "quoted")}
+                            disabled={actionLoading[`${item.id}:quoted`]}
+                          >
+                            {actionLoading[`${item.id}:quoted`] ? "处理中..." : "标记已报价"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleQuickAction(item.id, "archive")}
+                            disabled={actionLoading[`${item.id}:archive`]}
+                          >
+                            {actionLoading[`${item.id}:archive`] ? "处理中..." : "标记无效"}
+                          </button>
+                        </div>
                       </div>
-                    </div>
                   </article>
                 ))}
               </div>
