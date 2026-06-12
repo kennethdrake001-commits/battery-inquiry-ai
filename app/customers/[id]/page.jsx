@@ -1514,63 +1514,81 @@ export default function CustomerDetailPage() {
 
       <section
         style={{
-          marginBottom: 20
+          marginBottom: 12
         }}
       >
         <article
           className="panel"
           style={{
             borderRadius: 24,
-            padding: 24,
+            padding: 18,
             display: "grid",
-            gridTemplateColumns: "minmax(220px, 0.28fr) minmax(320px, 0.42fr) minmax(240px, 0.3fr)",
-            gap: 20,
-            alignItems: "start"
+            gridTemplateColumns: "minmax(220px, 0.26fr) minmax(340px, 0.44fr) minmax(240px, 0.3fr)",
+            gap: 16,
+            alignItems: "start",
+            border: "1px solid #e2e8f0",
+            boxShadow: "0 8px 24px rgba(15, 23, 42, 0.04)"
           }}
         >
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div className="section-title" style={{ marginBottom: 0 }}>
               <h2>客户评分</h2>
             </div>
-            <div style={{ borderRadius: 18, background: "#eff6ff", border: "1px solid #dbeafe", padding: 18 }}>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
-                <strong style={{ fontSize: 28, lineHeight: 1, color: "#0f172a" }}>{customerScore.total}</strong>
+            <div style={{ borderRadius: 18, background: "#eff6ff", border: "1px solid #dbeafe", padding: 16 }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
+                <strong style={{ fontSize: 26, lineHeight: 1, color: "#0f172a" }}>{customerScore.total}</strong>
                 <span style={{ color: "#475569", fontSize: 14 }}>/ 100</span>
               </div>
-              <div style={{ fontWeight: 700, color: "#1d4ed8", marginBottom: 6 }}>{customerGrade}</div>
-              <div style={{ color: "#475569", fontSize: 14, marginBottom: 12 }}>{customerPriorityLabel}</div>
-              <div style={{ color: "#334155", fontSize: 13, lineHeight: 1.7, marginBottom: 12 }}>
-                <strong style={{ display: "block", marginBottom: 4 }}>主要原因</strong>
+              <div style={{ fontWeight: 700, color: "#2563eb", marginBottom: 4 }}>{customerGrade}</div>
+              <div style={{ color: "#475569", fontSize: 13, marginBottom: 10 }}>{customerPriorityLabel}</div>
+              <div style={{ color: "#334155", fontSize: 12, lineHeight: 1.6, marginBottom: 10 }}>
+                <strong style={{ display: "block", marginBottom: 3 }}>主要原因</strong>
                 <div>{customerScoreReasons.map((reason) => reason.replace(/^.*?：/, "").replace(/，.*/, "")).slice(0, 3).join("、")}</div>
               </div>
-              <div style={{ color: "#334155", fontSize: 13, lineHeight: 1.7 }}>
-                <strong style={{ display: "block", marginBottom: 4 }}>关键缺失</strong>
-                <div>{completenessItems.join("、")}</div>
+              <div style={{ color: "#334155", fontSize: 12, lineHeight: 1.6 }}>
+                <strong style={{ display: "block", marginBottom: 3 }}>关键缺失</strong>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {completenessItems.map((item) => (
+                    <span
+                      key={item}
+                      style={{
+                        fontSize: 12,
+                        color: "#334155",
+                        background: "#ffffff",
+                        border: "1px solid #dbeafe",
+                        borderRadius: 999,
+                        padding: "3px 8px"
+                      }}
+                    >
+                      {item}
+                    </span>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div className="section-title" style={{ marginBottom: 0 }}>
               <h2>当前推进</h2>
             </div>
-            <div className="detail-grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
-              <div className="detail-item" style={{ background: "#f8fbff", borderRadius: 18, padding: 18, border: "1px solid #dbeafe" }}>
+            <div className="detail-grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+              <div className="detail-item" style={{ background: "#f8fbff", borderRadius: 16, padding: 14, border: "1px solid #dbeafe" }}>
                 <strong style={{ color: "#64748b", fontSize: 13 }}>当前阶段</strong>
-                <p style={{ fontSize: 18, fontWeight: 600 }}><span className="soft-badge">{displayStage || displayStatus || "待判断"}</span></p>
+                <p style={{ fontSize: 17, fontWeight: 600, marginTop: 4 }}><span className="soft-badge">{displayStage || displayStatus || "待判断"}</span></p>
               </div>
-              <div className="detail-item" style={{ background: "#f8fbff", borderRadius: 18, padding: 18, border: "1px solid #dbeafe" }}>
+              <div className="detail-item" style={{ background: "#f8fbff", borderRadius: 16, padding: 14, border: "1px solid #dbeafe" }}>
                 <strong style={{ color: "#64748b", fontSize: 13 }}>下一步动作</strong>
-                <p style={{ fontSize: 16, fontWeight: 600 }}>{localizedPersistedAction}</p>
+                <p style={{ fontSize: 15, fontWeight: 600, marginTop: 4 }}>{localizedPersistedAction}</p>
               </div>
-              <div className="detail-item" style={{ background: "#f8fbff", borderRadius: 18, padding: 18, border: "1px solid #dbeafe" }}>
+              <div className="detail-item" style={{ background: "#f8fbff", borderRadius: 16, padding: 14, border: "1px solid #dbeafe" }}>
                 <strong style={{ color: "#64748b", fontSize: 13 }}>下次跟进</strong>
-                <p style={{ fontSize: 16, fontWeight: 600 }}>{followUpDateDisplay}</p>
+                <p style={{ fontSize: 15, fontWeight: 600, marginTop: 4 }}>{followUpDateDisplay}</p>
               </div>
             </div>
-            <div className="detail-item" style={{ borderRadius: 16, background: "#fff7ed", padding: 14, border: "1px solid #fed7aa" }}>
+            <div className="detail-item" style={{ borderRadius: 16, background: "#fff7ed", padding: 12, border: "1px solid #fed7aa" }}>
               <strong style={{ color: "#9a3412", fontSize: 13 }}>当前卡点</strong>
-              <p>{blockerText}</p>
+              <p style={{ marginTop: 4, fontSize: 14, lineHeight: 1.5 }}>{blockerText}</p>
             </div>
             {archivedCustomer && (
               <div className="notice-panel">
@@ -1580,38 +1598,60 @@ export default function CustomerDetailPage() {
             )}
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div className="section-title" style={{ marginBottom: 0 }}>
               <h2>下一步操作</h2>
             </div>
             {!archivedCustomer ? (
               <>
-                <div style={{ borderRadius: 18, border: "1px solid #e2e8f0", background: "#f8fafc", padding: 16 }}>
-                  <div style={{ color: "#475569", fontSize: 13, fontWeight: 600, marginBottom: 10 }}>决策操作</div>
-                  <div className="actions" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-                    <button onClick={generateWorkflowRecommendation} disabled={isSaving}>生成下一步建议</button>
-                    <button className="primary" onClick={saveWorkflow} disabled={isSaving}>保存客户流程</button>
+                <div style={{ borderRadius: 16, border: "1px solid #e2e8f0", background: "#f8fafc", padding: 14 }}>
+                  <div style={{ color: "#475569", fontSize: 13, fontWeight: 600, marginBottom: 8 }}>决策操作</div>
+                  <div className="actions" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <button style={{ padding: "10px 12px", background: "#fff", border: "1px solid #dbe5f1", color: "#1e293b" }} onClick={generateWorkflowRecommendation} disabled={isSaving}>生成下一步建议</button>
+                    <button className="primary" style={{ padding: "10px 12px" }} onClick={saveWorkflow} disabled={isSaving}>保存客户流程</button>
                   </div>
                 </div>
-                <div style={{ borderRadius: 18, border: "1px solid #e2e8f0", background: "#fff", padding: 16 }}>
-                  <div style={{ color: "#475569", fontSize: 13, fontWeight: 600, marginBottom: 10 }}>跟进操作</div>
-                  <div className="actions" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+                <div style={{ borderRadius: 16, border: "1px solid #e2e8f0", background: "#fff", padding: 14 }}>
+                  <div style={{ color: "#475569", fontSize: 13, fontWeight: 600, marginBottom: 8 }}>跟进操作</div>
+                  <div className="actions" style={{ display: "grid", gap: 8 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      <input
+                        type="date"
+                        value={scheduleFollowUpDate}
+                        onChange={(event) => setScheduleFollowUpDate(event.target.value)}
+                        style={{ minWidth: 0, padding: "10px 12px", borderRadius: 10, border: "1px solid #dbe5f1", background: "#fff" }}
+                      />
+                      <button style={{ padding: "10px 12px", background: "#f8fafc", border: "1px solid #dbe5f1", color: "#1e293b" }} onClick={scheduleNextFollowUp} disabled={isSaving}>设置下次跟进</button>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      {(showLeadNewButtons || showLeadContactedButtons || showLeadRespondedButtons) ? (
+                        <>
+                          {showLeadNewButtons && <button style={{ padding: "10px 12px", background: "#f8fafc", border: "1px solid #dbe5f1", color: "#1e293b" }} onClick={markLeadContacted} disabled={isSaving}>标记已触达</button>}
+                          {showLeadContactedButtons && <button style={{ padding: "10px 12px", background: "#f8fafc", border: "1px solid #dbe5f1", color: "#1e293b" }} onClick={markLeadResponded} disabled={isSaving}>标记有回应</button>}
+                          {showLeadRespondedButtons && <button style={{ padding: "10px 12px", background: "#f8fafc", border: "1px solid #dbe5f1", color: "#1e293b" }} onClick={markHasNeed} disabled={isSaving}>标记有需求</button>}
+                        </>
+                      ) : (
+                        <>
+                          <div />
+                          <button style={{ padding: "10px 12px", background: "#fff", border: "1px solid #e5e7eb", color: "#64748b" }} onClick={markInvalidLead} disabled={isSaving}>标记无效</button>
+                        </>
+                      )}
+                    </div>
                     <input
-                      type="date"
-                      value={scheduleFollowUpDate}
-                      onChange={(event) => setScheduleFollowUpDate(event.target.value)}
+                      hidden
+                      readOnly
                     />
-                    <button onClick={scheduleNextFollowUp} disabled={isSaving}>设置下次跟进</button>
-                    {showLeadNewButtons && <button onClick={markLeadContacted} disabled={isSaving}>标记已触达</button>}
-                    {showLeadContactedButtons && <button onClick={markLeadResponded} disabled={isSaving}>标记有回应</button>}
-                    {showLeadRespondedButtons && <button onClick={markHasNeed} disabled={isSaving}>标记有需求</button>}
                     {showSalesProgressButtons && (
-                      <>
-                        <button onClick={markMaterialSent} disabled={isSaving}>已发送产品资料</button>
-                        <button onClick={markQuoteSent} disabled={isSaving}>已发送报价</button>
-                      </>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                        <button style={{ padding: "10px 12px", background: "#f8fafc", border: "1px solid #dbe5f1", color: "#1e293b" }} onClick={markMaterialSent} disabled={isSaving}>已发送产品资料</button>
+                        <button style={{ padding: "10px 12px", background: "#f8fafc", border: "1px solid #dbe5f1", color: "#1e293b" }} onClick={markQuoteSent} disabled={isSaving}>已发送报价</button>
+                      </div>
                     )}
-                    <button onClick={markInvalidLead} disabled={isSaving}>标记无效</button>
+                    {(showLeadNewButtons || showLeadContactedButtons || showLeadRespondedButtons || showSalesProgressButtons) && (
+                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                        <button style={{ padding: "10px 12px", background: "#fff", border: "1px solid #e5e7eb", color: "#64748b" }} onClick={markInvalidLead} disabled={isSaving}>标记无效</button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </>
@@ -1625,7 +1665,7 @@ export default function CustomerDetailPage() {
         </article>
       </section>
 
-      <section className="panel">
+      <section className="panel" style={{ marginTop: 0 }}>
         <div className="tabs">
           <button
             className={activeTab === "overview" ? "primary" : ""}
