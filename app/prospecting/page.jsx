@@ -877,6 +877,12 @@ export default function ProspectingPage() {
       return;
     }
 
+    if (!customer?.id) {
+      console.error("删除目标客户失败: 缺少客户 id", customer);
+      setError("删除失败，请稍后重试。");
+      return;
+    }
+
     const confirmed = window.confirm(
       "确认删除目标客户？\n\n删除后该目标客户将从目标客户池移除，无法在当前列表继续推进。\n如果只是暂时不开发，建议使用“标记无效”。"
     );
@@ -888,12 +894,14 @@ export default function ProspectingPage() {
       .eq("id", customer.id);
 
     if (deleteError) {
+      console.error("Delete prospect failed:", deleteError);
+      console.error("删除目标客户失败:", deleteError);
       setError("删除失败，请稍后重试。");
       return;
     }
 
     await loadCustomers();
-    setNotice("目标客户已删除。");
+    setNotice("删除成功");
   }
 
   async function markFirstEmailSent(customer) {
