@@ -1,16 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import AppNav from "../../../components/layout/AppNav";
 import CustomerWorkflowCard from "../../../components/workflow/CustomerWorkflowCard";
-import RecommendedScriptCard from "../../../components/workflow/RecommendedScriptCard";
 import { getSupabaseBrowserClient } from "../../../lib/supabaseClient";
 import { dateToFollowUpAt, formatDateTime, parseFollowUpTime } from "../../../lib/followUp";
 import { formatNextActionForDisplay } from "../../../lib/displayText";
 import { generateCustomerWorkflow } from "../../../lib/customerWorkflow";
-import { getRecommendedScript } from "../../../lib/scriptTemplates";
 import {
   getCustomerTypeLabel,
   getCustomerTypeValue,
@@ -140,6 +138,35 @@ const emptyWorkflowForm = {
   followUpDate: ""
 };
 
+const emptyProfileForm = {
+  contact_name: "",
+  email: "",
+  whatsapp: "",
+  website: "",
+  linkedin: "",
+  facebook: "",
+  city: "",
+  business_scope: "",
+  does_installation: "待确认",
+  sells_battery: "待确认",
+  sells_inverter: "待确认",
+  import_experience: "待确认",
+  customs_capability: "待补充"
+};
+
+const emptyDemandForm = {
+  target_capacity: "",
+  quantity: "",
+  application_scenario: "",
+  inverter_brand: "",
+  is_oem: "否 / 待确认",
+  shipping_term: "待确认",
+  destination_city: "",
+  destination_country: "",
+  recommended_product: "",
+  product_note: ""
+};
+
 function addDays(dateLike, days) {
   const date = dateLike ? new Date(dateLike) : new Date();
   if (Number.isNaN(date.getTime())) {
@@ -208,6 +235,39 @@ function shouldShowWaitingReplyActions(customer) {
   const status = customer?.current_status || "";
   return ["Waiting Reply", "待客户回复"].includes(stage)
     || ["Waiting Reply", "待客户回复"].includes(status);
+}
+
+function buildProfileForm(customer) {
+  return {
+    contact_name: customer?.contact_name || "",
+    email: customer?.email || "",
+    whatsapp: customer?.whatsapp || "",
+    website: customer?.website || "",
+    linkedin: customer?.linkedin || "",
+    facebook: customer?.facebook || "",
+    city: customer?.city || customer?.destination_city || "",
+    business_scope: customer?.business_scope || customer?.main_business || "",
+    does_installation: customer?.does_installation || "待确认",
+    sells_battery: customer?.sells_battery || "待确认",
+    sells_inverter: customer?.sells_inverter || "待确认",
+    import_experience: customer?.import_experience || customer?.has_import_experience || "待确认",
+    customs_capability: customer?.customs_capability || customer?.customs_clearance_ability || "待补充"
+  };
+}
+
+function buildDemandForm(customer) {
+  return {
+    target_capacity: customer?.target_capacity || "",
+    quantity: customer?.quantity || "",
+    application_scenario: customer?.application_scenario || customer?.application_scene || "",
+    inverter_brand: customer?.inverter_brand || "",
+    is_oem: customer?.is_oem || "否 / 待确认",
+    shipping_term: customer?.shipping_term || "待确认",
+    destination_city: customer?.destination_city || "",
+    destination_country: customer?.destination_country || customer?.country || "",
+    recommended_product: customer?.recommended_product || "",
+    product_note: customer?.product_note || ""
+  };
 }
 
 function HistoryItem({ item, onSaveAsPlaybook }) {
@@ -309,22 +369,13 @@ export default function CustomerDetailPage() {
   const [success, setSuccess] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
   const [scheduleFollowUpDate, setScheduleFollowUpDate] = useState("");
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [isEditingDemand, setIsEditingDemand] = useState(false);
+  const [profileForm, setProfileForm] = useState(emptyProfileForm);
+  const [demandForm, setDemandForm] = useState(emptyDemandForm);
+  const quoteSectionRef = useRef(null);
 
   const customerId = params?.id;
-  const recommendedScript = useMemo(() => {
-    if (!customer) return getRecommendedScript({});
-    return getRecommendedScript({
-      nextAction: workflowForm.nextAction,
-      currentNextAction: customer.current_next_action,
-      customerType: workflowForm.customerType,
-      stage: workflowForm.stage,
-      missingInfo: workflowForm.missingInfo,
-      shippingTerm: workflowForm.shippingTerm,
-      quantity: workflowForm.quantity,
-      destinationCity: workflowForm.destinationCity,
-      customerName: customer.customer_name
-    });
-  }, [customer, workflowForm]);
 
   async function loadData() {
     if (!customerId) {
@@ -379,6 +430,8 @@ export default function CustomerDetailPage() {
         missingInfo: customerRow.missing_info || "",
         followUpDate: customerRow.follow_up_date || ""
       });
+      setProfileForm(buildProfileForm(customerRow));
+      setDemandForm(buildDemandForm(customerRow));
       setInteractions(historyRows || []);
     }
 
@@ -621,6 +674,14 @@ export default function CustomerDetailPage() {
     setWorkflowForm((current) => ({ ...current, [field]: value }));
   }
 
+  function updateProfileForm(field, value) {
+    setProfileForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateDemandForm(field, value) {
+    setDemandForm((current) => ({ ...current, [field]: value }));
+  }
+
   function generateWorkflowRecommendation() {
     if (!customer) return;
     const recommendation = generateCustomerWorkflow({
@@ -681,6 +742,128 @@ export default function CustomerDetailPage() {
 
     setSuccess("客户流程已保存。");
     await loadData();
+  }
+
+  async function updateCustomerWithExistingFields(payload) {
+    let remainingPayload = { ...payload };
+    const strippedFields = [];
+
+    while (true) {
+      const { error: updateError } = await supabase
+        .from("customers")
+        .update(remainingPayload)
+        .eq("id", customer.id);
+
+      if (!updateError) {
+        return { error: null, strippedFields };
+      }
+
+      const match = updateError.message?.match(/Could not find the '([^']+)' column/);
+      if (match?.[1] && Object.prototype.hasOwnProperty.call(remainingPayload, match[1])) {
+        strippedFields.push(match[1]);
+        delete remainingPayload[match[1]];
+        continue;
+      }
+
+      return { error: updateError, strippedFields };
+    }
+  }
+
+  async function saveProfile() {
+    if (!customer || !session?.user) {
+      setError("请先登录后再保存客户资料。");
+      setSuccess("");
+      return;
+    }
+
+    setError("");
+    setSuccess("");
+    setIsSaving(true);
+
+    const payload = {
+      contact_name: profileForm.contact_name || null,
+      email: profileForm.email || null,
+      whatsapp: profileForm.whatsapp || null,
+      website: profileForm.website || null,
+      linkedin: profileForm.linkedin || null,
+      facebook: profileForm.facebook || null,
+      city: profileForm.city || null,
+      business_scope: profileForm.business_scope || null,
+      does_installation: profileForm.does_installation || null,
+      sells_battery: profileForm.sells_battery || null,
+      sells_inverter: profileForm.sells_inverter || null,
+      import_experience: profileForm.import_experience || null,
+      customs_capability: profileForm.customs_capability || null,
+      updated_at: new Date().toISOString()
+    };
+
+    const { error: updateError } = await updateCustomerWithExistingFields(payload);
+    setIsSaving(false);
+
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+
+    setIsEditingProfile(false);
+    setSuccess("客户资料已保存");
+    await loadData();
+  }
+
+  function cancelProfileEdit() {
+    setProfileForm(buildProfileForm(customer));
+    setIsEditingProfile(false);
+    setError("");
+  }
+
+  async function saveDemand() {
+    if (!customer || !session?.user) {
+      setError("请先登录后再保存客户需求。");
+      setSuccess("");
+      return;
+    }
+
+    setError("");
+    setSuccess("");
+    setIsSaving(true);
+
+    const payload = {
+      target_capacity: demandForm.target_capacity || null,
+      quantity: demandForm.quantity || null,
+      application_scenario: demandForm.application_scenario || null,
+      inverter_brand: demandForm.inverter_brand || null,
+      is_oem: demandForm.is_oem || null,
+      shipping_term: demandForm.shipping_term === "待确认" ? null : demandForm.shipping_term,
+      destination_city: demandForm.destination_city || null,
+      destination_country: demandForm.destination_country || null,
+      recommended_product: demandForm.recommended_product || null,
+      product_note: demandForm.product_note || null,
+      updated_at: new Date().toISOString()
+    };
+
+    const { error: updateError } = await updateCustomerWithExistingFields(payload);
+    setIsSaving(false);
+
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+
+    setWorkflowForm((current) => ({
+      ...current,
+      quantity: demandForm.quantity || "",
+      destinationCity: demandForm.destination_city || "",
+      shippingTerm: demandForm.shipping_term === "待确认" ? "Unknown" : demandForm.shipping_term
+    }));
+    setIsEditingDemand(false);
+    setSuccess("客户需求已保存");
+    await loadData();
+  }
+
+  function cancelDemandEdit() {
+    setDemandForm(buildDemandForm(customer));
+    setIsEditingDemand(false);
+    setError("");
   }
 
   async function saveProgressAction({
@@ -897,13 +1080,6 @@ export default function CustomerDetailPage() {
   const showQuotedActions = shouldShowQuotedActions(customer || {});
   const showNewInquiryActions = shouldShowNewInquiryActions(customer || {});
   const showWaitingReplyActions = shouldShowWaitingReplyActions(customer || {});
-  const suggestedMaterials = [
-    currentType.includes("安装商") ? "电池规格书、安装照片、兼容性说明" : null,
-    currentType.includes("经销") ? "产品目录、主推型号、渠道供货说明" : null,
-    currentType.includes("终端") ? "简单方案说明、应用场景图、英文回复话术" : null,
-    "产品规格书",
-    "英文跟进话术"
-  ].filter(Boolean);
 
   return (
     <main className="app">
@@ -939,18 +1115,6 @@ export default function CustomerDetailPage() {
         ) : (
           <>
             <div className="actions" style={{ marginTop: 16, flexWrap: "wrap" }}>
-              {(showNewInquiryActions || (!showQuotedActions && !showWaitingReplyActions)) && (
-                <button
-                  className="primary"
-                  onClick={() => {
-                    setActiveTab("materials");
-                    setSuccess("已切换到资料与话术，可继续复制推荐英文话术。");
-                    setError("");
-                  }}
-                >
-                  生成跟进话术
-                </button>
-              )}
               {(showQuotedActions || showNewInquiryActions || (!showWaitingReplyActions && !archivedCustomer)) && (
                 <button onClick={markFollowedUp} disabled={isSaving}>标记已跟进</button>
               )}
@@ -1011,15 +1175,6 @@ export default function CustomerDetailPage() {
           >
             跟进记录
           </button>
-          <button
-            className={activeTab === "materials" ? "primary" : ""}
-            style={activeTab === "materials"
-              ? { border: "1px solid #155eef", color: "#155eef", background: "#eff6ff", fontWeight: 700 }
-              : { border: "1px solid #dbe5f1", color: "#1d2433", background: "#f8fafc" }}
-            onClick={() => setActiveTab("materials")}
-          >
-            资料与话术
-          </button>
         </div>
       </section>
 
@@ -1064,22 +1219,70 @@ export default function CustomerDetailPage() {
           <div className="section-title">
             <h2>客户资料</h2>
             <span>基础信息统一放这里，避免列表页过载</span>
+            <div className="actions compact">
+              {isEditingProfile ? (
+                <>
+                  <button className="primary" onClick={saveProfile} disabled={isSaving}>保存资料</button>
+                  <button onClick={cancelProfileEdit} disabled={isSaving}>取消</button>
+                </>
+              ) : (
+                <button onClick={() => setIsEditingProfile(true)}>编辑资料</button>
+              )}
+            </div>
           </div>
-          <div className="detail-grid">
-            <div className="detail-item"><strong>联系人</strong><p>{customer?.contact_name || "待补充"}</p></div>
-            <div className="detail-item"><strong>邮箱</strong><p>{customer?.email || "待补充"}</p></div>
-            <div className="detail-item"><strong>WhatsApp</strong><p>{customer?.whatsapp || "待补充"}</p></div>
-            <div className="detail-item"><strong>官网</strong><p>{customer?.website || "待补充"}</p></div>
-            <div className="detail-item"><strong>LinkedIn</strong><p>{customer?.linkedin || "待补充"}</p></div>
-            <div className="detail-item"><strong>Facebook</strong><p>{customer?.facebook || "待补充"}</p></div>
-            <div className="detail-item"><strong>城市</strong><p>{customer?.destination_city || customer?.city || "待补充"}</p></div>
-            <div className="detail-item"><strong>主营业务</strong><p>{customer?.business_scope || "待补充"}</p></div>
-            <div className="detail-item"><strong>是否做安装</strong><p>{currentType.includes("安装商") ? "是" : "待确认"}</p></div>
-            <div className="detail-item"><strong>是否卖电池</strong><p>{["太阳能经销商", "电池批发商", "OEM / 品牌方"].includes(currentType) ? "是" : "待确认"}</p></div>
-            <div className="detail-item"><strong>是否卖逆变器</strong><p>{currentType.includes("逆变器经销商") ? "是" : "待确认"}</p></div>
-            <div className="detail-item"><strong>是否有进口经验</strong><p>{customer?.import_experience || "待补充"}</p></div>
-            <div className="detail-item"><strong>清关能力</strong><p>{customer?.customs_capability || "待补充"}</p></div>
-          </div>
+          {isEditingProfile ? (
+            <div className="form-grid">
+              <Field label="联系人"><input value={profileForm.contact_name} onChange={(event) => updateProfileForm("contact_name", event.target.value)} /></Field>
+              <Field label="邮箱"><input value={profileForm.email} onChange={(event) => updateProfileForm("email", event.target.value)} /></Field>
+              <Field label="WhatsApp"><input value={profileForm.whatsapp} onChange={(event) => updateProfileForm("whatsapp", event.target.value)} /></Field>
+              <Field label="官网"><input value={profileForm.website} onChange={(event) => updateProfileForm("website", event.target.value)} /></Field>
+              <Field label="LinkedIn"><input value={profileForm.linkedin} onChange={(event) => updateProfileForm("linkedin", event.target.value)} /></Field>
+              <Field label="Facebook"><input value={profileForm.facebook} onChange={(event) => updateProfileForm("facebook", event.target.value)} /></Field>
+              <Field label="城市"><input value={profileForm.city} onChange={(event) => updateProfileForm("city", event.target.value)} /></Field>
+              <Field label="主营业务"><textarea rows={3} value={profileForm.business_scope} onChange={(event) => updateProfileForm("business_scope", event.target.value)} /></Field>
+              <Field label="是否做安装">
+                <select value={profileForm.does_installation} onChange={(event) => updateProfileForm("does_installation", event.target.value)}>
+                  {["待确认", "是", "否"].map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </Field>
+              <Field label="是否卖电池">
+                <select value={profileForm.sells_battery} onChange={(event) => updateProfileForm("sells_battery", event.target.value)}>
+                  {["待确认", "是", "否"].map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </Field>
+              <Field label="是否卖逆变器">
+                <select value={profileForm.sells_inverter} onChange={(event) => updateProfileForm("sells_inverter", event.target.value)}>
+                  {["待确认", "是", "否"].map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </Field>
+              <Field label="是否有进口经验">
+                <select value={profileForm.import_experience} onChange={(event) => updateProfileForm("import_experience", event.target.value)}>
+                  {["待确认", "是", "否"].map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </Field>
+              <Field label="清关能力">
+                <select value={profileForm.customs_capability} onChange={(event) => updateProfileForm("customs_capability", event.target.value)}>
+                  {["待补充", "有清关能力", "需要我们协助", "不确定"].map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </Field>
+            </div>
+          ) : (
+            <div className="detail-grid">
+              <div className="detail-item"><strong>联系人</strong><p>{profileForm.contact_name || "待补充"}</p></div>
+              <div className="detail-item"><strong>邮箱</strong><p>{profileForm.email || "待补充"}</p></div>
+              <div className="detail-item"><strong>WhatsApp</strong><p>{profileForm.whatsapp || "待补充"}</p></div>
+              <div className="detail-item"><strong>官网</strong><p>{profileForm.website || "待补充"}</p></div>
+              <div className="detail-item"><strong>LinkedIn</strong><p>{profileForm.linkedin || "待补充"}</p></div>
+              <div className="detail-item"><strong>Facebook</strong><p>{profileForm.facebook || "待补充"}</p></div>
+              <div className="detail-item"><strong>城市</strong><p>{profileForm.city || "待补充"}</p></div>
+              <div className="detail-item"><strong>主营业务</strong><p>{profileForm.business_scope || "待补充"}</p></div>
+              <div className="detail-item"><strong>是否做安装</strong><p>{profileForm.does_installation || "待确认"}</p></div>
+              <div className="detail-item"><strong>是否卖电池</strong><p>{profileForm.sells_battery || "待确认"}</p></div>
+              <div className="detail-item"><strong>是否卖逆变器</strong><p>{profileForm.sells_inverter || "待确认"}</p></div>
+              <div className="detail-item"><strong>是否有进口经验</strong><p>{profileForm.import_experience || "待确认"}</p></div>
+              <div className="detail-item"><strong>清关能力</strong><p>{profileForm.customs_capability || "待补充"}</p></div>
+            </div>
+          )}
         </section>
       )}
 
@@ -1089,20 +1292,66 @@ export default function CustomerDetailPage() {
             <div className="section-title">
               <h2>需求与产品</h2>
               <span>把需求、推荐产品和报价入口放在一起看</span>
+              <div className="actions compact">
+                {isEditingDemand ? (
+                  <>
+                    <button className="primary" onClick={saveDemand} disabled={isSaving}>保存需求</button>
+                    <button onClick={cancelDemandEdit} disabled={isSaving}>取消</button>
+                  </>
+                ) : (
+                  <button onClick={() => setIsEditingDemand(true)}>编辑需求</button>
+                )}
+              </div>
             </div>
-            <div className="detail-grid">
-              <div className="detail-item"><strong>目标容量</strong><p>{customer?.target_capacity || customer?.latest_analysis?.capacitySuggestion || "待确认"}</p></div>
-              <div className="detail-item"><strong>数量</strong><p>{workflowForm.quantity || customer?.quantity || "待确认"}</p></div>
-              <div className="detail-item"><strong>应用场景</strong><p>{customer?.application_scenario || customer?.question || "待确认"}</p></div>
-              <div className="detail-item"><strong>逆变器品牌</strong><p>{customer?.inverter_brand || "待确认"}</p></div>
-              <div className="detail-item"><strong>是否 OEM</strong><p>{getCustomerTypeValue(customer || {}) === "OEM / Brand Owner" ? "是" : "否 / 待确认"}</p></div>
-              <div className="detail-item"><strong>贸易条款</strong><p>{workflowForm.shippingTerm || customer?.shipping_term || "待确认"}</p></div>
-              <div className="detail-item"><strong>推荐产品</strong><p>{customer?.recommended_product || customer?.quote_content || "待补充"}</p></div>
-              <div className="detail-item"><strong>报价记录入口</strong><p>下方可直接新增和查看报价版本</p></div>
+            {isEditingDemand ? (
+              <div className="form-grid">
+                <Field label="目标容量"><input value={demandForm.target_capacity} onChange={(event) => updateDemandForm("target_capacity", event.target.value)} /></Field>
+                <Field label="数量"><input value={demandForm.quantity} onChange={(event) => updateDemandForm("quantity", event.target.value)} /></Field>
+                <Field label="应用场景"><input value={demandForm.application_scenario} onChange={(event) => updateDemandForm("application_scenario", event.target.value)} /></Field>
+                <Field label="逆变器品牌"><input value={demandForm.inverter_brand} onChange={(event) => updateDemandForm("inverter_brand", event.target.value)} /></Field>
+                <Field label="是否 OEM">
+                  <select value={demandForm.is_oem} onChange={(event) => updateDemandForm("is_oem", event.target.value)}>
+                    {["否 / 待确认", "是", "否"].map((item) => <option key={item}>{item}</option>)}
+                  </select>
+                </Field>
+                <Field label="贸易条款">
+                  <select value={demandForm.shipping_term} onChange={(event) => updateDemandForm("shipping_term", event.target.value)}>
+                    {["FOB", "CIF", "DDP", "EXW", "待确认"].map((item) => <option key={item}>{item}</option>)}
+                  </select>
+                </Field>
+                <Field label="目的地城市"><input value={demandForm.destination_city} onChange={(event) => updateDemandForm("destination_city", event.target.value)} /></Field>
+                <Field label="目的国家"><input value={demandForm.destination_country} onChange={(event) => updateDemandForm("destination_country", event.target.value)} /></Field>
+                <Field label="推荐产品"><input value={demandForm.recommended_product} onChange={(event) => updateDemandForm("recommended_product", event.target.value)} /></Field>
+                <Field label="产品备注或推荐原因"><textarea rows={4} value={demandForm.product_note} onChange={(event) => updateDemandForm("product_note", event.target.value)} /></Field>
+              </div>
+            ) : (
+              <div className="detail-grid">
+                <div className="detail-item"><strong>目标容量</strong><p>{demandForm.target_capacity || customer?.latest_analysis?.capacitySuggestion || "待确认"}</p></div>
+                <div className="detail-item"><strong>数量</strong><p>{demandForm.quantity || "待确认"}</p></div>
+                <div className="detail-item"><strong>应用场景</strong><p>{demandForm.application_scenario || customer?.question || "待确认"}</p></div>
+                <div className="detail-item"><strong>逆变器品牌</strong><p>{demandForm.inverter_brand || "待确认"}</p></div>
+                <div className="detail-item"><strong>是否 OEM</strong><p>{demandForm.is_oem || "否 / 待确认"}</p></div>
+                <div className="detail-item"><strong>贸易条款</strong><p>{demandForm.shipping_term || "待确认"}</p></div>
+                <div className="detail-item"><strong>目的地城市</strong><p>{demandForm.destination_city || "待补充"}</p></div>
+                <div className="detail-item"><strong>目的国家</strong><p>{demandForm.destination_country || "待补充"}</p></div>
+                <div className="detail-item"><strong>推荐产品</strong><p>{demandForm.recommended_product || customer?.quote_content || "待补充"}</p></div>
+                <div className="detail-item"><strong>产品备注或推荐原因</strong><p>{demandForm.product_note || "待补充"}</p></div>
+              </div>
+            )}
+            <div className="actions" style={{ marginTop: 16 }}>
+              <button
+                className="primary"
+                onClick={() => quoteSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+              >
+                新增报价
+              </button>
+              <button onClick={() => quoteSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+                查看报价记录
+              </button>
             </div>
           </section>
 
-          <section className="panel">
+          <section className="panel" ref={quoteSectionRef}>
             <div className="section-title">
               <h2>报价记录</h2>
               <span>{quotes.length} 个报价版本</span>
@@ -1223,38 +1472,6 @@ export default function CustomerDetailPage() {
               ))}
             </div>
             {interactions.length === 0 && <p className="empty">暂无历史记录</p>}
-          </section>
-        </>
-      )}
-
-      {activeTab === "materials" && (
-        <>
-          <section className="panel">
-            <div className="section-title">
-              <h2>资料与话术</h2>
-              <span>把可发给客户的内容统一收在一起</span>
-            </div>
-            <div className="detail-grid">
-              <div className="detail-item">
-                <strong>已发送资料</strong>
-                <p>{customer?.sent_materials || "暂未记录"}</p>
-              </div>
-              <div className="detail-item">
-                <strong>推荐资料</strong>
-                <p>{suggestedMaterials.join(" / ")}</p>
-              </div>
-            </div>
-          </section>
-          <section className="panel">
-            <div className="section-title">
-              <h2>推荐英文话术</h2>
-              <span>可直接复制发送给客户</span>
-            </div>
-            <RecommendedScriptCard
-              scriptTitle={recommendedScript.scriptTitle}
-              scriptText={recommendedScript.scriptText}
-              scriptType={recommendedScript.scriptType}
-            />
           </section>
         </>
       )}
