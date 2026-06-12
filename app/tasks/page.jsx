@@ -24,6 +24,14 @@ function getTaskTab(task) {
 function getTaskReasonLabel(reason = "") {
   const text = `${reason}`.trim();
   if (!text) return "根据当前推进建议执行";
+  if (text === "客户已回复待处理") return "客户已回复待处理";
+  if (text === "已报价待跟进") return "已报价待跟进";
+  if (text === "已发资料待跟进") return "已发资料待跟进";
+  if (text === "今日需跟进") return "今日需跟进";
+  if (text === "超期未跟进") return "超期未跟进";
+  if (text === "主动开发待推进") return "主动开发待推进";
+  if (text === "新询盘待处理") return "新询盘待处理";
+  if (text === "待报价") return "待报价";
   if (text.includes("新询盘") && text.includes("2")) return "新询盘超过 2 小时未处理";
   if (text.includes("报价") && text.includes("回复")) return "报价后未回复";
   if (text.includes("待补") || text.includes("缺少")) return "待补信息";

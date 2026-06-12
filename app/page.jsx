@@ -5,7 +5,16 @@ import Link from "next/link";
 import AppNav from "../components/layout/AppNav";
 import { getSupabaseBrowserClient } from "../lib/supabaseClient";
 import { buildTaskRows } from "../lib/taskWorkflow";
-import { formatNextActionForDisplay } from "../lib/displayText";
+import {
+  formatNextActionForDisplay,
+  getCustomerNextAction,
+  getCustomerQueueCategory,
+  isCustomerReplyPending as isCustomerReplyPendingShared,
+  isInvalidOrArchivedCustomer,
+  isProspectingCustomer as isProspectingCustomerShared,
+  isQuotedCustomer,
+  isSentInfoCustomer
+} from "../lib/displayText";
 import {
   getCustomerName,
   getCustomerTypeLabel,
@@ -151,10 +160,7 @@ function isWonCustomer(customer = {}) {
 }
 
 function isInvalidCustomer(customer = {}) {
-  const stage = `${customer.stage || ""}`.trim();
-  const status = `${customer.current_status || ""}`.trim();
-  return ["Archived", "归档", "invalid", "无效", "Closed Lost", "丢单", "已丢单", "lost"].includes(stage)
-    || ["归档", "无效", "不合适", "丢单", "已丢单", "invalid", "lost"].includes(status);
+  return isInvalidOrArchivedCustomer(customer);
 }
 
 function needsProgress(customer = {}) {
@@ -162,46 +168,17 @@ function needsProgress(customer = {}) {
 }
 
 function isQuotedWaitingReplyCustomer(customer = {}) {
-  const stage = `${customer.stage || ""}`.trim();
-  const status = `${customer.current_status || ""}`.trim();
   if (!needsProgress(customer)) return false;
-  return [
-    "Quoted",
-    "Waiting Reply",
-    "已报价",
-    "已报价未回复",
-    "报价后待跟进"
-  ].includes(stage) || [
-    "已报价",
-    "已报价未回复",
-    "报价后待跟进",
-    "待客户回复"
-  ].includes(status);
+  return isQuotedCustomer(customer);
 }
 
 function isCustomerReplyPending(customer = {}) {
-  const stage = `${customer.stage || ""}`.trim();
-  const status = `${customer.current_status || ""}`.trim();
   if (!needsProgress(customer)) return false;
-  return [
-    "Customer Replied",
-    "Responded",
-    "engaged",
-    "有回应",
-    "已回复",
-    "客户已回复"
-  ].includes(stage) || [
-    "有回应",
-    "已回复",
-    "客户已回复"
-  ].includes(status);
+  return isCustomerReplyPendingShared(customer);
 }
 
 function isProspectingCustomer(customer = {}) {
-  return customer?.source === "主动开发"
-    || customer?.customer_source === "主动开发"
-    || customer?.stage === "Prospecting"
-    || customer?.current_status === "Prospecting";
+  return isProspectingCustomerShared(customer);
 }
 
 function isHighPriorityCustomer(customer = {}) {
@@ -236,55 +213,21 @@ function normalizeText(value) {
   return `${value || ""}`.trim().toLowerCase();
 }
 
-function hasQuotedStatus(customer = {}) {
-  const stage = normalizeText(customer.stage);
-  const status = normalizeText(customer.current_status || customer.status);
-  return [
-    "quoted",
-    "已报价",
-    "已发送报价",
-    "报价后待跟进",
-    "quoted waiting reply"
-  ].includes(stage) || [
-    "已报价",
-    "已发送报价",
-    "报价后待跟进",
-    "已报价未回复"
-  ].includes(status);
-}
-
-function hasSentInfoStatus(customer = {}) {
-  const stage = normalizeText(customer.stage);
-  const status = normalizeText(customer.current_status || customer.status);
-  return [
-    "sent info",
-    "material_sent",
-    "material sent",
-    "已发资料",
-    "已发送资料"
-  ].includes(stage) || [
-    "已发资料",
-    "已发送资料",
-    "sent info"
-  ].includes(status);
-}
-
 function isNewLeadCustomer(customer = {}) {
+  if (isProspectingCustomer(customer)) return false;
   const stage = normalizeText(customer.stage);
   const status = normalizeText(customer.current_status || customer.status);
   return [
     "new",
     "new inquiry",
     "new_lead",
-    "prospecting",
     "待判断",
     "新线索",
     "新询盘"
   ].includes(stage) || [
     "新线索",
     "待判断",
-    "新询盘",
-    "prospecting"
+    "新询盘"
   ].includes(status);
 }
 
@@ -311,64 +254,34 @@ function getFollowUpDateLabel(customer = {}, task = null, today = new Date()) {
 }
 
 function getNextActionText(customer = {}, task = null, today = new Date()) {
-  if (isFollowUpOverdue(customer, today)) {
-    return "立即补跟进，确认客户当前采购进度";
-  }
-  if (isCustomerReplyPending(customer)) {
-    return "查看客户回复内容，确认下一步沟通方向";
-  }
-  if (hasQuotedStatus(customer) || task?.task_reason?.includes("报价")) {
-    return "跟进报价反馈，确认客户是否接受价格和方案";
-  }
-  if (hasSentInfoStatus(customer)) {
-    return "跟进资料阅读情况，确认客户是否需要报价";
-  }
-  if (isDueForFollowUp(customer, today)) {
-    return "按计划跟进客户，推进到下一阶段";
-  }
-  if (isNewLeadCustomer(customer)) {
-    return "补充客户需求信息，判断是否值得推进";
-  }
-  if (isHighPriorityCustomer(customer)) {
-    return "优先查看客户情况，确认是否需要今天主动推进";
-  }
-  if (isProspectingCustomer(customer)) {
-    return "判断客户是否值得继续触达，安排下一次开发动作";
-  }
-
-  const fallback = formatNextActionForDisplay(
-    customer.current_next_action || customer.next_action || task?.current_next_action || getNextAction(customer)
-  );
-  if (!fallback || fallback === "暂无动作" || fallback === "需要人工判断下一步动作") {
-    return "补充客户信息，判断下一步推进动作";
-  }
-  return fallback;
+  return getCustomerNextAction(customer || task || {});
 }
 
 function getReminderReason(customer = {}, task = null, today = new Date()) {
-  if (isFollowUpOverdue(customer, today)) {
-    return "跟进时间已超期，避免客户流失或被同行抢走";
-  }
-  if (isCustomerReplyPending(customer)) {
+  const queueCategory = getCustomerQueueCategory(customer || task || {}, today);
+  if (queueCategory === "reply_pending") {
     return "客户已经回复，需要尽快处理，避免错过成交窗口";
   }
-  if (hasQuotedStatus(customer) || task?.task_reason?.includes("报价")) {
-    return "客户已收到报价，需要跟进预算、交期、付款方式和疑问点";
+  if (queueCategory === "quoted_follow_up") {
+    return "客户已收到报价，需要跟进价格、交期、付款方式和疑问点";
   }
-  if (hasSentInfoStatus(customer)) {
+  if (queueCategory === "sent_info_follow_up") {
     return "资料已发送，需要推动客户从了解产品进入报价阶段";
   }
-  if (isDueForFollowUp(customer, today)) {
+  if (queueCategory === "overdue_follow_up") {
+    return "跟进时间已超期，避免客户流失或被同行抢走";
+  }
+  if (queueCategory === "today_follow_up") {
     return "今天是计划跟进日期，需要完成本次跟进动作";
   }
-  if (isNewLeadCustomer(customer)) {
+  if (queueCategory === "new_inquiry") {
     return "新客户还未完成需求判断，需要确认采购身份、国家、容量需求和应用场景";
+  }
+  if (queueCategory === "prospecting") {
+    return "主动开发客户需要先确认是否匹配目标买家，再完成第一次触达";
   }
   if (isHighPriorityCustomer(customer)) {
     return "该客户被标记为重点客户，即使没有明确跟进日期也需要优先关注";
-  }
-  if (isProspectingCustomer(customer)) {
-    return "主动开发客户需要持续推进，避免停留在名单阶段";
   }
   return "当前客户信息不足，需要先完善需求、来源和阶段判断";
 }
@@ -586,10 +499,10 @@ export default function HomePage() {
 
   const summaryGroups = useMemo(() => {
     const progressCustomers = visibleCustomers.filter((customer) => needsProgress(customer));
-    const todayFollowUpCustomers = progressCustomers.filter((customer) => isDueForFollowUp(customer));
-    const overdueCustomers = progressCustomers.filter((customer) => isFollowUpOverdue(customer));
-    const quotedFollowUpCustomers = progressCustomers.filter((customer) => isQuotedWaitingReplyCustomer(customer));
-    const repliedPendingCustomers = progressCustomers.filter((customer) => isCustomerReplyPending(customer));
+    const todayFollowUpCustomers = progressCustomers.filter((customer) => getCustomerQueueCategory(customer) === "today_follow_up");
+    const overdueCustomers = progressCustomers.filter((customer) => getCustomerQueueCategory(customer) === "overdue_follow_up");
+    const quotedFollowUpCustomers = progressCustomers.filter((customer) => getCustomerQueueCategory(customer) === "quoted_follow_up");
+    const repliedPendingCustomers = progressCustomers.filter((customer) => getCustomerQueueCategory(customer) === "reply_pending");
 
     return [
       {
@@ -638,7 +551,7 @@ export default function HomePage() {
   }, [visibleCustomers]);
   const prospectingRows = useMemo(() => {
     return mapSummaryCustomers(
-      visibleCustomers.filter((customer) => isProspectingCustomer(customer) && needsProgress(customer))
+      visibleCustomers.filter((customer) => getCustomerQueueCategory(customer) === "prospecting")
     ).slice(0, 5);
   }, [visibleCustomers]);
   const summaryCards = useMemo(() => {

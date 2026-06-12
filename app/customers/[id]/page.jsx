@@ -6,7 +6,16 @@ import { useParams } from "next/navigation";
 import AppNav from "../../../components/layout/AppNav";
 import { getSupabaseBrowserClient } from "../../../lib/supabaseClient";
 import { dateToFollowUpAt, formatDateTime, parseFollowUpTime } from "../../../lib/followUp";
-import { formatNextActionForDisplay } from "../../../lib/displayText";
+import {
+  formatNextActionForDisplay,
+  getCustomerNextAction,
+  getCustomerQueueCategory,
+  isCustomerReplyPending as isCustomerReplyPendingShared,
+  isInvalidOrArchivedCustomer,
+  isProspectingCustomer as isProspectingCustomerShared,
+  isQuotedCustomer,
+  isSentInfoCustomer
+} from "../../../lib/displayText";
 import { generateCustomerWorkflow } from "../../../lib/customerWorkflow";
 import {
   getCustomerTypeLabel,
@@ -172,52 +181,33 @@ function toDateText(dateLike) {
 }
 
 function isArchivedCustomer(customer) {
-  return customer?.current_status === "归档"
-    || customer?.stage === "Archived"
-    || customer?.stage === "归档";
+  return isInvalidOrArchivedCustomer(customer);
 }
 
 function getCurrentBlockerText(customer) {
-  const stage = customer?.stage || "";
-  const status = customer?.current_status || "";
-  const leadStage = getLeadProgressStageValue(customer);
+  const queueCategory = getCustomerQueueCategory(customer);
+  if (queueCategory === "hidden") return "客户已归档，无需继续推进";
+  if (queueCategory === "reply_pending") return "客户已有回复，需要尽快判断问题类型并继续推进";
+  if (queueCategory === "quoted_follow_up") return "报价已发出，但客户尚未明确反馈";
+  if (queueCategory === "sent_info_follow_up") return "资料已发送，需要确认客户是否收到以及是否进入报价阶段";
+  if (queueCategory === "need_quotation") return "客户已有明确需求，需要补齐报价前关键信息";
+  if (queueCategory === "prospecting") return "客户尚未回复，需要先验证是否有电池采购需求";
 
-  if (isArchivedCustomer(customer)) return "客户已归档，无需继续推进";
-  if (leadStage === "new_lead") return "这是新线索，需要先判断客户价值和触达方式";
-  if (leadStage === "contacted") return "客户已触达，等待通过、回复或下一轮跟进";
-  if (leadStage === "engaged") return "客户已有互动，建议继续破冰并确认业务方向";
-  if (leadStage === "has_need") return "客户已有明确需求，建议补充规格并准备报价";
-  if (leadStage === "material_sent") return "资料已发送，需要确认是否收到以及是否需要报价";
-  if (leadStage === "quoted") return "报价已发出，建议按计划跟进反馈";
-  if (leadStage === "follow_up") return "客户正在跟进中，需要持续推进下一步";
-  if (leadStage === "won") return "客户已进入成交阶段，继续按成交流程推进";
-  if (leadStage === "lost" || leadStage === "invalid") return "当前线索已结束，不需要继续推进";
-  if (stage === "Prospecting" || status === "Prospecting" || customer?.source === "主动开发") {
-    return "这是获客推进客户，需要按多渠道节奏持续推进";
+  const hasCountry = Boolean(`${customer?.country || customer?.destination_country || ""}`.trim());
+  const typeValue = `${customer?.customer_type || customer?.customerType || ""}`.trim();
+  const hasCustomerType = Boolean(typeValue) && typeValue !== "Unknown";
+  const hasNeed = Boolean(`${customer?.product_need || customer?.productNeed || customer?.target_capacity || customer?.recommended_product || ""}`.trim());
+  const hasQuantity = Boolean(`${customer?.quantity || ""}`.trim());
+  const hasScenario = Boolean(`${customer?.application_scenario || customer?.application_scene || ""}`.trim());
+
+  if (!hasCountry || !hasCustomerType || !hasNeed || !hasQuantity || !hasScenario) {
+    return "客户需求信息不完整，暂不适合直接报价";
   }
-  if (["新询盘", "New Inquiry"].includes(stage) || ["新询盘", "New Inquiry"].includes(status)) {
-    return "需要先判断客户类型和需求";
-  }
-  if (["待补信息", "Need Qualification"].includes(stage) || ["待补信息", "Need Qualification"].includes(status)) {
-    return "缺少关键信息，需要先问清楚";
-  }
-  if (["待报价", "Need Quotation"].includes(stage) || ["待报价", "Need Quotation"].includes(status)) {
-    return "可以准备报价";
-  }
-  if (["已报价", "Quoted", "Waiting Reply", "已报价未回复", "待客户回复"].includes(stage)
-    || ["已报价", "Quoted", "Waiting Reply", "已报价未回复", "待客户回复"].includes(status)) {
-    return "等待客户反馈，需要按期跟进";
-  }
-  return "根据当前进展继续推进客户";
+  return "客户需求较明确，需要补齐报价前条件";
 }
 
 function shouldShowQuotedActions(customer) {
-  const stage = customer?.stage || "";
-  const status = customer?.current_status || "";
-  const leadStage = getLeadProgressStageValue(customer);
-  return leadStage === "quoted"
-    || ["已报价", "Quoted"].includes(stage)
-    || ["已报价", "已报价未回复", "Quoted"].includes(status);
+  return isQuotedCustomer(customer);
 }
 
 function shouldShowNewInquiryActions(customer) {
@@ -228,10 +218,7 @@ function shouldShowNewInquiryActions(customer) {
 }
 
 function shouldShowWaitingReplyActions(customer) {
-  const stage = customer?.stage || "";
-  const status = customer?.current_status || "";
-  return ["Waiting Reply", "待客户回复"].includes(stage)
-    || ["Waiting Reply", "待客户回复"].includes(status);
+  return isCustomerReplyPendingShared(customer);
 }
 
 function buildProfileForm(customer) {
@@ -1501,7 +1488,7 @@ export default function CustomerDetailPage() {
   const displayStatus = customer?.current_status || displayStage || currentStage;
   const currentType = getCustomerTypeLabel(getCustomerTypeValue(customer || {}));
   const currentLeadLevel = getLeadLevel(customer || {});
-  const persistedNextAction = workflowForm.nextAction || customer?.current_next_action || customer?.next_action || getNextAction(customer || {});
+  const persistedNextAction = workflowForm.nextAction || getCustomerNextAction(customer || {});
   const localizedPersistedAction = formatCustomerActionDisplay(persistedNextAction);
   const blockerText = getCurrentBlockerText(customer || {});
   const followUpDateDisplay = formatDateOnly(customer?.next_follow_up_at || customer?.follow_up_date || workflowForm.followUpDate);
