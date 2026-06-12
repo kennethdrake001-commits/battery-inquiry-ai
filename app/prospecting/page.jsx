@@ -30,6 +30,9 @@ const prospectingStages = [
   "丢单",
   "无效"
 ];
+const funnelStages = ["新线索", "已触达", "有互动", "有需求", "已发资料", "已报价", "跟进中", "成交"];
+const archivedStages = ["丢单", "无效"];
+const channelFilters = ["全部渠道", "Google Maps", "LinkedIn", "FB", "Email", "WhatsApp", "Alibaba", "Website"];
 
 const importHeaders = ["公司名", "国家", "客户类型", "官网", "邮箱", "LinkedIn", "联系人", "WhatsApp", "来源渠道", "备注"];
 const reviewRanges = ["今天", "昨天", "本周", "上周", "本月", "上月", "自定义"];
@@ -165,6 +168,10 @@ function getTaskReason(customer) {
   return "根据当前获客阶段继续推进";
 }
 
+function getInvalidLeadAction() {
+  return "已标记无效，不再推进";
+}
+
 function getFollowUpDate(customer) {
   return customer.next_follow_up_at || customer.follow_up_date || customer.updated_at || customer.created_at || "";
 }
@@ -249,10 +256,12 @@ const pageSize = 10;
 export default function ProspectingPage() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const fileInputRef = useRef(null);
+  const targetPoolRef = useRef(null);
   const [session, setSession] = useState(null);
   const [customers, setCustomers] = useState([]);
   const [selectedId, setSelectedId] = useState("");
   const [selectedStage, setSelectedStage] = useState("");
+  const [selectedChannel, setSelectedChannel] = useState("全部渠道");
   const [page, setPage] = useState(1);
   const [reviewRange, setReviewRange] = useState("本月");
   const [showImportRules, setShowImportRules] = useState(false);
@@ -326,7 +335,8 @@ export default function ProspectingPage() {
     return prospectingCustomers.map((customer) => ({
       ...customer,
       prospectingStage: getProspectingStage(customer),
-      prospectingAction: getProspectingNextAction(customer)
+      prospectingAction: getProspectingStage(customer) === "无效" ? getInvalidLeadAction() : getProspectingNextAction(customer),
+      leadSourceLabel: getLeadSourceLabel(getLeadSourceValue(customer)) || getSourceLabel(customer.source)
     }));
   }, [prospectingCustomers]);
 
@@ -376,9 +386,20 @@ export default function ProspectingPage() {
   }, [prospectingCustomers, reviewRange, customStartDate, customEndDate]);
 
   const filteredTargetPool = useMemo(() => {
-    if (!selectedStage) return targetPool;
-    return targetPool.filter((customer) => customer.prospectingStage === selectedStage);
-  }, [selectedStage, targetPool]);
+    return targetPool.filter((customer) => {
+      const stageMatched = !selectedStage || customer.prospectingStage === selectedStage;
+      const sourceLabel = customer.leadSourceLabel || "";
+      const rawSource = `${customer.source || ""}`.trim();
+      const channelMatched = selectedChannel === "全部渠道"
+        || sourceLabel === selectedChannel
+        || rawSource === selectedChannel
+        || (selectedChannel === "Email" && (sourceLabel.includes("Email") || rawSource.includes("Email")))
+        || (selectedChannel === "WhatsApp" && (sourceLabel.includes("WhatsApp") || rawSource.includes("WhatsApp")))
+        || (selectedChannel === "Alibaba" && (sourceLabel.includes("Alibaba") || rawSource.includes("Alibaba") || rawSource.includes("阿里")))
+        || (selectedChannel === "Website" && (sourceLabel.includes("官网") || rawSource.includes("Website")));
+      return stageMatched && channelMatched;
+    });
+  }, [selectedStage, selectedChannel, targetPool]);
 
   const totalPages = Math.max(1, Math.ceil(filteredTargetPool.length / pageSize));
   const pagedCustomers = useMemo(() => {
@@ -394,7 +415,7 @@ export default function ProspectingPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [selectedStage]);
+  }, [selectedStage, selectedChannel]);
 
   useEffect(() => {
     if (page > totalPages) {
@@ -412,6 +433,16 @@ export default function ProspectingPage() {
     } catch {
       setNotice("复制失败，请手动复制。");
     }
+  }
+
+  function focusTargetPool() {
+    targetPoolRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function handleQuickFilter(stage = "", channel = "全部渠道") {
+    setSelectedStage(stage);
+    setSelectedChannel(channel);
+    setTimeout(() => focusTargetPool(), 40);
   }
 
   function handleImportClick() {
@@ -624,6 +655,33 @@ export default function ProspectingPage() {
     setNotice("客户已归档。");
   }
 
+  async function restoreProspectingCustomer(customer) {
+    setError("");
+    setNotice("");
+
+    const now = new Date().toISOString();
+    const { error: updateError } = await supabase
+      .from("customers")
+      .update({
+        current_status: "未联系",
+        stage: "new_lead",
+        current_next_action: "发送首封开发信",
+        next_action: "发送首封开发信",
+        next_follow_up_at: null,
+        follow_up_date: null,
+        updated_at: now
+      })
+      .eq("id", customer.id);
+
+    if (updateError) {
+      setError(`恢复失败：${updateError.message}`);
+      return;
+    }
+
+    await loadCustomers();
+    setNotice("客户已恢复为新线索。");
+  }
+
   async function markFirstEmailSent(customer) {
     setError("");
     setNotice("");
@@ -660,6 +718,59 @@ export default function ProspectingPage() {
     setNotice("已标记为已发首封，3 天后跟进");
   }
 
+  const dailyActionItems = useMemo(() => {
+    return [
+      {
+        key: "add-company",
+        title: "新增目标公司",
+        target: 20,
+        completed: prospectingCustomers.filter((customer) => getProspectingStage(customer) === "新线索").length,
+        actionLabel: "查看新线索",
+        onClick: () => handleQuickFilter("新线索")
+      },
+      {
+        key: "qualify-leads",
+        title: "筛选新线索",
+        target: 10,
+        completed: prospectingCustomers.filter((customer) => getProspectingStage(customer) === "有互动").length,
+        actionLabel: "筛选新线索",
+        onClick: () => handleQuickFilter("新线索")
+      },
+      {
+        key: "linkedin-connect",
+        title: "LinkedIn 发送连接",
+        target: 20,
+        completed: prospectingCustomers.filter((customer) => `${customer.linkedin_status || ""}` === "connection_sent").length,
+        actionLabel: "查看 LinkedIn 线索",
+        onClick: () => handleQuickFilter("", "LinkedIn")
+      },
+      {
+        key: "facebook-message",
+        title: "FB 私信/关注",
+        target: 10,
+        completed: prospectingCustomers.filter((customer) => `${customer.facebook_status || ""}` === "message_sent").length,
+        actionLabel: "查看 FB 线索",
+        onClick: () => handleQuickFilter("", "FB")
+      },
+      {
+        key: "send-email",
+        title: "发送英文开发信",
+        target: 5,
+        completed: prospectingCustomers.filter((customer) => getProspectingStage(customer) === "已触达").length,
+        actionLabel: "查看待发送客户",
+        onClick: () => handleQuickFilter("新线索")
+      },
+      {
+        key: "follow-up",
+        title: "跟进未回复客户",
+        target: 5,
+        completed: todayTasks.filter((customer) => ["已触达", "已发资料", "已报价", "跟进中"].includes(customer.prospectingStage)).length,
+        actionLabel: "查看待跟进客户",
+        onClick: () => handleQuickFilter("跟进中")
+      }
+    ];
+  }, [prospectingCustomers, todayTasks]);
+
   return (
     <main className="app">
       <header className="hero">
@@ -688,176 +799,84 @@ export default function ProspectingPage() {
 
           <section className="panel">
             <div className="section-title">
-              <h2>今日获客任务</h2>
-              <span>{todayTasks.length} 项</span>
+              <h2>今日获客动作</h2>
+              <span>先做今天该推进的触达动作</span>
             </div>
-            <div className="card-list">
-              {todayTasks.slice(0, 5).map((customer) => (
-                <article className="customer-card" key={customer.id}>
-                  <strong>{getCustomerName(customer)}</strong>
-                  <p>当前阶段：{customer.prospectingStage}</p>
-                  <p>下一步动作：{customer.prospectingAction}</p>
-                  <p>下次跟进：{formatDate(getFollowUpDate(customer))}</p>
+            <div style={{ display: "grid", gap: 10 }}>
+              {dailyActionItems.map((item) => (
+                <article
+                  key={item.key}
+                  style={{
+                    border: "1px solid rgba(226, 232, 240, 0.85)",
+                    borderRadius: 16,
+                    background: "#ffffff",
+                    padding: "14px 16px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 16,
+                    flexWrap: "wrap"
+                  }}
+                >
+                  <div style={{ minWidth: 0, flex: "1 1 420px" }}>
+                    <strong style={{ display: "block", marginBottom: 6 }}>{item.title}</strong>
+                    <p className="notice" style={{ margin: 0 }}>
+                      今日目标 {item.target} · 已完成 {item.completed}
+                    </p>
+                  </div>
                   <div className="actions compact">
-                    <button type="button" onClick={() => setSelectedId(customer.id)}>生成英文开发信</button>
-                    <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
+                    <button type="button" onClick={item.onClick}>{item.actionLabel}</button>
                   </div>
                 </article>
               ))}
-              {todayTasks.length === 0 && <p className="empty">今天暂无待推进的获客任务</p>}
-            </div>
-            {todayTasks.length > 5 && (
-              <p className="empty">还有 {todayTasks.length - 5} 个获客任务，查看全部。</p>
-            )}
-          </section>
-
-          <section className="panel">
-            <div className="section-title">
-              <h2>获客数据复盘</h2>
-              <span>只统计获客推进线索</span>
-            </div>
-            <div className="tabs" style={{ flexWrap: "wrap" }}>
-              {reviewRanges.map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  onClick={() => setReviewRange(item)}
-                  style={reviewRange === item
-                    ? { border: "1px solid #155eef", color: "#155eef", background: "#eff6ff", fontWeight: 700 }
-                    : { border: "1px solid #dbe5f1", color: "#1d2433", background: "#f8fafc" }}
-                >
-                  {item}
-                </button>
-              ))}
-            </div>
-            {reviewRange === "自定义" && (
-              <div className="form-grid" style={{ marginTop: 16 }}>
-                <FieldLike label="开始日期">
-                  <input type="date" value={customStartDate} onChange={(event) => setCustomStartDate(event.target.value)} />
-                </FieldLike>
-                <FieldLike label="结束日期">
-                  <input type="date" value={customEndDate} onChange={(event) => setCustomEndDate(event.target.value)} />
-                </FieldLike>
-              </div>
-            )}
-            <div
-              className="summary-grid"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(8, minmax(120px, 140px))",
-                justifyContent: "center",
-                gap: 24,
-                marginTop: 16,
-                overflow: "hidden"
-              }}
-            >
-              {reviewStats.map((item) => (
-                <article
-                  key={item.title}
-                  className="notice-panel"
-                  style={{
-                    padding: "12px 10px",
-                    minWidth: 0,
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    textAlign: "center"
-                  }}
-                >
-                  <strong style={{ fontSize: 14, lineHeight: 1.3, color: "#1f2937" }}>{item.title}</strong>
-                  <div style={{ fontSize: 30, fontWeight: 700, marginTop: 6, lineHeight: 1.1 }}>{item.value}</div>
-                </article>
-              ))}
             </div>
           </section>
 
-          <section className="panel">
+          <section className="panel" ref={targetPoolRef}>
             <div className="section-title">
-              <h2>批量导入目标客户</h2>
-              <span>先支持 CSV 模板</span>
+              <h2>目标客户池</h2>
+              <span>
+                {filteredTargetPool.length} 个目标客户
+                {selectedStage ? ` · 当前阶段：${selectedStage}` : ""}
+                {selectedChannel !== "全部渠道" ? ` · 当前渠道：${selectedChannel}` : ""}
+              </span>
             </div>
-            <p className="notice">
-              导入后默认进入“新线索”，下一步为“发送首封开发信”。
-            </p>
-            <div className="actions compact">
-              <button type="button" onClick={handleImportClick}>上传 CSV</button>
-              <button type="button" onClick={downloadTemplate}>下载导入模板</button>
-              <button type="button" onClick={() => setShowImportRules((current) => !current)}>
-                {showImportRules ? "收起导入规则" : "查看导入字段与默认规则"}
+            <div className="tabs" style={{ flexWrap: "wrap", marginBottom: 12 }}>
+              <button
+                type="button"
+                onClick={() => setSelectedStage("")}
+                style={selectedStage === ""
+                  ? { border: "1px solid #155eef", color: "#155eef", background: "#eff6ff", fontWeight: 700 }
+                  : { border: "1px solid #dbe5f1", color: "#1d2433", background: "#f8fafc" }}
+              >
+                全部
               </button>
-            </div>
-            {showImportRules && (
-              <div className="detail-grid" style={{ marginTop: 16 }}>
-                <div className="detail-item" style={{ gridColumn: "1 / -1" }}>
-                  <strong>导入模板字段</strong>
-                  <p>公司名、国家、客户类型、官网、邮箱、LinkedIn、联系人、WhatsApp、来源渠道、备注</p>
-                </div>
-                <div className="detail-item"><strong>默认阶段</strong><p>未联系</p></div>
-                <div className="detail-item"><strong>默认下一步动作</strong><p>发送首封开发信</p></div>
-                <div className="detail-item"><strong>默认下次跟进日期</strong><p>空</p></div>
-                <div className="detail-item"><strong>默认客户来源</strong><p>获客推进</p></div>
-              </div>
-            )}
-          </section>
-
-          <section className="panel">
-            <div className="section-title">
-              <h2>开发阶段概览</h2>
-              <div className="actions compact">
-                <button
-                  type="button"
-                  onClick={() => setSelectedStage("")}
-                  style={selectedStage ? undefined : { border: "1px solid #155eef", color: "#155eef", background: "#eff6ff", fontWeight: 700 }}
-                >
-                  全部客户
-                </button>
-              </div>
-            </div>
-            <div
-              className="summary-grid"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-                gap: 12
-              }}
-            >
               {prospectingStages.map((stage) => (
                 <button
                   key={stage}
                   type="button"
-                  className="summary-card"
                   onClick={() => setSelectedStage(stage)}
                   style={selectedStage === stage
-                    ? {
-                      border: "1px solid #155eef",
-                      boxShadow: "0 0 0 2px rgba(21,94,239,0.08)",
-                      background: "#eff6ff",
-                      borderRadius: 16,
-                      padding: 16,
-                      textAlign: "left"
-                    }
-                    : {
-                      background: "#ffffff",
-                      borderRadius: 16,
-                      padding: 16,
-                      textAlign: "left",
-                      border: "1px solid #dbe5f1"
-                    }}
+                    ? { border: "1px solid #155eef", color: "#155eef", background: "#eff6ff", fontWeight: 700 }
+                    : { border: "1px solid #dbe5f1", color: "#1d2433", background: "#f8fafc" }}
                 >
-                  <strong>{stage}</strong>
-                  <span style={{ display: "block", marginTop: 8, fontSize: 28, fontWeight: 700 }}>
-                    {(boardGroups[stage] || []).length}
-                  </span>
+                  {stage}
                 </button>
               ))}
             </div>
-          </section>
-
-          <section className="panel">
-            <div className="section-title">
-              <h2>目标客户池</h2>
-              <span>{filteredTargetPool.length} 个目标客户{selectedStage ? ` · 当前筛选：${selectedStage}` : ""}</span>
+            <div className="tabs" style={{ flexWrap: "wrap", marginBottom: 16 }}>
+              {channelFilters.map((channel) => (
+                <button
+                  key={channel}
+                  type="button"
+                  onClick={() => setSelectedChannel(channel)}
+                  style={selectedChannel === channel
+                    ? { border: "1px solid #155eef", color: "#155eef", background: "#eff6ff", fontWeight: 700 }
+                    : { border: "1px solid #dbe5f1", color: "#1d2433", background: "#f8fafc" }}
+                >
+                  {channel}
+                </button>
+              ))}
             </div>
             <div className="table-wrap">
               <table className="compact-table">
@@ -866,6 +885,7 @@ export default function ProspectingPage() {
                     <th>公司名</th>
                     <th>国家</th>
                     <th>客户类型</th>
+                    <th>来源渠道</th>
                     <th>当前阶段</th>
                     <th>下一步动作</th>
                     <th>下次跟进日期</th>
@@ -878,14 +898,21 @@ export default function ProspectingPage() {
                       <td>{getCustomerName(customer)}</td>
                       <td>{customer.country || "待补充"}</td>
                       <td><span className="soft-badge">{getCustomerTypeLabel(getCustomerTypeValue(customer))}</span></td>
+                      <td>{customer.leadSourceLabel || "待补充"}</td>
                       <td>{customer.prospectingStage}</td>
                       <td className="truncate-cell">{customer.prospectingAction}</td>
                       <td>{formatDate(getFollowUpDate(customer))}</td>
                       <td>
                         <div className="actions compact">
-                          <button type="button" onClick={() => setSelectedId(customer.id)}>生成英文开发信</button>
+                          {customer.prospectingStage !== "无效" && (
+                            <button type="button" onClick={() => setSelectedId(customer.id)}>生成英文开发信</button>
+                          )}
                           <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
-                          <button type="button" onClick={() => convertToFormalCustomer(customer)}>转为正式客户</button>
+                          {customer.prospectingStage === "无效" ? (
+                            <button type="button" onClick={() => restoreProspectingCustomer(customer)}>恢复为新线索</button>
+                          ) : (
+                            <button type="button" onClick={() => convertToFormalCustomer(customer)}>转为正式客户</button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -945,7 +972,13 @@ export default function ProspectingPage() {
                         <button type="button" onClick={() => convertToFormalCustomer(selectedCustomer)}>转为正式客户</button>
                       </>
                     )}
-                    {["成交", "无效", "丢单"].includes(getProspectingStage(selectedCustomer)) && (
+                    {getProspectingStage(selectedCustomer) === "无效" && (
+                      <>
+                        <Link href={`/customers/${selectedCustomer.id}`}>查看/编辑客户</Link>
+                        <button type="button" onClick={() => restoreProspectingCustomer(selectedCustomer)}>恢复为新线索</button>
+                      </>
+                    )}
+                    {["成交", "丢单"].includes(getProspectingStage(selectedCustomer)) && (
                       <>
                         <button type="button" onClick={() => convertToFormalCustomer(selectedCustomer)}>转为正式客户</button>
                         <button type="button" onClick={() => archiveProspectingCustomer(selectedCustomer)}>归档</button>
@@ -963,6 +996,160 @@ export default function ProspectingPage() {
               )}
             </section>
           )}
+
+          <section className="panel">
+            <div className="section-title">
+              <h2>开发阶段概览</h2>
+              <span>按漏斗阶段查看当前获客推进分布</span>
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                gap: 12,
+                marginBottom: 16
+              }}
+            >
+              {funnelStages.map((stage) => {
+                const count = boardGroups[stage]?.length || 0;
+                const selected = selectedStage === stage;
+                return (
+                  <button
+                    key={stage}
+                    type="button"
+                    onClick={() => handleQuickFilter(stage)}
+                    style={{
+                      textAlign: "left",
+                      borderRadius: 16,
+                      padding: "14px 16px",
+                      border: selected ? "1px solid #155eef" : "1px solid rgba(226, 232, 240, 0.9)",
+                      background: selected ? "#eff6ff" : "#ffffff",
+                      boxShadow: selected ? "0 10px 24px rgba(21, 94, 239, 0.12)" : "none"
+                    }}
+                  >
+                    <strong style={{ display: "block", marginBottom: 6 }}>{stage}</strong>
+                    <span style={{ fontSize: 28, fontWeight: 700, color: "#111827" }}>{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                gap: 12
+              }}
+            >
+              {archivedStages.map((stage) => {
+                const count = boardGroups[stage]?.length || 0;
+                const selected = selectedStage === stage;
+                return (
+                  <button
+                    key={stage}
+                    type="button"
+                    onClick={() => handleQuickFilter(stage)}
+                    style={{
+                      textAlign: "left",
+                      borderRadius: 16,
+                      padding: "14px 16px",
+                      border: selected ? "1px solid #9a3412" : "1px solid rgba(226, 232, 240, 0.9)",
+                      background: selected ? "#fff7ed" : "#ffffff",
+                      boxShadow: selected ? "0 10px 24px rgba(154, 52, 18, 0.10)" : "none"
+                    }}
+                  >
+                    <strong style={{ display: "block", marginBottom: 6 }}>{stage}</strong>
+                    <span style={{ fontSize: 24, fontWeight: 700, color: "#1f2937" }}>{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="section-title">
+              <h2>批量导入目标客户</h2>
+              <span>把公开渠道整理好的公司名单快速导入目标客户池</span>
+            </div>
+            <p className="notice" style={{ marginTop: 0 }}>
+              导入后默认进入“未联系”，下一步为“发送首封开发信”。
+            </p>
+            <div className="actions compact" style={{ marginBottom: 16 }}>
+              <button type="button" onClick={handleImportClick}>上传 CSV</button>
+              <button type="button" onClick={downloadTemplate}>下载导入模板</button>
+              <button type="button" onClick={() => setShowImportRules((value) => !value)}>
+                {showImportRules ? "收起导入规则" : "查看导入字段与默认规则"}
+              </button>
+            </div>
+            {showImportRules && (
+              <div className="detail-grid">
+                <div className="detail-item" style={{ gridColumn: "1 / -1" }}>
+                  <strong>导入模板字段</strong>
+                  <p>{importHeaders.join(" / ")}</p>
+                </div>
+                <div className="detail-item"><strong>默认阶段</strong><p>未联系</p></div>
+                <div className="detail-item"><strong>默认下一步动作</strong><p>发送首封开发信</p></div>
+                <div className="detail-item"><strong>默认下次跟进日期</strong><p>暂不设置</p></div>
+                <div className="detail-item"><strong>默认客户来源</strong><p>主动开发</p></div>
+              </div>
+            )}
+          </section>
+
+          <section className="panel">
+            <div className="section-title">
+              <h2>获客数据复盘</h2>
+              <span>按时间查看主动开发客户推进效果</span>
+            </div>
+            <div className="tabs" style={{ flexWrap: "wrap", marginBottom: 16 }}>
+              {reviewRanges.map((range) => (
+                <button
+                  key={range}
+                  type="button"
+                  onClick={() => setReviewRange(range)}
+                  style={reviewRange === range
+                    ? { border: "1px solid #155eef", color: "#155eef", background: "#eff6ff", fontWeight: 700 }
+                    : { border: "1px solid #dbe5f1", color: "#1d2433", background: "#f8fafc" }}
+                >
+                  {range}
+                </button>
+              ))}
+            </div>
+            {reviewRange === "自定义" && (
+              <div className="fields two-col" style={{ marginBottom: 16 }}>
+                <FieldLike label="开始日期">
+                  <input type="date" value={customStartDate} onChange={(event) => setCustomStartDate(event.target.value)} />
+                </FieldLike>
+                <FieldLike label="结束日期">
+                  <input type="date" value={customEndDate} onChange={(event) => setCustomEndDate(event.target.value)} />
+                </FieldLike>
+              </div>
+            )}
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "nowrap",
+                gap: 24,
+                alignItems: "stretch",
+                overflow: "hidden"
+              }}
+            >
+              {reviewStats.map((item) => (
+                <article
+                  key={item.title}
+                  style={{
+                    flex: "0 1 138px",
+                    minWidth: 0,
+                    borderRadius: 16,
+                    border: "1px solid rgba(226, 232, 240, 0.9)",
+                    background: "#ffffff",
+                    padding: "14px 12px"
+                  }}
+                >
+                  <strong style={{ display: "block", fontSize: 14, color: "#1f2937", marginBottom: 10 }}>{item.title}</strong>
+                  <div style={{ fontSize: 30, fontWeight: 700, color: "#0f172a", lineHeight: 1.1 }}>{item.value}</div>
+                </article>
+              ))}
+            </div>
+          </section>
         </>
       )}
     </main>
