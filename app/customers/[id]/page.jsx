@@ -302,6 +302,161 @@ function getProgressSummaryStage(customer) {
   return getStageLabel(getStageValue(customer));
 }
 
+function normalizeText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function includesAny(text, keywords) {
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
+function hasMeaningfulValue(value) {
+  return value !== null && value !== undefined && String(value).trim() !== "";
+}
+
+function calculateCustomerScore(customer) {
+  const sourceText = normalizeText(customer?.source || customer?.lead_source || customer?.customer_source);
+  const typeText = normalizeText(customer?.customer_type || customer?.customerType);
+  const stageText = normalizeText(customer?.stage || customer?.current_status || customer?.status);
+  const needText = normalizeText([
+    customer?.product_need,
+    customer?.productNeed,
+    customer?.target_capacity,
+    customer?.application_scenario,
+    customer?.application_scene,
+    customer?.recommended_product,
+    customer?.question,
+    customer?.original_message
+  ].filter(Boolean).join(" "));
+  const quantityText = normalizeText(customer?.quantity);
+  const tradeTermText = normalizeText(customer?.shipping_term || customer?.trade_term);
+  const contactFields = [
+    customer?.email,
+    customer?.whatsapp,
+    customer?.phone,
+    customer?.website,
+    customer?.company,
+    customer?.company_name,
+    customer?.linkedin,
+    customer?.facebook
+  ];
+  const contactCount = contactFields.filter(hasMeaningfulValue).length;
+
+  let sourceScore = 0;
+  if (includesAny(sourceText, ["alibaba", "阿里"])) sourceScore = 15;
+  else if (includesAny(sourceText, ["website", "官网"])) sourceScore = 15;
+  else if (includesAny(sourceText, ["whatsapp"])) sourceScore = 12;
+  else if ((includesAny(sourceText, ["linkedin", "facebook", "fb"]) && includesAny(stageText, ["已回复", "有回应", "responded", "engaged"]))) sourceScore = 10;
+  else if (includesAny(sourceText, ["主动开发", "google maps", "linkedin", "facebook", "fb"])) sourceScore = 5;
+
+  let identityScore = 0;
+  if (includesAny(typeText, ["distributor", "经销商", "installer", "安装商", "epc", "wholesaler", "批发商"])) identityScore = 20;
+  else if (includesAny(typeText, ["公司客户", "brand", "oem", "品牌商"])) identityScore = 12;
+  else if (includesAny(typeText, ["终端用户", "个人", "end user"])) identityScore = 5;
+
+  const demandSignals = [
+    hasMeaningfulValue(customer?.target_capacity),
+    hasMeaningfulValue(customer?.quantity),
+    hasMeaningfulValue(customer?.application_scenario || customer?.application_scene),
+    hasMeaningfulValue(customer?.recommended_product),
+    includesAny(needText, ["kwh", "ah", "容量", "型号", "quantity", "pcs", "应用", "backup", "solar", "inverter"])
+  ].filter(Boolean).length;
+  let demandScore = 0;
+  if (demandSignals >= 3) demandScore = 20;
+  else if (demandSignals >= 1) demandScore = 12;
+  else if (includesAny(needText, ["price", "报价", "多少钱"])) demandScore = 6;
+
+  let orderScore = 0;
+  if (includesAny(`${quantityText} ${needText}`, ["project", "项目", "container", "wholesale", "distributor", "采购", "批量"])) orderScore = 15;
+  else if (hasMeaningfulValue(customer?.quantity)) orderScore = 10;
+  else if (includesAny(`${quantityText} ${needText}`, ["sample", "样品", "单台"])) orderScore = 5;
+
+  let contactScore = 0;
+  if (contactCount >= 3) contactScore = 10;
+  else if (contactCount >= 1) contactScore = 5;
+
+  let progressScore = 0;
+  if (includesAny(stageText, ["已回复", "有回应", "responded", "engaged", "customer replied"])) progressScore = 20;
+  else if (includesAny(stageText, ["已报价", "quoted", "已发送报价", "待客户回复", "waiting reply"])) progressScore = 15;
+  else if (includesAny(stageText, ["已发资料", "material_sent", "sent info"])) progressScore = 10;
+  else if (includesAny(stageText, ["新询盘", "new inquiry", "new"])) progressScore = 8;
+  else if (includesAny(stageText, ["prospecting", "新线索", "待判断"])) progressScore = 5;
+  else if (includesAny(stageText, ["无效", "归档", "archived", "invalid"])) progressScore = 0;
+
+  const total = Math.max(0, Math.min(100, sourceScore + identityScore + demandScore + orderScore + contactScore + progressScore));
+  return {
+    total,
+    breakdown: {
+      sourceScore,
+      identityScore,
+      demandScore,
+      orderScore,
+      contactScore,
+      progressScore
+    }
+  };
+}
+
+function getCustomerGrade(score) {
+  if (score >= 80) return "A级客户";
+  if (score >= 60) return "B级客户";
+  if (score >= 40) return "C级客户";
+  return "D级客户";
+}
+
+function getCustomerPriorityLabel(score) {
+  if (score >= 80) return "重点客户，优先跟进";
+  if (score >= 60) return "正常推进，继续补充需求并推动报价";
+  if (score >= 40) return "先补信息再判断";
+  return "低优先级或暂缓";
+}
+
+function getCustomerScoreReasons(customer) {
+  const sourceText = customer?.source || customer?.lead_source || customer?.customer_source || "未知来源";
+  const typeText = customer?.customer_type || customer?.customerType || "待判断";
+  const missingParts = [];
+
+  if (!hasMeaningfulValue(customer?.country)) missingParts.push("国家");
+  if (!hasMeaningfulValue(customer?.email) && !hasMeaningfulValue(customer?.whatsapp) && !hasMeaningfulValue(customer?.website)) {
+    missingParts.push("联系方式");
+  }
+  if (!hasMeaningfulValue(customer?.target_capacity) && !hasMeaningfulValue(customer?.recommended_product)) {
+    missingParts.push("产品需求");
+  }
+  if (!hasMeaningfulValue(customer?.quantity)) missingParts.push("数量");
+  if (!hasMeaningfulValue(customer?.shipping_term || customer?.trade_term)) missingParts.push("贸易方式");
+  if (!hasMeaningfulValue(customer?.application_scenario || customer?.application_scene)) missingParts.push("应用场景");
+
+  const needSummary = missingParts.length > 0
+    ? `不完整，需确认${missingParts.slice(0, 4).join("、")}`
+    : "较完整，可以继续推进报价或跟进";
+
+  const contactSummary = !hasMeaningfulValue(customer?.email) && !hasMeaningfulValue(customer?.whatsapp) && !hasMeaningfulValue(customer?.website)
+    ? "不完整，建议补充 WhatsApp / 公司信息"
+    : "已有基础联系方式，可继续推进";
+
+  return [
+    `来源渠道：${sourceText}，${includesAny(normalizeText(sourceText), ["alibaba", "阿里", "website", "官网"]) ? "询盘来源较明确" : "建议结合回复情况判断价值"}`,
+    `客户身份：${typeText}，${includesAny(normalizeText(typeText), ["distributor", "经销商", "installer", "安装商", "epc", "wholesaler", "批发商"]) ? "渠道价值较高" : "需继续确认客户类型"}`,
+    `需求信息：${needSummary}`,
+    `联系信息：${contactSummary}`
+  ];
+}
+
+function getCompletenessItems(customer) {
+  const items = [
+    ["国家", customer?.country],
+    ["联系方式", customer?.email || customer?.whatsapp || customer?.website],
+    ["产品需求", customer?.recommended_product || customer?.target_capacity || customer?.question],
+    ["数量", customer?.quantity],
+    ["贸易方式", customer?.shipping_term || customer?.trade_term],
+    ["应用场景", customer?.application_scenario || customer?.application_scene]
+  ];
+
+  const missing = items.filter(([, value]) => !hasMeaningfulValue(value)).map(([label]) => label);
+  return missing.length > 0 ? missing : ["暂无明显缺失信息"];
+}
+
 function HistoryItem({ item, onSaveAsPlaybook }) {
   const canSaveAsPlaybook = playbookEligibleResults.includes(item.result_feedback);
 
@@ -1330,6 +1485,11 @@ export default function CustomerDetailPage() {
   const needQuoteLabel = quotes.length > 0 || ["已报价", "Quoted", "已报价未回复", "待报价"].includes(customer?.current_status) || ["Quoted", "Need Quotation"].includes(customer?.stage)
     ? "是"
     : "待判断";
+  const customerScore = calculateCustomerScore(customer || {});
+  const customerGrade = getCustomerGrade(customerScore.total);
+  const customerPriorityLabel = getCustomerPriorityLabel(customerScore.total);
+  const customerScoreReasons = getCustomerScoreReasons(customer || {});
+  const completenessItems = getCompletenessItems(customer || {});
   const showLeadNewButtons = !archivedCustomer && leadProgressCustomer && leadProgressStage === "new_lead";
   const showLeadContactedButtons = !archivedCustomer && leadProgressCustomer && leadProgressStage === "contacted";
   const showLeadRespondedButtons = !archivedCustomer && leadProgressCustomer && leadProgressStage === "responded";
@@ -1366,6 +1526,21 @@ export default function CustomerDetailPage() {
           <div className="section-title" style={{ marginBottom: 16 }}>
             <h2>客户档案</h2>
             <span>先确认这个客户是谁</span>
+          </div>
+          <div style={{ borderRadius: 18, background: "#eff6ff", border: "1px solid #dbeafe", padding: 18, marginBottom: 16 }}>
+            <div style={{ color: "#475569", fontSize: 13, marginBottom: 6 }}>客户评分</div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
+              <strong style={{ fontSize: 28, lineHeight: 1, color: "#0f172a" }}>{customerScore.total}</strong>
+              <span style={{ color: "#475569", fontSize: 14 }}>/ 100</span>
+            </div>
+            <div style={{ fontWeight: 700, color: "#1d4ed8", marginBottom: 6 }}>{customerGrade}</div>
+            <div style={{ color: "#475569", fontSize: 14, marginBottom: 10 }}>{customerPriorityLabel}</div>
+            <div style={{ color: "#334155", fontSize: 13, lineHeight: 1.7 }}>
+              <strong style={{ display: "block", marginBottom: 4 }}>评分依据：</strong>
+              {customerScoreReasons.map((reason) => (
+                <div key={reason}>• {reason}</div>
+              ))}
+            </div>
           </div>
           <div className="detail-grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
             <div className="detail-item" style={{ borderRadius: 16, background: "#f8fafc", padding: 14 }}>
@@ -1528,11 +1703,13 @@ export default function CustomerDetailPage() {
           )}
           <div className="detail-grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
             <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
-              <strong>客户基础摘要</strong>
-              <p><strong>来源渠道：</strong>{leadSourceLabel || customer?.source || "待补充"}</p>
-              <p><strong>客户类型：</strong>{currentType}</p>
-              <p><strong>客户等级：</strong>{currentLeadLevel}</p>
-              <p><strong>合作商候选：</strong>{partnerCandidateLabel}</p>
+              <strong>客户完整度 / 缺失信息</strong>
+              <p><strong>当前缺失信息：</strong></p>
+              <div style={{ color: "#334155", lineHeight: 1.8, marginTop: 6 }}>
+                {completenessItems.map((item) => (
+                  <div key={item}>• {item}</div>
+                ))}
+              </div>
             </div>
             <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
               <strong>当前需求摘要</strong>
