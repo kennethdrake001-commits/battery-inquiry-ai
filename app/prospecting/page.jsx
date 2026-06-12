@@ -37,6 +37,17 @@ const channelFilters = ["全部渠道", "Google Maps", "LinkedIn", "FB", "Email"
 const importHeaders = ["公司名", "国家", "客户类型", "官网", "邮箱", "LinkedIn", "联系人", "WhatsApp", "来源渠道", "备注"];
 const reviewRanges = ["今天", "昨天", "本周", "上周", "本月", "上月", "自定义"];
 const prospectingSources = ["Google Maps", "LinkedIn", "FB", "Website", "Referral", "主动开发"];
+const invalidReasonOptions = [
+  "不是太阳能相关客户",
+  "终端个人客户",
+  "没有有效联系方式",
+  "国家暂不适合清关",
+  "公司信息不完整",
+  "规模太小",
+  "不匹配当前产品",
+  "重复线索",
+  "其他"
+];
 const manualLeadInitialState = {
   companyName: "",
   country: "",
@@ -185,6 +196,37 @@ function getInvalidLeadAction() {
   return "已标记无效，不再推进";
 }
 
+function getLeadValueLabel(customer) {
+  const rawValue = `${customer?.lead_value || customer?.leadLevel || ""}`.trim();
+  if (["高", "中", "低", "待判断"].includes(rawValue)) return rawValue;
+
+  const leadLevel = `${customer?.lead_level || customer?.leadLevel || ""}`.trim().toUpperCase();
+  if (leadLevel === "A") return "高";
+  if (leadLevel === "B") return "中";
+  if (leadLevel === "C") return "低";
+  return "待判断";
+}
+
+function getInvalidReason(customer) {
+  const directValue = customer?.invalid_reason
+    || customer?.failure_reason
+    || customer?.loss_reason
+    || customer?.invalidReason;
+
+  if (directValue) return `${directValue}`.trim();
+
+  const textSources = [customer?.question, customer?.operator_note, customer?.our_reply, customer?.original_message]
+    .filter(Boolean)
+    .map((item) => `${item}`);
+
+  for (const source of textSources) {
+    const matched = source.match(/无效原因[:：]\s*([^\n]+)/);
+    if (matched?.[1]) return matched[1].trim();
+  }
+
+  return "未填写原因";
+}
+
 function getFollowUpDate(customer) {
   return customer.next_follow_up_at || customer.follow_up_date || customer.updated_at || customer.created_at || "";
 }
@@ -209,6 +251,14 @@ function endOfDay(date) {
 function formatPercent(numerator, denominator) {
   if (!denominator) return "0%";
   return `${Math.round((numerator / denominator) * 100)}%`;
+}
+
+function isDateInToday(value) {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  const now = new Date();
+  return startOfDay(date).getTime() === startOfDay(now).getTime();
 }
 
 function getRangeBounds(rangeKey, customStart, customEnd) {
@@ -352,7 +402,9 @@ export default function ProspectingPage() {
       ...customer,
       prospectingStage: getProspectingStage(customer),
       prospectingAction: getProspectingStage(customer) === "无效" ? getInvalidLeadAction() : getProspectingNextAction(customer),
-      leadSourceLabel: getLeadSourceLabel(getLeadSourceValue(customer)) || getSourceLabel(customer.source)
+      leadSourceLabel: getLeadSourceLabel(getLeadSourceValue(customer)) || getSourceLabel(customer.source),
+      leadValueLabel: getLeadValueLabel(customer),
+      invalidReasonLabel: getInvalidReason(customer)
     }));
   }, [prospectingCustomers]);
 
@@ -818,13 +870,143 @@ export default function ProspectingPage() {
     setNotice("已标记为已发首封，3 天后跟进");
   }
 
+  async function updateProspectingCustomer(customer, updates, successMessage) {
+    setError("");
+    setNotice("");
+
+    if (!session?.user?.id) {
+      setError("请先登录后再操作。");
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const payload = { ...updates, updated_at: now };
+    const { error: updateError } = await supabase
+      .from("customers")
+      .update(payload)
+      .eq("id", customer.id);
+
+    if (updateError) {
+      setError(`更新失败：${updateError.message}`);
+      return;
+    }
+
+    await loadCustomers();
+    setNotice(successMessage);
+  }
+
+  async function markEngaged(customer) {
+    await updateProspectingCustomer(
+      customer,
+      {
+        current_status: "有互动",
+        stage: "engaged",
+        current_next_action: "继续确认客户具体需求",
+        next_action: "继续确认客户具体需求",
+        next_follow_up_at: new Date().toISOString(),
+        follow_up_date: new Date().toISOString().slice(0, 10)
+      },
+      "已标记为有互动。"
+    );
+  }
+
+  async function markFollowUp(customer) {
+    const followUpAt = new Date();
+    followUpAt.setDate(followUpAt.getDate() + 2);
+    await updateProspectingCustomer(
+      customer,
+      {
+        current_status: "跟进中",
+        stage: "follow_up",
+        current_next_action: "跟进未回复客户",
+        next_action: "跟进未回复客户",
+        next_follow_up_at: followUpAt.toISOString(),
+        follow_up_date: followUpAt.toISOString().slice(0, 10)
+      },
+      "已安排未回复客户跟进。"
+    );
+  }
+
+  async function markHasNeed(customer) {
+    await updateProspectingCustomer(
+      customer,
+      {
+        current_status: "有需求",
+        stage: "has_need",
+        current_next_action: "准备报价或确认详细需求",
+        next_action: "准备报价或确认详细需求",
+        next_follow_up_at: new Date().toISOString(),
+        follow_up_date: new Date().toISOString().slice(0, 10)
+      },
+      "已标记为有需求。"
+    );
+  }
+
+  async function markMaterialSent(customer) {
+    const followUpAt = new Date();
+    followUpAt.setDate(followUpAt.getDate() + 2);
+    await updateProspectingCustomer(
+      customer,
+      {
+        current_status: "已发资料",
+        stage: "material_sent",
+        email_status: "material_sent",
+        current_next_action: "询问是否收到资料，是否需要报价",
+        next_action: "询问是否收到资料，是否需要报价",
+        next_follow_up_at: followUpAt.toISOString(),
+        follow_up_date: followUpAt.toISOString().slice(0, 10)
+      },
+      "已标记为已发资料。"
+    );
+  }
+
+  async function markQuoted(customer) {
+    const followUpAt = new Date();
+    followUpAt.setDate(followUpAt.getDate() + 3);
+    await updateProspectingCustomer(
+      customer,
+      {
+        current_status: "已报价",
+        stage: "quoted",
+        email_status: "quotation_sent",
+        current_next_action: "跟进报价反馈",
+        next_action: "跟进报价反馈",
+        next_follow_up_at: followUpAt.toISOString(),
+        follow_up_date: followUpAt.toISOString().slice(0, 10)
+      },
+      "已标记为已报价。"
+    );
+  }
+
+  async function markInvalid(customer) {
+    const reason = window.prompt(`请选择或填写无效原因：\n${invalidReasonOptions.join(" / ")}`, customer.invalidReasonLabel === "未填写原因" ? "" : customer.invalidReasonLabel);
+    if (reason === null) return;
+    const trimmedReason = reason.trim() || "其他";
+    const existingQuestion = `${customer.question || ""}`.replace(/无效原因[:：]\s*[^\n]+/g, "").trim();
+    const nextQuestion = [existingQuestion, `无效原因：${trimmedReason}`].filter(Boolean).join("\n");
+
+    await updateProspectingCustomer(
+      customer,
+      {
+        current_status: "无效",
+        stage: "invalid",
+        current_next_action: "",
+        next_action: "",
+        next_follow_up_at: null,
+        follow_up_date: null,
+        question: nextQuestion
+      },
+      "已标记为无效客户。"
+    );
+  }
+
   const dailyActionItems = useMemo(() => {
     return [
       {
         key: "add-company",
         title: "新增目标公司",
         target: 20,
-        completed: prospectingCustomers.filter((customer) => getProspectingStage(customer) === "新线索").length,
+        completed: prospectingCustomers.filter((customer) => isDateInToday(customer.created_at)).length,
         actionLabel: "查看新线索",
         onClick: () => handleQuickFilter("新线索")
       },
@@ -832,7 +1014,7 @@ export default function ProspectingPage() {
         key: "qualify-leads",
         title: "筛选新线索",
         target: 10,
-        completed: prospectingCustomers.filter((customer) => getProspectingStage(customer) === "有互动").length,
+        completed: prospectingCustomers.filter((customer) => isDateInToday(customer.updated_at) && getProspectingStage(customer) !== "新线索").length,
         actionLabel: "筛选新线索",
         onClick: () => handleQuickFilter("新线索")
       },
@@ -840,7 +1022,7 @@ export default function ProspectingPage() {
         key: "linkedin-connect",
         title: "LinkedIn 发送连接",
         target: 20,
-        completed: prospectingCustomers.filter((customer) => `${customer.linkedin_status || ""}` === "connection_sent").length,
+        completed: prospectingCustomers.filter((customer) => `${customer.linkedin_status || ""}` === "connection_sent" && isDateInToday(customer.updated_at)).length,
         actionLabel: "查看 LinkedIn 线索",
         onClick: () => handleQuickFilter("", "LinkedIn")
       },
@@ -848,7 +1030,7 @@ export default function ProspectingPage() {
         key: "facebook-message",
         title: "FB 私信/关注",
         target: 10,
-        completed: prospectingCustomers.filter((customer) => `${customer.facebook_status || ""}` === "message_sent").length,
+        completed: prospectingCustomers.filter((customer) => `${customer.facebook_status || ""}` === "message_sent" && isDateInToday(customer.updated_at)).length,
         actionLabel: "查看 FB 线索",
         onClick: () => handleQuickFilter("", "FB")
       },
@@ -856,7 +1038,7 @@ export default function ProspectingPage() {
         key: "send-email",
         title: "发送英文开发信",
         target: 5,
-        completed: prospectingCustomers.filter((customer) => getProspectingStage(customer) === "已触达").length,
+        completed: prospectingCustomers.filter((customer) => getProspectingStage(customer) === "已触达" && isDateInToday(customer.updated_at)).length,
         actionLabel: "查看待发送客户",
         onClick: () => handleQuickFilter("新线索")
       },
@@ -864,7 +1046,7 @@ export default function ProspectingPage() {
         key: "follow-up",
         title: "跟进未回复客户",
         target: 5,
-        completed: todayTasks.filter((customer) => ["已触达", "已发资料", "已报价", "跟进中"].includes(customer.prospectingStage)).length,
+        completed: prospectingCustomers.filter((customer) => getProspectingStage(customer) === "跟进中" && isDateInToday(customer.updated_at)).length,
         actionLabel: "查看待跟进客户",
         onClick: () => handleQuickFilter("跟进中")
       }
@@ -990,9 +1172,11 @@ export default function ProspectingPage() {
                     <th>公司名</th>
                     <th>国家</th>
                     <th>客户类型</th>
+                    <th>线索价值</th>
                     <th>来源渠道</th>
                     <th>当前阶段</th>
                     <th>下一步动作</th>
+                    <th>无效原因</th>
                     <th>下次跟进日期</th>
                     <th>操作</th>
                   </tr>
@@ -1003,20 +1187,73 @@ export default function ProspectingPage() {
                       <td>{getCustomerName(customer)}</td>
                       <td>{customer.country || "待补充"}</td>
                       <td><span className="soft-badge">{getCustomerTypeLabel(getCustomerTypeValue(customer))}</span></td>
+                      <td>{customer.leadValueLabel}</td>
                       <td>{customer.leadSourceLabel || "待补充"}</td>
                       <td>{customer.prospectingStage}</td>
                       <td className="truncate-cell">{customer.prospectingAction}</td>
+                      <td>{customer.prospectingStage === "无效" ? customer.invalidReasonLabel : "-"}</td>
                       <td>{formatDate(getFollowUpDate(customer))}</td>
                       <td>
                         <div className="actions compact">
-                          {customer.prospectingStage !== "无效" && (
-                            <button type="button" onClick={() => setSelectedId(customer.id)}>生成英文开发信</button>
+                          {customer.prospectingStage === "新线索" && (
+                            <>
+                              <button type="button" onClick={() => markFirstEmailSent(customer)}>标记已触达</button>
+                              <button type="button" onClick={() => markInvalid(customer)}>标记无效</button>
+                              <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
+                            </>
                           )}
-                          <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
-                          {customer.prospectingStage === "无效" ? (
-                            <button type="button" onClick={() => restoreProspectingCustomer(customer)}>恢复为新线索</button>
-                          ) : (
-                            <button type="button" onClick={() => convertToFormalCustomer(customer)}>转为正式客户</button>
+                          {customer.prospectingStage === "已触达" && (
+                            <>
+                              <button type="button" onClick={() => markEngaged(customer)}>标记有互动</button>
+                              <button type="button" onClick={() => markFollowUp(customer)}>跟进未回复</button>
+                              <button type="button" onClick={() => markInvalid(customer)}>标记无效</button>
+                              <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
+                            </>
+                          )}
+                          {customer.prospectingStage === "有互动" && (
+                            <>
+                              <button type="button" onClick={() => markHasNeed(customer)}>标记有需求</button>
+                              <button type="button" onClick={() => markMaterialSent(customer)}>发送资料</button>
+                              <button type="button" onClick={() => markInvalid(customer)}>标记无效</button>
+                              <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
+                            </>
+                          )}
+                          {customer.prospectingStage === "有需求" && (
+                            <>
+                              <button type="button" onClick={() => markMaterialSent(customer)}>标记已发资料</button>
+                              <button type="button" onClick={() => convertToFormalCustomer(customer)}>转正式客户</button>
+                              <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
+                            </>
+                          )}
+                          {customer.prospectingStage === "已发资料" && (
+                            <>
+                              <button type="button" onClick={() => markQuoted(customer)}>标记已报价</button>
+                              <button type="button" onClick={() => convertToFormalCustomer(customer)}>转正式客户</button>
+                              <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
+                            </>
+                          )}
+                          {customer.prospectingStage === "已报价" && (
+                            <>
+                              <button type="button" onClick={() => convertToFormalCustomer(customer)}>转正式客户</button>
+                              <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
+                            </>
+                          )}
+                          {customer.prospectingStage === "无效" && (
+                            <>
+                              <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
+                              <button type="button" onClick={() => restoreProspectingCustomer(customer)}>恢复为新线索</button>
+                            </>
+                          )}
+                          {!["新线索", "已触达", "有互动", "有需求", "已发资料", "已报价", "无效"].includes(customer.prospectingStage) && (
+                            <>
+                              {customer.prospectingStage !== "成交" && customer.prospectingStage !== "丢单" && (
+                                <button type="button" onClick={() => setSelectedId(customer.id)}>生成英文开发信</button>
+                              )}
+                              <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
+                              {customer.prospectingStage !== "成交" && customer.prospectingStage !== "丢单" && (
+                                <button type="button" onClick={() => convertToFormalCustomer(customer)}>转正式客户</button>
+                              )}
+                            </>
                           )}
                         </div>
                       </td>
