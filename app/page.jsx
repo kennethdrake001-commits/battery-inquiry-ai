@@ -61,8 +61,21 @@ function AuthPanel({ session, onSessionChange }) {
 
   if (session) {
     return (
-      <div className="auth-card">
-        <span>已登录：{session.user.email}</span>
+      <div
+        className="auth-card"
+        style={{
+          padding: "12px 16px",
+          minHeight: "auto",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          borderRadius: 16,
+          background: "#ffffff",
+          boxShadow: "0 4px 10px rgba(15, 23, 42, 0.04)"
+        }}
+      >
+        <span style={{ color: "#475569", fontSize: 14 }}>已登录：{session.user.email}</span>
         <div className="actions compact">
           <Link className="primary" href="/customers/new">新增客户</Link>
           <button onClick={signOut}>退出登录</button>
@@ -90,34 +103,24 @@ function AuthPanel({ session, onSessionChange }) {
   );
 }
 
-function SummaryCard({ title, count, subtitle }) {
-  return (
-    <article className="notice-panel">
-      <strong>{title}</strong>
-      <div style={{ fontSize: 32, fontWeight: 700, lineHeight: 1.2, marginTop: 8 }}>{count}</div>
-      <p>{subtitle}</p>
-    </article>
-  );
-}
-
 function getCardAppearance(kind, isActive) {
   const appearanceMap = {
     urgent: {
-      border: isActive ? "1px solid #f59e0b" : "1px solid #fde7c7",
-      background: isActive ? "linear-gradient(180deg, #fff7ed 0%, #fffbeb 100%)" : "#fffdfa",
-      shadow: isActive ? "0 12px 24px rgba(245, 158, 11, 0.12)" : "0 6px 14px rgba(15, 23, 42, 0.05)",
+      border: isActive ? "1px solid rgba(245, 158, 11, 0.4)" : "1px solid rgba(245, 158, 11, 0.14)",
+      background: isActive ? "linear-gradient(180deg, #fff9f1 0%, #fffdf8 100%)" : "#fffdfa",
+      shadow: isActive ? "0 10px 22px rgba(245, 158, 11, 0.1)" : "0 4px 12px rgba(15, 23, 42, 0.04)",
       accent: "#b45309"
     },
     value: {
-      border: isActive ? "1px solid #34d399" : "1px solid #d1fae5",
-      background: isActive ? "linear-gradient(180deg, #ecfdf5 0%, #f0fdf4 100%)" : "#f7fffb",
-      shadow: isActive ? "0 12px 24px rgba(16, 185, 129, 0.12)" : "0 6px 14px rgba(15, 23, 42, 0.05)",
+      border: isActive ? "1px solid rgba(52, 211, 153, 0.42)" : "1px solid rgba(52, 211, 153, 0.14)",
+      background: isActive ? "linear-gradient(180deg, #effcf6 0%, #f7fffb 100%)" : "#f7fffb",
+      shadow: isActive ? "0 10px 22px rgba(16, 185, 129, 0.1)" : "0 4px 12px rgba(15, 23, 42, 0.04)",
       accent: "#047857"
     },
     channel: {
-      border: isActive ? "1px solid #60a5fa" : "1px solid #dbeafe",
-      background: isActive ? "linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%)" : "#f8fbff",
-      shadow: isActive ? "0 12px 24px rgba(59, 130, 246, 0.12)" : "0 6px 14px rgba(15, 23, 42, 0.05)",
+      border: isActive ? "1px solid rgba(96, 165, 250, 0.42)" : "1px solid rgba(96, 165, 250, 0.16)",
+      background: isActive ? "linear-gradient(180deg, #f3f8ff 0%, #f8fbff 100%)" : "#f8fbff",
+      shadow: isActive ? "0 10px 22px rgba(59, 130, 246, 0.09)" : "0 4px 12px rgba(15, 23, 42, 0.04)",
       accent: "#1d4ed8"
     }
   };
@@ -365,9 +368,10 @@ export default function HomePage() {
               <h2>今日优先处理</h2>
               <span>先处理最影响成交推进的客户</span>
             </div>
-            <div className="task-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
+            <div className="task-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14 }}>
               {priorityCards.map((card) => {
                 const appearance = getCardAppearance(card.appearance, activeSummaryKey === card.key);
+                const isActive = activeSummaryKey === card.key;
                 return (
                 <button
                   key={card.key}
@@ -382,15 +386,36 @@ export default function HomePage() {
                       border: appearance.border,
                       background: appearance.background,
                       boxShadow: appearance.shadow,
-                      minHeight: 152,
-                      transition: "all 0.2s ease"
+                      minHeight: 128,
+                      borderRadius: 20,
+                      padding: "16px 18px",
+                      transition: "all 0.2s ease",
+                      position: "relative"
                     }}
                   >
-                    <strong style={{ color: appearance.accent }}>{card.title}</strong>
-                    <div style={{ fontSize: 36, fontWeight: 700, lineHeight: 1.1, marginTop: 10, color: "#111827" }}>
+                    {card.customers.length > 0 && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: 14,
+                          right: 14,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          padding: "4px 8px",
+                          borderRadius: 999,
+                          background: isActive ? "rgba(255,255,255,0.82)" : "rgba(255,255,255,0.66)",
+                          color: appearance.accent,
+                          border: `1px solid ${appearance.border.includes("rgba") ? appearance.border.match(/rgba?\([^)]+\)|#[0-9a-fA-F]+/)?.[0] || "rgba(148,163,184,.25)" : "rgba(148,163,184,.25)"}`
+                        }}
+                      >
+                        {card.key === "high-potential" ? "优先关注" : "建议处理"}
+                      </span>
+                    )}
+                    <strong style={{ color: appearance.accent, display: "block", paddingRight: card.customers.length > 0 ? 84 : 0 }}>{card.title}</strong>
+                    <div style={{ fontSize: card.customers.length > 0 ? 38 : 32, fontWeight: 800, lineHeight: 1.05, marginTop: 8, color: "#111827" }}>
                       {card.customers.length}
                     </div>
-                    <p style={{ marginTop: 10, color: "#475569" }}>{card.subtitle}</p>
+                    <p style={{ marginTop: 8, color: "#475569", lineHeight: 1.45 }}>{card.subtitle}</p>
                   </article>
                 </button>
                 );
@@ -403,9 +428,10 @@ export default function HomePage() {
               <h2>获客动作提醒</h2>
               <span>多渠道触达客户后，按节奏推进互动</span>
             </div>
-            <div className="task-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
+            <div className="task-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 12 }}>
               {leadActionCards.map((card) => {
                 const appearance = getCardAppearance(card.appearance, activeSummaryKey === card.key);
+                const isActive = activeSummaryKey === card.key;
                 return (
                   <button
                     key={card.key}
@@ -420,15 +446,35 @@ export default function HomePage() {
                         border: appearance.border,
                         background: appearance.background,
                         boxShadow: appearance.shadow,
-                        minHeight: 152,
-                        transition: "all 0.2s ease"
+                        minHeight: 110,
+                        borderRadius: 18,
+                        padding: "14px 16px",
+                        transition: "all 0.2s ease",
+                        position: "relative"
                       }}
                     >
+                      {card.customers.length > 0 && (
+                        <span
+                          style={{
+                            position: "absolute",
+                            top: 12,
+                            right: 12,
+                            fontSize: 10,
+                            fontWeight: 700,
+                            padding: "3px 7px",
+                            borderRadius: 999,
+                            background: isActive ? "rgba(255,255,255,0.82)" : "rgba(255,255,255,0.66)",
+                            color: appearance.accent
+                          }}
+                        >
+                          待处理
+                        </span>
+                      )}
                       <strong style={{ color: appearance.accent }}>{card.title}</strong>
-                      <div style={{ fontSize: 36, fontWeight: 700, lineHeight: 1.1, marginTop: 10, color: "#111827" }}>
+                      <div style={{ fontSize: 30, fontWeight: 800, lineHeight: 1.05, marginTop: 6, color: "#111827" }}>
                         {card.customers.length}
                       </div>
-                      <p style={{ marginTop: 10, color: "#475569" }}>{card.subtitle}</p>
+                      <p style={{ marginTop: 6, color: "#64748b", lineHeight: 1.4 }}>{card.subtitle}</p>
                     </article>
                   </button>
                 );
@@ -452,26 +498,26 @@ export default function HomePage() {
             ) : selectedRows.length === 0 ? (
               <p className="empty">暂无对应客户</p>
             ) : (
-              <div style={{ display: "grid", gap: 12 }}>
+              <div style={{ display: "grid", gap: 10 }}>
                 {selectedRows.map((item) => (
                   <article
                     key={item.id}
                     style={{
-                      border: "1px solid #e2e8f0",
+                      border: "1px solid rgba(226, 232, 240, 0.85)",
                       borderRadius: 16,
-                      padding: 18,
+                      padding: "15px 16px",
                       background: "#ffffff",
                       boxShadow: "0 4px 12px rgba(15, 23, 42, 0.04)"
                     }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
                       <div style={{ minWidth: 0, flex: "1 1 520px" }}>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", marginBottom: 8 }}>
-                          <strong style={{ fontSize: 18, color: "#0f172a" }}>{item.customerName}</strong>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                          <strong style={{ fontSize: 17, color: "#0f172a" }}>{item.customerName}</strong>
                           <span className="soft-badge">{item.customerType}</span>
                           <span className="soft-badge">{item.currentStatus}</span>
                         </div>
-                        <div style={{ display: "grid", gap: 8 }}>
+                        <div style={{ display: "grid", gap: 6 }}>
                           <div><strong>下一步动作：</strong>{item.nextAction || "暂无动作"}</div>
                           <div><strong>提醒原因：</strong>{item.reason}</div>
                           <div><strong>跟进日期：</strong>{item.followUpDate}</div>
