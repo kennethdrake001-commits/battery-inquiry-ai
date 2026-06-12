@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import AppNav from "../../../components/layout/AppNav";
-import CustomerWorkflowCard from "../../../components/workflow/CustomerWorkflowCard";
 import { getSupabaseBrowserClient } from "../../../lib/supabaseClient";
 import { dateToFollowUpAt, formatDateTime, parseFollowUpTime } from "../../../lib/followUp";
 import { formatNextActionForDisplay } from "../../../lib/displayText";
@@ -118,6 +117,12 @@ const emptyWorkflowForm = {
 };
 
 const emptyProfileForm = {
+  customer_name: "",
+  country: "",
+  customer_type: "Unknown",
+  source: "",
+  lead_level: "C",
+  notes: "",
   contact_name: "",
   email: "",
   whatsapp: "",
@@ -142,6 +147,7 @@ const emptyDemandForm = {
   shipping_term: "待确认",
   destination_city: "",
   destination_country: "",
+  missing_info: "",
   recommended_product: "",
   product_note: ""
 };
@@ -230,6 +236,12 @@ function shouldShowWaitingReplyActions(customer) {
 
 function buildProfileForm(customer) {
   return {
+    customer_name: customer?.customer_name || "",
+    country: customer?.country || "",
+    customer_type: customer?.customer_type || "Unknown",
+    source: customer?.lead_source || customer?.source || "",
+    lead_level: customer?.lead_level || "C",
+    notes: customer?.notes || customer?.internal_note || customer?.customer_note || customer?.question || "",
     contact_name: customer?.contact_name || "",
     email: customer?.email || "",
     whatsapp: customer?.whatsapp || "",
@@ -256,9 +268,38 @@ function buildDemandForm(customer) {
     shipping_term: customer?.shipping_term || "待确认",
     destination_city: customer?.destination_city || "",
     destination_country: customer?.destination_country || customer?.country || "",
+    missing_info: customer?.missing_info || "",
     recommended_product: customer?.recommended_product || "",
     product_note: customer?.product_note || ""
   };
+}
+
+function getProspectActionStage(customer) {
+  const stage = getLeadProgressStageValue(customer || {});
+  if (stage === "engaged") return "responded";
+  return stage;
+}
+
+function getProgressSummaryStage(customer) {
+  if (!customer) return "待判断";
+  if (isArchivedCustomer(customer)) return "已归档";
+  if (customer.source === "主动开发" || customer.stage === "Prospecting" || customer.current_status === "Prospecting") {
+    const leadStage = getProspectActionStage(customer);
+    const map = {
+      new_lead: "新线索",
+      contacted: "已触达",
+      responded: "有回应",
+      has_need: "有需求",
+      material_sent: "已发资料",
+      quoted: "已报价",
+      follow_up: "跟进中",
+      won: "已转正式客户",
+      lost: "丢单",
+      invalid: "无效"
+    };
+    return map[leadStage] || "主动开发中";
+  }
+  return getStageLabel(getStageValue(customer));
 }
 
 function HistoryItem({ item, onSaveAsPlaybook }) {
@@ -772,6 +813,15 @@ export default function CustomerDetailPage() {
     setIsSaving(true);
 
     const payload = {
+      customer_name: profileForm.customer_name || null,
+      country: profileForm.country || null,
+      customer_type: profileForm.customer_type || null,
+      source: profileForm.source || null,
+      lead_level: profileForm.lead_level || null,
+      notes: profileForm.notes || null,
+      internal_note: profileForm.notes || null,
+      customer_note: profileForm.notes || null,
+      question: profileForm.notes || null,
       contact_name: profileForm.contact_name || null,
       email: profileForm.email || null,
       whatsapp: profileForm.whatsapp || null,
@@ -827,6 +877,7 @@ export default function CustomerDetailPage() {
       shipping_term: demandForm.shipping_term === "待确认" ? null : demandForm.shipping_term,
       destination_city: demandForm.destination_city || null,
       destination_country: demandForm.destination_country || null,
+      missing_info: demandForm.missing_info || null,
       recommended_product: demandForm.recommended_product || null,
       product_note: demandForm.product_note || null,
       updated_at: new Date().toISOString()
@@ -1031,6 +1082,43 @@ export default function CustomerDetailPage() {
     });
   }
 
+  async function markLeadContacted() {
+    const nextDate = addDays(new Date(), 3);
+    const followUpDateText = toDateText(nextDate);
+
+    await saveProgressAction({
+      customerPayload: {
+        stage: "contacted",
+        current_status: "已触达",
+        current_next_action: "3天后检查是否回复",
+        next_action: "3天后检查是否回复",
+        next_follow_up_at: nextDate.toISOString(),
+        follow_up_date: followUpDateText
+      },
+      interactionStatus: "lead_contacted",
+      interactionNote: "已标记线索已触达",
+      successMessage: "已标记已触达，3 天后提醒继续跟进。"
+    });
+  }
+
+  async function markLeadResponded() {
+    const todayText = toDateText(new Date());
+
+    await saveProgressAction({
+      customerPayload: {
+        stage: "engaged",
+        current_status: "有回应",
+        current_next_action: "确认客户需求并发送资料",
+        next_action: "确认客户需求并发送资料",
+        next_follow_up_at: dateToFollowUpAt(todayText),
+        follow_up_date: todayText
+      },
+      interactionStatus: "lead_responded",
+      interactionNote: "已标记客户有回应",
+      successMessage: "已标记客户有回应，可继续确认需求。"
+    });
+  }
+
   async function markInvalidLead() {
     await saveProgressAction({
       customerPayload: {
@@ -1097,6 +1185,38 @@ export default function CustomerDetailPage() {
       interactionStatus: "customer_reply",
       interactionNote: "客户已回复，等待进一步判断",
       successMessage: "已标记客户已回复。"
+    });
+  }
+
+  async function markWon() {
+    await saveProgressAction({
+      customerPayload: {
+        stage: "Closed Won",
+        current_status: "成交",
+        current_next_action: "客户已成交，进入成交后维护",
+        next_action: "客户已成交，进入成交后维护",
+        next_follow_up_at: null,
+        follow_up_date: null
+      },
+      interactionStatus: "won",
+      interactionNote: "已标记客户成交",
+      successMessage: "已标记客户成交。"
+    });
+  }
+
+  async function markLost() {
+    await saveProgressAction({
+      customerPayload: {
+        stage: "Closed Lost",
+        current_status: "丢单",
+        current_next_action: null,
+        next_action: null,
+        next_follow_up_at: null,
+        follow_up_date: null
+      },
+      interactionStatus: "lost",
+      interactionNote: "已标记客户丢单",
+      successMessage: "已标记客户丢单。"
     });
   }
 
@@ -1188,8 +1308,9 @@ export default function CustomerDetailPage() {
   if (loading) return <main className="app"><section className="panel">加载中...</section></main>;
 
   const leadProgressCustomer = isLeadProgressCustomer(customer || {});
+  const leadProgressStage = getProspectActionStage(customer || {});
   const currentStage = getStageLabel(getStageValue(customer || {}));
-  const displayStage = leadProgressCustomer ? getLeadProgressStageLabel(customer || {}) : currentStage;
+  const displayStage = leadProgressCustomer ? getProgressSummaryStage(customer || {}) : currentStage;
   const displayStatus = customer?.current_status || displayStage || currentStage;
   const currentType = getCustomerTypeLabel(getCustomerTypeValue(customer || {}));
   const currentLeadLevel = getLeadLevel(customer || {});
@@ -1208,6 +1329,20 @@ export default function CustomerDetailPage() {
   const facebookStatusLabel = getChannelStatusLabel("facebook_status", customer?.facebook_status, customer || {});
   const emailStatusLabel = getChannelStatusLabel("email_status", customer?.email_status, customer || {});
   const whatsappStatusLabel = getChannelStatusLabel("whatsapp_status", customer?.whatsapp_status, customer || {});
+  const latestInteraction = interactions[0] || null;
+  const latestInteractionSummary = latestInteraction
+    ? [latestInteraction.result_feedback || latestInteraction.interaction_status, latestInteraction.operator_note].filter(Boolean).join(" / ")
+    : "暂无跟进记录";
+  const partnerCandidateLabel = leadProgressCustomer ? "待判断" : (isPartnerCandidate(customer || {}) ? "是" : "否");
+  const needQuoteLabel = quotes.length > 0 || ["已报价", "Quoted", "已报价未回复", "待报价"].includes(customer?.current_status) || ["Quoted", "Need Quotation"].includes(customer?.stage)
+    ? "是"
+    : "待判断";
+  const showLeadProgressButtons = leadProgressCustomer && ["new_lead", "contacted", "responded", "invalid"].includes(leadProgressStage);
+  const showSalesProgressButtons = !archivedCustomer && (
+    (leadProgressCustomer && ["has_need", "material_sent", "quoted", "follow_up", "won"].includes(leadProgressStage))
+    || (!leadProgressCustomer && ["Need Qualification", "Need Quotation", "Quoted", "Waiting Reply", "Negotiation", "Trial Order", "Closed Won"].includes(customer?.stage))
+    || (!leadProgressCustomer && ["有需求", "待报价", "已报价", "已发资料", "跟进中", "待客户回复", "已转正式客户"].includes(customer?.current_status))
+  );
 
   return (
     <main className="app">
@@ -1230,13 +1365,22 @@ export default function CustomerDetailPage() {
           <span>先看当前该做什么，再进入下面各标签处理</span>
         </div>
         <div className="detail-grid">
-          <div className="detail-item"><strong>当前阶段</strong><p><span className="soft-badge">{displayStage || displayStatus || "待判断"}</span></p></div>
+          <div className="detail-item" style={{ background: "#f8fbff", borderRadius: 16, padding: 16 }}>
+            <strong>当前阶段</strong>
+            <p><span className="soft-badge">{displayStage || displayStatus || "待判断"}</span></p>
+          </div>
+          <div className="detail-item" style={{ background: "#f8fbff", borderRadius: 16, padding: 16 }}>
+            <strong>下一步动作</strong>
+            <p>{localizedPersistedAction}</p>
+          </div>
+          <div className="detail-item" style={{ background: "#f8fbff", borderRadius: 16, padding: 16 }}>
+            <strong>下次跟进日期</strong>
+            <p>{followUpDateDisplay}</p>
+          </div>
           <div className="detail-item"><strong>来源渠道</strong><p>{leadSourceLabel}</p></div>
           <div className="detail-item"><strong>客户类型</strong><p>{currentType}</p></div>
           <div className="detail-item"><strong>国家</strong><p>{customer?.country || "待补充"}</p></div>
           <div className="detail-item"><strong>当前卡点</strong><p>{blockerText}</p></div>
-          <div className="detail-item"><strong>下一步动作</strong><p>{localizedPersistedAction}</p></div>
-          <div className="detail-item"><strong>下次跟进日期</strong><p>{followUpDateDisplay}</p></div>
           <div className="detail-item"><strong>LinkedIn 状态</strong><p>{linkedinStatusLabel}</p></div>
           <div className="detail-item"><strong>FB 状态</strong><p>{facebookStatusLabel}</p></div>
           <div className="detail-item"><strong>Email 状态</strong><p>{emailStatusLabel}</p></div>
@@ -1250,21 +1394,26 @@ export default function CustomerDetailPage() {
         ) : (
           <>
             <div className="actions" style={{ marginTop: 16, flexWrap: "wrap" }}>
-              {leadProgressCustomer && (
+              {showLeadProgressButtons && (
                 <>
-                  <button onClick={markLinkedInInviteSent} disabled={isSaving}>已发送 LinkedIn 邀请</button>
-                  <button onClick={markLinkedInConnected} disabled={isSaving}>LinkedIn 已通过</button>
-                  <button onClick={markFacebookMessageSent} disabled={isSaving}>已发送 FB 私信</button>
-                  <button onClick={markMaterialSent} disabled={isSaving}>已发送产品资料</button>
-                  <button onClick={markQuoteSent} disabled={isSaving}>已发送报价</button>
+                  <button onClick={markLeadContacted} disabled={isSaving}>标记已触达</button>
+                  <button onClick={markLeadResponded} disabled={isSaving}>标记有回应</button>
                   <button onClick={markHasNeed} disabled={isSaving}>标记有需求</button>
                   <button onClick={markInvalidLead} disabled={isSaving}>标记无效</button>
                 </>
               )}
-              {!leadProgressCustomer && (showQuotedActions || showNewInquiryActions || (!showWaitingReplyActions && !archivedCustomer)) && (
+              {showSalesProgressButtons && (
+                <>
+                  <button onClick={markMaterialSent} disabled={isSaving}>已发送产品资料</button>
+                  <button onClick={markQuoteSent} disabled={isSaving}>已发送报价</button>
+                  <button onClick={markWon} disabled={isSaving}>标记成交</button>
+                  <button onClick={markLost} disabled={isSaving}>标记丢单</button>
+                </>
+              )}
+              {!leadProgressCustomer && !showSalesProgressButtons && (showQuotedActions || showNewInquiryActions || (!showWaitingReplyActions && !archivedCustomer)) && (
                 <button onClick={markFollowedUp} disabled={isSaving}>标记已跟进</button>
               )}
-              {!leadProgressCustomer && (showQuotedActions || showWaitingReplyActions || (!showNewInquiryActions && !archivedCustomer)) && (
+              {!leadProgressCustomer && !showSalesProgressButtons && (showQuotedActions || showWaitingReplyActions || (!showNewInquiryActions && !archivedCustomer)) && (
                 <button onClick={markCustomerReplied} disabled={isSaving}>标记客户已回复</button>
               )}
               {!archivedCustomer && (
@@ -1325,39 +1474,44 @@ export default function CustomerDetailPage() {
       </section>
 
       {activeTab === "overview" && (
-        <>
-          <section className="panel">
-            <div className="section-title">
-              <h2>概览</h2>
-              <span>只看当前阶段判断和下一步</span>
+        <section className="panel">
+          <div className="section-title">
+            <h2>概览</h2>
+            <span>快速判断现在推进到哪一步，以及最近发生了什么</span>
+            <div className="actions compact">
+              <button onClick={generateWorkflowRecommendation} disabled={isSaving}>生成下一步建议</button>
+              <button className="primary" onClick={saveWorkflow} disabled={isSaving}>保存客户流程</button>
             </div>
-            {leadProgressCustomer && (
-              <div className="notice-panel" style={{ marginBottom: 16 }}>
-                <strong>获客推进提醒</strong>
-                <p>这是获客推进客户，请按来源渠道、互动状态和下次跟进时间持续推进。</p>
-              </div>
-            )}
-            <div className="detail-grid">
-              <div className="detail-item"><strong>客户名</strong><p>{customer?.customer_name || "待补充"}</p></div>
-              <div className="detail-item"><strong>国家</strong><p>{customer?.country || "待补充"}</p></div>
-              <div className="detail-item"><strong>客户类型</strong><p>{currentType}</p></div>
-              <div className="detail-item"><strong>来源</strong><p>{leadSourceLabel || customer?.source || "待补充"}</p></div>
-              <div className="detail-item"><strong>客户评分 / 等级</strong><p>{customer?.latest_analysis?.customerScore || "-"} / {currentLeadLevel}</p></div>
-              <div className="detail-item"><strong>当前阶段</strong><p>{displayStage}</p></div>
-              <div className="detail-item"><strong>当前状态</strong><p>{displayStatus}</p></div>
-              <div className="detail-item"><strong>下一步建议</strong><p>{localizedCurrentAction}</p></div>
-              <div className="detail-item"><strong>下次跟进日期</strong><p>{formatDateOnly(workflowForm.followUpDate || customer?.next_follow_up_at)}</p></div>
-              <div className="detail-item"><strong>合作商候选标记</strong><p>{leadProgressCustomer ? "待判断" : (isPartnerCandidate(customer || {}) ? "是" : "否")}</p></div>
+          </div>
+          {leadProgressCustomer && (
+            <div className="notice-panel" style={{ marginBottom: 16 }}>
+              <strong>获客推进提醒</strong>
+              <p>这是获客推进客户，请按来源渠道、互动状态和下次跟进时间持续推进。</p>
             </div>
-          </section>
-
-          <CustomerWorkflowCard
-            form={workflowForm}
-            onChange={updateWorkflowForm}
-            onGenerate={generateWorkflowRecommendation}
-            actions={<button onClick={saveWorkflow} disabled={isSaving}>保存客户流程</button>}
-          />
-        </>
+          )}
+          <div className="two-col">
+            <div>
+              <h4>客户基础摘要</h4>
+              <p><strong>客户名：</strong>{customer?.customer_name || "待补充"}</p>
+              <p><strong>来源渠道：</strong>{leadSourceLabel || customer?.source || "待补充"}</p>
+              <p><strong>客户类型：</strong>{currentType}</p>
+              <p><strong>客户等级：</strong>{currentLeadLevel}</p>
+              <p><strong>合作商候选：</strong>{partnerCandidateLabel}</p>
+            </div>
+            <div>
+              <h4>当前需求摘要</h4>
+              <p><strong>产品需求：</strong>{demandForm.recommended_product || demandForm.target_capacity || customer?.quote_content || "待确认"}</p>
+              <p><strong>数量 / 贸易方式：</strong>{demandForm.quantity || "待确认"} / {demandForm.shipping_term || "待确认"}</p>
+              <p><strong>缺失信息：</strong>{workflowForm.missingInfo || demandForm.missing_info || customer?.missing_info || "暂无"}</p>
+              <p><strong>当前卡点：</strong>{blockerText}</p>
+            </div>
+          </div>
+          <div className="detail-grid" style={{ marginTop: 16 }}>
+            <div className="detail-item"><strong>下一步动作</strong><p>{localizedCurrentAction}</p></div>
+            <div className="detail-item"><strong>下次跟进日期</strong><p>{formatDateOnly(workflowForm.followUpDate || customer?.next_follow_up_at || customer?.follow_up_date)}</p></div>
+            <div className="detail-item"><strong>最近一次跟进记录</strong><p>{latestInteractionSummary}</p></div>
+          </div>
+        </section>
       )}
 
       {activeTab === "profile" && (
@@ -1378,6 +1532,15 @@ export default function CustomerDetailPage() {
           </div>
           {isEditingProfile ? (
             <div className="form-grid">
+              <Field label="客户姓名"><input value={profileForm.customer_name} onChange={(event) => updateProfileForm("customer_name", event.target.value)} /></Field>
+              <Field label="国家"><input value={profileForm.country} onChange={(event) => updateProfileForm("country", event.target.value)} /></Field>
+              <Field label="客户类型"><input value={profileForm.customer_type} onChange={(event) => updateProfileForm("customer_type", event.target.value)} /></Field>
+              <Field label="来源渠道"><input value={profileForm.source} onChange={(event) => updateProfileForm("source", event.target.value)} /></Field>
+              <Field label="客户等级">
+                <select value={profileForm.lead_level} onChange={(event) => updateProfileForm("lead_level", event.target.value)}>
+                  {["A", "B", "C"].map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </Field>
               <Field label="联系人"><input value={profileForm.contact_name} onChange={(event) => updateProfileForm("contact_name", event.target.value)} /></Field>
               <Field label="邮箱"><input value={profileForm.email} onChange={(event) => updateProfileForm("email", event.target.value)} /></Field>
               <Field label="WhatsApp"><input value={profileForm.whatsapp} onChange={(event) => updateProfileForm("whatsapp", event.target.value)} /></Field>
@@ -1411,9 +1574,18 @@ export default function CustomerDetailPage() {
                   {["待补充", "有清关能力", "需要我们协助", "不确定"].map((item) => <option key={item}>{item}</option>)}
                 </select>
               </Field>
+              <Field label="备注">
+                <textarea rows={4} value={profileForm.notes} onChange={(event) => updateProfileForm("notes", event.target.value)} />
+              </Field>
             </div>
           ) : (
             <div className="detail-grid">
+              <div className="detail-item"><strong>客户姓名</strong><p>{profileForm.customer_name || "待补充"}</p></div>
+              <div className="detail-item"><strong>国家</strong><p>{profileForm.country || "待补充"}</p></div>
+              <div className="detail-item"><strong>客户类型</strong><p>{getCustomerTypeLabel(profileForm.customer_type)}</p></div>
+              <div className="detail-item"><strong>来源渠道</strong><p>{getLeadSourceLabel(profileForm.source) || profileForm.source || "待补充"}</p></div>
+              <div className="detail-item"><strong>客户等级</strong><p>{profileForm.lead_level || "C"}</p></div>
+              <div className="detail-item"><strong>合作商候选标记</strong><p>{partnerCandidateLabel}</p></div>
               <div className="detail-item"><strong>联系人</strong><p>{profileForm.contact_name || "待补充"}</p></div>
               <div className="detail-item"><strong>邮箱</strong><p>{profileForm.email || "待补充"}</p></div>
               <div className="detail-item"><strong>WhatsApp</strong><p>{profileForm.whatsapp || "待补充"}</p></div>
@@ -1427,6 +1599,7 @@ export default function CustomerDetailPage() {
               <div className="detail-item"><strong>是否卖逆变器</strong><p>{profileForm.sells_inverter || "待确认"}</p></div>
               <div className="detail-item"><strong>是否有进口经验</strong><p>{profileForm.import_experience || "待确认"}</p></div>
               <div className="detail-item"><strong>清关能力</strong><p>{profileForm.customs_capability || "待补充"}</p></div>
+              <div className="detail-item"><strong>备注</strong><p>{profileForm.notes || "待补充"}</p></div>
             </div>
           )}
         </section>
@@ -1467,6 +1640,9 @@ export default function CustomerDetailPage() {
                 </Field>
                 <Field label="目的地城市"><input value={demandForm.destination_city} onChange={(event) => updateDemandForm("destination_city", event.target.value)} /></Field>
                 <Field label="目的国家"><input value={demandForm.destination_country} onChange={(event) => updateDemandForm("destination_country", event.target.value)} /></Field>
+                <Field label="认证 / 清关问题与缺失信息">
+                  <textarea rows={4} value={demandForm.missing_info} onChange={(event) => updateDemandForm("missing_info", event.target.value)} />
+                </Field>
                 <Field label="推荐产品"><input value={demandForm.recommended_product} onChange={(event) => updateDemandForm("recommended_product", event.target.value)} /></Field>
                 <Field label="产品备注或推荐原因"><textarea rows={4} value={demandForm.product_note} onChange={(event) => updateDemandForm("product_note", event.target.value)} /></Field>
               </div>
@@ -1480,8 +1656,11 @@ export default function CustomerDetailPage() {
                 <div className="detail-item"><strong>贸易条款</strong><p>{demandForm.shipping_term || "待确认"}</p></div>
                 <div className="detail-item"><strong>目的地城市</strong><p>{demandForm.destination_city || "待补充"}</p></div>
                 <div className="detail-item"><strong>目的国家</strong><p>{demandForm.destination_country || "待补充"}</p></div>
+                <div className="detail-item"><strong>认证 / 清关问题</strong><p>{demandForm.missing_info || customer?.missing_info || "待补充"}</p></div>
+                <div className="detail-item"><strong>缺失信息</strong><p>{workflowForm.missingInfo || demandForm.missing_info || customer?.missing_info || "暂无"}</p></div>
                 <div className="detail-item"><strong>推荐产品</strong><p>{demandForm.recommended_product || customer?.quote_content || "待补充"}</p></div>
                 <div className="detail-item"><strong>产品备注或推荐原因</strong><p>{demandForm.product_note || "待补充"}</p></div>
+                <div className="detail-item"><strong>是否需要报价</strong><p>{needQuoteLabel}</p></div>
               </div>
             )}
             <div className="actions" style={{ marginTop: 16 }}>
@@ -1489,7 +1668,7 @@ export default function CustomerDetailPage() {
                 className="primary"
                 onClick={() => quoteSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
               >
-                新增报价
+                进入报价
               </button>
               <button onClick={() => quoteSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>
                 查看报价记录
@@ -1553,6 +1732,13 @@ export default function CustomerDetailPage() {
             <div className="section-title">
               <h2>继续跟进</h2>
               <span>跟进动作和新回复在这里推进</span>
+            </div>
+            <div className="detail-grid" style={{ marginBottom: 16 }}>
+              <div className="detail-item"><strong>创建时间</strong><p>{formatDateTime(customer?.created_at)}</p></div>
+              <div className="detail-item"><strong>最近联系时间</strong><p>{formatDateTime(customer?.last_contacted_at)}</p></div>
+              <div className="detail-item"><strong>最近报价时间</strong><p>{formatDateTime(customer?.last_quote_at)}</p></div>
+              <div className="detail-item"><strong>最近客户回复时间</strong><p>{formatDateTime(customer?.last_customer_reply_at)}</p></div>
+              <div className="detail-item"><strong>当前下一步动作</strong><p>{localizedPersistedAction}</p></div>
             </div>
             <div className="form-grid">
               <Field label="客户新回复">
