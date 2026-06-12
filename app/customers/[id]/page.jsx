@@ -1570,37 +1570,27 @@ export default function CustomerDetailPage() {
             <div className="section-title" style={{ marginBottom: 0 }}>
               <h2 style={{ fontSize: 22, fontWeight: 700, color: "#0f172a" }}>当前推进</h2>
             </div>
-            <div className="detail-grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
-              <div className="detail-item" style={{ display: "flex", flexDirection: "column", justifyContent: "flex-start", alignItems: "flex-start", background: "#f8fbff", borderRadius: 16, padding: 14, border: "1px solid #dbeafe", minHeight: 112 }}>
-                <strong style={{ color: "#64748b", fontSize: 13, fontWeight: 600, lineHeight: 1.4 }}>当前阶段</strong>
-                <p style={{ fontSize: 16, fontWeight: 600, marginTop: 12, color: "#0f172a", lineHeight: 1.35 }}>{displayStage || displayStatus || "待判断"}</p>
-              </div>
-              <div className="detail-item" style={{ display: "flex", flexDirection: "column", justifyContent: "flex-start", alignItems: "flex-start", background: "#f8fbff", borderRadius: 16, padding: 14, border: "1px solid #dbeafe", minHeight: 112 }}>
-                <strong style={{ color: "#64748b", fontSize: 13, fontWeight: 600, lineHeight: 1.4 }}>下一步动作</strong>
-                <p
-                  style={{
-                    fontSize: 16,
-                    fontWeight: 600,
-                    marginTop: 12,
-                    color: "#0f172a",
-                    lineHeight: 1.35,
-                    wordBreak: "normal",
-                    overflowWrap: "break-word",
-                    display: "-webkit-box",
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: "vertical",
-                    overflow: "hidden"
-                  }}
-                >
-                  {localizedPersistedAction}
-                </p>
-              </div>
-              <div className="detail-item" style={{ display: "flex", flexDirection: "column", justifyContent: "flex-start", alignItems: "flex-start", background: "#f8fbff", borderRadius: 16, padding: 14, border: "1px solid #dbeafe", minHeight: 112 }}>
-                <strong style={{ color: "#64748b", fontSize: 13, fontWeight: 600, lineHeight: 1.4 }}>下次跟进</strong>
-                <p style={{ fontSize: 16, fontWeight: 600, marginTop: 12, color: "#0f172a", lineHeight: 1.35 }}>{followUpDateDisplay}</p>
-              </div>
+            <div className="detail-item" style={{ borderRadius: 18, background: "#f8fbff", padding: 16, border: "1px solid #dbeafe" }}>
+              <strong style={{ color: "#64748b", fontSize: 13, fontWeight: 600, lineHeight: 1.4 }}>下一步动作</strong>
+              <p
+                style={{
+                  fontSize: 20,
+                  fontWeight: 700,
+                  marginTop: 10,
+                  color: "#0f172a",
+                  lineHeight: 1.3,
+                  wordBreak: "normal",
+                  overflowWrap: "break-word",
+                  display: "-webkit-box",
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: "vertical",
+                  overflow: "hidden"
+                }}
+              >
+                {localizedPersistedAction}
+              </p>
             </div>
-            <div className="detail-item" style={{ borderRadius: 16, background: "#fff7ed", padding: 12, border: "1px solid #fed7aa", marginTop: 2 }}>
+            <div className="detail-item" style={{ borderRadius: 16, background: "#fff7ed", padding: 12, border: "1px solid #fed7aa" }}>
               <strong style={{ color: "#9a3412", fontSize: 13, fontWeight: 600 }}>当前卡点</strong>
               <p
                 style={{
@@ -1616,6 +1606,16 @@ export default function CustomerDetailPage() {
               >
                 {blockerText}
               </p>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "center", padding: "2px 2px 0" }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                <span style={{ color: "#64748b", fontSize: 13, fontWeight: 600 }}>当前阶段</span>
+                <span style={{ color: "#0f172a", fontSize: 14, fontWeight: 600, lineHeight: 1.35 }}>{displayStage || displayStatus || "待判断"}</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                <span style={{ color: "#64748b", fontSize: 13, fontWeight: 600 }}>下次跟进</span>
+                <span style={{ color: "#0f172a", fontSize: 14, fontWeight: 600, lineHeight: 1.35 }}>{followUpDateDisplay}</span>
+              </div>
             </div>
             {archivedCustomer && (
               <div className="notice-panel">
