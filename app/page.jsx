@@ -17,9 +17,6 @@ import {
 } from "../lib/customerViews";
 import {
   getLeadProgressStageLabel,
-  getLeadProgressStageValue,
-  isClosedLeadStage,
-  isHighPotentialLead,
   isLeadProgressCustomer
 } from "../lib/leadProgress";
 
@@ -167,9 +164,87 @@ function isArchivedCustomer(customer) {
     || customer?.stage === "归档";
 }
 
+function isWonCustomer(customer = {}) {
+  const stage = `${customer.stage || ""}`.trim();
+  const status = `${customer.current_status || ""}`.trim();
+  return ["Closed Won", "成交", "已成交", "已转正式客户", "won"].includes(stage)
+    || ["成交", "已成交", "已转正式客户", "won"].includes(status);
+}
+
+function isInvalidCustomer(customer = {}) {
+  const stage = `${customer.stage || ""}`.trim();
+  const status = `${customer.current_status || ""}`.trim();
+  return ["Archived", "归档", "invalid", "无效", "Closed Lost", "丢单", "已丢单", "lost"].includes(stage)
+    || ["归档", "无效", "不合适", "丢单", "已丢单", "invalid", "lost"].includes(status);
+}
+
+function needsProgress(customer = {}) {
+  return !isArchivedCustomer(customer) && !isWonCustomer(customer) && !isInvalidCustomer(customer);
+}
+
+function isQuotedWaitingReplyCustomer(customer = {}) {
+  const stage = `${customer.stage || ""}`.trim();
+  const status = `${customer.current_status || ""}`.trim();
+  if (!needsProgress(customer)) return false;
+  return [
+    "Quoted",
+    "Waiting Reply",
+    "已报价",
+    "已报价未回复",
+    "报价后待跟进"
+  ].includes(stage) || [
+    "已报价",
+    "已报价未回复",
+    "报价后待跟进",
+    "待客户回复"
+  ].includes(status);
+}
+
+function isCustomerReplyPending(customer = {}) {
+  const stage = `${customer.stage || ""}`.trim();
+  const status = `${customer.current_status || ""}`.trim();
+  if (!needsProgress(customer)) return false;
+  return [
+    "Customer Replied",
+    "Responded",
+    "engaged",
+    "有回应",
+    "已回复",
+    "客户已回复"
+  ].includes(stage) || [
+    "有回应",
+    "已回复",
+    "客户已回复"
+  ].includes(status);
+}
+
+function isProspectingCustomer(customer = {}) {
+  return customer?.source === "主动开发"
+    || customer?.customer_source === "主动开发"
+    || customer?.stage === "Prospecting"
+    || customer?.current_status === "Prospecting";
+}
+
+function isHighPriorityCustomer(customer = {}) {
+  const priority = `${customer.priority || customer.customer_priority || ""}`.trim().toLowerCase();
+  return priority === "high"
+    || priority === "高"
+    || `${customer.lead_level || ""}`.trim() === "A";
+}
+
+function isFollowUpOverdue(customer, today = new Date()) {
+  const dateValue = customer?.next_follow_up_at || customer?.follow_up_date;
+  if (!dateValue || !needsProgress(customer)) return false;
+  const followUpDate = new Date(dateValue);
+  if (Number.isNaN(followUpDate.getTime())) return false;
+  const startOfToday = new Date(today);
+  startOfToday.setHours(0, 0, 0, 0);
+  return followUpDate.getTime() < startOfToday.getTime();
+}
+
 function isDueForFollowUp(customer, today = new Date()) {
   const dateValue = customer?.next_follow_up_at || customer?.follow_up_date;
-  if (!dateValue) return false;
+  if (!dateValue || !needsProgress(customer)) return false;
   const followUpDate = new Date(dateValue);
   if (Number.isNaN(followUpDate.getTime())) return false;
 
@@ -370,10 +445,6 @@ export default function HomePage() {
     return customers.filter((customer) => !isArchivedCustomer(customer));
   }, [customers]);
 
-  const leadProgressCustomers = useMemo(() => {
-    return visibleCustomers.filter((customer) => isLeadProgressCustomer(customer));
-  }, [visibleCustomers]);
-
   const tasks = useMemo(() => buildTaskRows(visibleCustomers), [visibleCustomers]);
 
   function mapSummaryCustomers(list) {
@@ -391,87 +462,73 @@ export default function HomePage() {
   }
 
   const summaryGroups = useMemo(() => {
-    const todayFollowUpCustomers = leadProgressCustomers.filter((customer) => {
-      return !isClosedLeadStage(customer) && isDueForFollowUp(customer);
-    });
-    const newLeadCustomers = leadProgressCustomers.filter((customer) => getLeadProgressStageValue(customer) === "new_lead");
-    const linkedinConnectedCustomers = leadProgressCustomers.filter((customer) => `${customer.linkedin_status || ""}` === "connected");
-    const facebookMessageSentCustomers = leadProgressCustomers.filter((customer) => `${customer.facebook_status || ""}` === "message_sent");
-    const hasNeedCustomers = leadProgressCustomers.filter((customer) => getLeadProgressStageValue(customer) === "has_need");
-    const quotedFollowUpCustomers = leadProgressCustomers.filter((customer) => {
-      return getLeadProgressStageValue(customer) === "quoted" || `${customer.email_status || ""}` === "quotation_sent";
-    });
-    const highPotentialCustomers = leadProgressCustomers.filter((customer) => isHighPotentialLead(customer));
+    const progressCustomers = visibleCustomers.filter((customer) => needsProgress(customer));
+    const todayFollowUpCustomers = progressCustomers.filter((customer) => isDueForFollowUp(customer));
+    const overdueCustomers = progressCustomers.filter((customer) => isFollowUpOverdue(customer));
+    const quotedFollowUpCustomers = progressCustomers.filter((customer) => isQuotedWaitingReplyCustomer(customer));
+    const repliedPendingCustomers = progressCustomers.filter((customer) => isCustomerReplyPending(customer));
+    const prospectingCustomers = progressCustomers.filter((customer) => isProspectingCustomer(customer));
+    const highPriorityCustomers = progressCustomers.filter((customer) => isHighPriorityCustomer(customer));
 
     return [
       {
         key: "today-follow-up",
-        title: "今日待跟进",
-        subtitle: todayFollowUpCustomers.length === 0 ? "今天暂无待跟进客户" : "今天应该优先处理的跟进事项",
-        listTitle: "今日待跟进客户",
+        title: "今日需跟进",
+        subtitle: todayFollowUpCustomers.length === 0 ? "今天暂无需要推进的客户" : "今天应优先推进的客户",
+        listTitle: "今日需跟进客户",
         appearance: "urgent",
         reason: "今天需要跟进",
         customers: mapSummaryCustomers(todayFollowUpCustomers)
       },
       {
-        key: "has-need",
-        title: "有需求未报价",
-        subtitle: hasNeedCustomers.length === 0 ? "暂无未报价需求" : "客户已有明确需求，应尽快准备报价",
-        listTitle: "有需求未报价客户",
+        key: "overdue-follow-up",
+        title: "超期未跟进",
+        subtitle: overdueCustomers.length === 0 ? "暂无超期未跟进客户" : "这些客户已经超过计划跟进日期",
+        listTitle: "超期未跟进客户",
         appearance: "urgent",
-        reason: "客户有需求但还没报价",
-        customers: mapSummaryCustomers(hasNeedCustomers)
+        reason: "跟进已超期，需要尽快处理",
+        customers: mapSummaryCustomers(overdueCustomers)
       },
       {
         key: "quoted-follow-up",
         title: "已报价待跟进",
-        subtitle: quotedFollowUpCustomers.length === 0 ? "报价已发送后，会在这里提醒跟进" : "报价已发出，需要跟进反馈",
+        subtitle: quotedFollowUpCustomers.length === 0 ? "暂无报价后待跟进客户" : "报价已发出，需要确认客户反馈",
         listTitle: "已报价待跟进客户",
         appearance: "urgent",
         reason: "报价已发送，需要跟进反馈",
         customers: mapSummaryCustomers(quotedFollowUpCustomers)
       },
       {
-        key: "high-potential",
-        title: "高潜客户",
-        subtitle: highPotentialCustomers.length === 0 ? "暂无高潜客户" : "安装商/经销商类高价值推进客户",
-        listTitle: "高潜客户",
+        key: "reply-pending",
+        title: "客户已回复待处理",
+        subtitle: repliedPendingCustomers.length === 0 ? "暂无待处理客户回复" : "客户已回复，需要尽快继续推进",
+        listTitle: "客户已回复待处理",
+        appearance: "urgent",
+        reason: "客户已回复，待判断下一步",
+        customers: mapSummaryCustomers(repliedPendingCustomers)
+      },
+      {
+        key: "prospecting-follow-up",
+        title: "主动开发待推进",
+        subtitle: prospectingCustomers.length === 0 ? "暂无主动开发待推进客户" : "主动开发客户仍需继续推进",
+        listTitle: "主动开发待推进客户",
+        appearance: "channel",
+        reason: "主动开发客户待继续推进",
+        customers: mapSummaryCustomers(prospectingCustomers)
+      },
+      {
+        key: "high-priority",
+        title: "高优先级客户",
+        subtitle: highPriorityCustomers.length === 0 ? "暂无高优先级客户" : "需要优先投入时间推进的客户",
+        listTitle: "高优先级客户",
         appearance: "value",
-        reason: "安装商/经销商类高价值推进客户",
-        customers: mapSummaryCustomers(highPotentialCustomers)
-      },
-      {
-        key: "new-lead",
-        title: "新线索待筛选",
-        subtitle: newLeadCustomers.length === 0 ? "暂无待筛选新线索" : "刚进入系统，待判断价值与类型",
-        listTitle: "新线索待筛选客户",
-        appearance: "channel",
-        reason: "新线索，待判断价值与类型",
-        customers: mapSummaryCustomers(newLeadCustomers)
-      },
-      {
-        key: "linkedin-connected",
-        title: "LinkedIn 已通过未私信",
-        subtitle: linkedinConnectedCustomers.length === 0 ? "暂无待发 LinkedIn 私信客户" : "适合立刻发 LinkedIn 破冰私信",
-        listTitle: "LinkedIn 已通过未私信客户",
-        appearance: "channel",
-        reason: "LinkedIn 已通过但还未发送破冰私信",
-        customers: mapSummaryCustomers(linkedinConnectedCustomers)
-      },
-      {
-        key: "facebook-message-sent",
-        title: "FB 已私信未回复",
-        subtitle: facebookMessageSentCustomers.length === 0 ? "暂无待跟进 FB 对话" : "需要按节奏继续跟进 FB 对话",
-        listTitle: "FB 已私信未回复客户",
-        appearance: "channel",
-        reason: "FB 已私信但还未回复",
-        customers: mapSummaryCustomers(facebookMessageSentCustomers)
+        reason: "高优先级客户，建议优先处理",
+        customers: mapSummaryCustomers(highPriorityCustomers)
       }
     ];
-  }, [leadProgressCustomers]);
+  }, [visibleCustomers]);
 
-  const priorityCards = useMemo(() => summaryGroups.slice(0, 4), [summaryGroups]);
-  const leadActionCards = useMemo(() => summaryGroups.slice(4), [summaryGroups]);
+  const summaryCards = useMemo(() => summaryGroups, [summaryGroups]);
 
   const actionRows = useMemo(() => {
     return tasks.slice(0, 5).map((task) => {
@@ -516,8 +573,8 @@ export default function HomePage() {
       <header className="hero">
         <div>
           <p className="eyebrow">工作台</p>
-          <h1>销售工作台</h1>
-          <p>首页只保留今日行动和关键提醒，先知道今天该做什么。</p>
+          <h1>今日工作台</h1>
+          <p>集中处理今天需要推进的客户，包括询盘客户、已报价客户、已回复客户和主动开发客户。</p>
         </div>
         <AppNav />
       </header>
@@ -531,11 +588,11 @@ export default function HomePage() {
         <>
           <section className="panel">
             <div className="section-title">
-              <h2>今日优先处理</h2>
-              <span>先处理最影响成交推进的客户</span>
+              <h2>今日工作重点</h2>
+              <span>先看今天最需要推进的客户，再进入具体处理</span>
             </div>
             <div className="task-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14 }}>
-              {priorityCards.map((card) => {
+              {summaryCards.map((card) => {
                 const appearance = getCardAppearance(card.appearance, activeSummaryKey === card.key);
                 const isActive = activeSummaryKey === card.key;
                 const selectedBadge = getSelectedBadgeStyle(card.appearance);
@@ -594,7 +651,7 @@ export default function HomePage() {
                           border: `1px solid ${appearance.border.includes("rgba") ? appearance.border.match(/rgba?\([^)]+\)|#[0-9a-fA-F]+/)?.[0] || "rgba(148,163,184,.25)" : "rgba(148,163,184,.25)"}`
                         }}
                       >
-                        {card.key === "high-potential" ? "优先关注" : "建议处理"}
+                        {card.key === "high-priority" ? "优先关注" : "建议处理"}
                       </span>
                     )}
                     <strong style={{ color: appearance.accent, display: "block", paddingRight: card.customers.length > 0 ? 84 : 0 }}>{card.title}</strong>
@@ -604,85 +661,6 @@ export default function HomePage() {
                     <p style={{ marginTop: 8, color: "#475569", lineHeight: 1.45 }}>{card.subtitle}</p>
                   </article>
                 </button>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="panel">
-            <div className="section-title">
-              <h2>获客动作提醒</h2>
-              <span>多渠道触达客户后，按节奏推进互动</span>
-            </div>
-            <div className="task-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 12 }}>
-              {leadActionCards.map((card) => {
-                const appearance = getCardAppearance(card.appearance, activeSummaryKey === card.key);
-                const isActive = activeSummaryKey === card.key;
-                const selectedBadge = getSelectedBadgeStyle(card.appearance);
-                return (
-                  <button
-                    key={card.key}
-                    type="button"
-                    onClick={() => setActiveSummaryKey(card.key === activeSummaryKey ? "" : card.key)}
-                    style={{ all: "unset", cursor: "pointer", display: "block" }}
-                    aria-label={`查看${card.title}客户列表`}
-                  >
-                    <article
-                      className="notice-panel"
-                      style={{
-                        border: appearance.border,
-                        background: appearance.background,
-                        boxShadow: appearance.shadow,
-                        minHeight: 110,
-                        borderRadius: 18,
-                        padding: "14px 16px",
-                        transition: "all 0.2s ease",
-                        position: "relative",
-                        transform: isActive ? "translateY(-1px)" : "none"
-                      }}
-                    >
-                      {isActive && (
-                        <span
-                          style={{
-                            position: "absolute",
-                            top: 12,
-                            right: 12,
-                            fontSize: 10,
-                            fontWeight: 700,
-                            padding: "3px 7px",
-                            borderRadius: 999,
-                            background: selectedBadge.background,
-                            color: selectedBadge.color,
-                            border: selectedBadge.border
-                          }}
-                        >
-                          当前筛选
-                        </span>
-                      )}
-                      {card.customers.length > 0 && (
-                        <span
-                          style={{
-                            position: "absolute",
-                            top: isActive ? 38 : 12,
-                            right: 12,
-                            fontSize: 10,
-                            fontWeight: 700,
-                            padding: "3px 7px",
-                            borderRadius: 999,
-                            background: isActive ? "rgba(255,255,255,0.82)" : "rgba(255,255,255,0.66)",
-                            color: appearance.accent
-                          }}
-                        >
-                          待处理
-                        </span>
-                      )}
-                      <strong style={{ color: appearance.accent }}>{card.title}</strong>
-                      <div style={{ fontSize: 30, fontWeight: 800, lineHeight: 1.05, marginTop: 6, color: "#111827" }}>
-                        {card.customers.length}
-                      </div>
-                      <p style={{ marginTop: 6, color: "#64748b", lineHeight: 1.4 }}>{card.subtitle}</p>
-                    </article>
-                  </button>
                 );
               })}
             </div>
