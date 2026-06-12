@@ -30,6 +30,7 @@ function AuthNotice({ session }) {
 }
 
 const emptyFilters = {
+  customerScope: "全部客户",
   keyword: "",
   country: "",
   customerType: "",
@@ -40,12 +41,25 @@ const emptyFilters = {
   followUpRange: "",
   channelStatus: "",
   partnerCandidate: "",
-  onlyImportant: "否",
-  showArchived: "否"
+  onlyImportant: "否"
 };
 
 function isImportantCustomer(customer) {
   return customer?.lead_level === "A" || customer?.priority === true || customer?.is_important === true;
+}
+
+function isArchivedCustomer(customer) {
+  return customer?.current_status === "归档"
+    || customer?.current_status === "已归档"
+    || customer?.stage === "Archived"
+    || customer?.stage === "归档";
+}
+
+function isProspectingCustomer(customer) {
+  return customer?.source === "主动开发"
+    || customer?.customer_source === "主动开发"
+    || customer?.stage === "Prospecting"
+    || customer?.current_status === "Prospecting";
 }
 
 function matchLeadSource(customer, leadSource) {
@@ -71,6 +85,14 @@ export default function CustomersPage() {
   const [session, setSession] = useState(null);
   const [customers, setCustomers] = useState([]);
   const [filters, setFilters] = useState(emptyFilters);
+  const [showProspectModal, setShowProspectModal] = useState(false);
+  const [isSavingProspect, setIsSavingProspect] = useState(false);
+  const [prospectForm, setProspectForm] = useState({
+    customer_name: "",
+    country: "",
+    customer_type: "Unknown",
+    note: ""
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -113,6 +135,33 @@ export default function CustomersPage() {
     setCustomers(rows || []);
   }
 
+  async function insertCustomerWithFallback(payload) {
+    let draft = { ...payload };
+
+    for (let index = 0; index < 6; index += 1) {
+      const { data, error: insertError } = await supabase
+        .from("customers")
+        .insert(draft)
+        .select("*")
+        .single();
+
+      if (!insertError) {
+        return { data, error: null };
+      }
+
+      const missingColumn = insertError.message?.match(/Could not find the '([^']+)' column/i)?.[1];
+      if (!missingColumn || !(missingColumn in draft)) {
+        return { data: null, error: insertError };
+      }
+
+      const nextDraft = { ...draft };
+      delete nextDraft[missingColumn];
+      draft = nextDraft;
+    }
+
+    return { data: null, error: new Error("保存客户失败：字段兼容处理超过重试次数。") };
+  }
+
   const filteredCustomers = useMemo(() => {
     return [...customers]
       .filter((customer) => {
@@ -123,7 +172,8 @@ export default function CustomersPage() {
           ? getLeadProgressStageLabel(customer)
           : getStageLabel(getStageValue(customer));
         const partnerCandidate = isPartnerCandidate(customer);
-        const isArchived = customer.current_status === "归档" || customer.stage === "Archived";
+        const isArchived = isArchivedCustomer(customer);
+        const isProspect = isProspectingCustomer(customer);
         const important = isImportantCustomer(customer);
         const keyword = filters.keyword.trim().toLowerCase();
         const nameText = String(customer.customer_name || customer.company_name || "").toLowerCase();
@@ -140,7 +190,21 @@ export default function CustomersPage() {
           getChannelStatusLabel("whatsapp_status", customer.whatsapp_status, customer)
         ].join(" ").toLowerCase();
 
-        if (filters.showArchived !== "是" && isArchived) {
+        if (filters.customerScope === "已归档") {
+          if (!isArchived) return false;
+        } else if (isArchived) {
+          return false;
+        }
+
+        if (filters.customerScope === "询盘客户" && isProspect) {
+          return false;
+        }
+
+        if (filters.customerScope === "主动开发客户" && !isProspect) {
+          return false;
+        }
+
+        if (filters.customerScope === "重点客户" && !important) {
           return false;
         }
 
@@ -174,6 +238,64 @@ export default function CustomersPage() {
 
   function updateFilter(field, value) {
     setFilters((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateProspectForm(field, value) {
+    setProspectForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function saveProspectCustomer() {
+    if (!supabase || !session?.user) {
+      setError("请先登录后再新增主动开发客户。");
+      return;
+    }
+
+    const customerName = prospectForm.customer_name.trim();
+    if (!customerName) {
+      setError("请先填写公司名或客户名。");
+      return;
+    }
+
+    setError("");
+    setNotice("");
+    setIsSavingProspect(true);
+
+    const now = new Date().toISOString();
+    const note = prospectForm.note.trim();
+    const payload = {
+      user_id: session.user.id,
+      customer_name: customerName,
+      country: prospectForm.country.trim() || null,
+      customer_type: prospectForm.customer_type || "Unknown",
+      source: "主动开发",
+      customer_source: "主动开发",
+      stage: "Prospecting",
+      current_status: "新线索",
+      current_next_action: "判断是否值得触达",
+      next_action: "判断是否值得触达",
+      lead_level: "C",
+      question: note || null,
+      original_message: note ? `来源渠道：主动开发\n备注：${note}` : "来源渠道：主动开发",
+      updated_at: now
+    };
+
+    const { error: insertError } = await insertCustomerWithFallback(payload);
+    setIsSavingProspect(false);
+
+    if (insertError) {
+      setError(`新增主动开发客户失败：${insertError.message}`);
+      return;
+    }
+
+    setProspectForm({
+      customer_name: "",
+      country: "",
+      customer_type: "Unknown",
+      note: ""
+    });
+    setShowProspectModal(false);
+    await loadCustomers();
+    setNotice("主动开发客户已加入客户池。");
   }
 
   async function archiveCustomer(customer) {
@@ -246,11 +368,26 @@ export default function CustomersPage() {
             <div className="section-title">
               <h2>筛选条件</h2>
               <div className="actions compact">
-                <Link className="primary" href="/customers/new">新增客户</Link>
+                <Link className="primary" href="/customers/new">新增询盘客户</Link>
+                <button type="button" onClick={() => setShowProspectModal(true)}>新增主动开发客户</button>
+                <Link href="/prospecting">批量导入主动开发客户</Link>
                 <button type="button" onClick={() => setFilters(emptyFilters)}>清空筛选</button>
               </div>
             </div>
+            <p className="subtle" style={{ marginTop: 0 }}>
+              批量导入功能暂时保留在旧主动开发页面，后续会合并到客户页。
+            </p>
             <div className="form-grid">
+              <label className="field">
+                <span>客户范围</span>
+                <select value={filters.customerScope} onChange={(event) => updateFilter("customerScope", event.target.value)}>
+                  <option value="全部客户">全部客户</option>
+                  <option value="询盘客户">询盘客户</option>
+                  <option value="主动开发客户">主动开发客户</option>
+                  <option value="重点客户">重点客户</option>
+                  <option value="已归档">已归档</option>
+                </select>
+              </label>
               <label className="field">
                 <span>客户名 / 公司名搜索</span>
                 <input value={filters.keyword} onChange={(event) => updateFilter("keyword", event.target.value)} placeholder="输入客户名或公司名" />
@@ -325,13 +462,6 @@ export default function CustomersPage() {
                 </select>
               </label>
               <label className="field">
-                <span>显示归档客户</span>
-                <select value={filters.showArchived} onChange={(event) => updateFilter("showArchived", event.target.value)}>
-                  <option value="否">否</option>
-                  <option value="是">是</option>
-                </select>
-              </label>
-              <label className="field">
                 <span>只看重点客户</span>
                 <select value={filters.onlyImportant} onChange={(event) => updateFilter("onlyImportant", event.target.value)}>
                   <option value="否">否</option>
@@ -368,7 +498,12 @@ export default function CustomersPage() {
                       <td>{getCustomerName(customer)}</td>
                       <td>{customer.country || "-"}</td>
                       <td><span className="soft-badge">{getCustomerTypeLabel(getCustomerTypeValue(customer))}</span></td>
-                      <td><span className="soft-badge">{getLeadSourceLabel(getLeadSourceValue(customer)) || getSourceLabel(customer.source)}</span></td>
+                      <td>
+                        <div className="actions compact" style={{ gap: 8, justifyContent: "flex-start", flexWrap: "wrap" }}>
+                          <span className="soft-badge">{getLeadSourceLabel(getLeadSourceValue(customer)) || getSourceLabel(customer.source)}</span>
+                          <span className="soft-badge">{isProspectingCustomer(customer) ? "主动开发" : "询盘客户"}</span>
+                        </div>
+                      </td>
                       <td>
                         <div className="actions compact" style={{ gap: 8, justifyContent: "flex-start" }}>
                           <span className={`level level-${getLeadLevel(customer)}`}>{getLeadLevel(customer)}</span>
@@ -396,6 +531,65 @@ export default function CustomersPage() {
             {filteredCustomers.length === 0 && <p className="empty">暂无客户</p>}
           </section>
         </>
+      )}
+
+      {showProspectModal && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setShowProspectModal(false)}>
+          <div className="modal-card" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <div className="section-title">
+              <h2>新增主动开发客户</h2>
+              <button type="button" onClick={() => setShowProspectModal(false)}>关闭</button>
+            </div>
+            <p className="subtle" style={{ marginTop: 0 }}>
+              保存后默认进入主动开发客户池，阶段为 Prospecting，下一步动作为“判断是否值得触达”。
+            </p>
+            <div className="form-grid">
+              <label className="field">
+                <span>公司名 / 客户名</span>
+                <input
+                  value={prospectForm.customer_name}
+                  onChange={(event) => updateProspectForm("customer_name", event.target.value)}
+                  placeholder="输入公司名或客户名"
+                />
+              </label>
+              <label className="field">
+                <span>国家</span>
+                <input
+                  value={prospectForm.country}
+                  onChange={(event) => updateProspectForm("country", event.target.value)}
+                  placeholder="输入国家"
+                />
+              </label>
+              <label className="field">
+                <span>客户类型</span>
+                <select value={prospectForm.customer_type} onChange={(event) => updateProspectForm("customer_type", event.target.value)}>
+                  <option value="Unknown">待判断</option>
+                  <option value="Solar Installer">安装商</option>
+                  <option value="Solar Distributor">太阳能经销商</option>
+                  <option value="Inverter Distributor">逆变器经销商</option>
+                  <option value="Battery Wholesaler">电池批发商</option>
+                  <option value="OEM / Brand Owner">OEM / 品牌方</option>
+                  <option value="End User">终端用户</option>
+                </select>
+              </label>
+              <label className="field field-span-2">
+                <span>备注</span>
+                <textarea
+                  rows={4}
+                  value={prospectForm.note}
+                  onChange={(event) => updateProspectForm("note", event.target.value)}
+                  placeholder="补充这个主动开发客户的背景说明、渠道来源或判断依据"
+                />
+              </label>
+            </div>
+            <div className="actions compact" style={{ justifyContent: "flex-end", marginTop: 16 }}>
+              <button type="button" onClick={() => setShowProspectModal(false)}>取消</button>
+              <button className="primary" type="button" onClick={saveProspectCustomer} disabled={isSavingProspect}>
+                {isSavingProspect ? "保存中..." : "保存主动开发客户"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </main>
   );
