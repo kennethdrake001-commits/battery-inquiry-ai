@@ -184,22 +184,31 @@ function analyzeCustomerMessageContent(message, customer = {}) {
 
   let nextStep = "先确认客户的核心需求，再判断是否适合继续推进。";
   let suggestedReply = "Hi, could you please share more details about your battery requirement? Then I can recommend a suitable solution for you.";
+  const capacityText = details.capacities.join(" and ");
+  const inverterText = details.inverters.join(" and ");
+  const countryText = details.countries[0] || "";
+  const wantsDoorToDoor = lower.includes("door to door");
+  const asksDdp = lower.includes("ddp");
 
   if (hasBattery && hasInverter) {
     nextStep = "确认逆变器类型、数量、应用场景，并确认是否需要电池和逆变器一起报价。";
-    suggestedReply = `Hi, we can help check the battery and inverter matching. May I know whether the inverter is hybrid, off-grid, or on-grid, and how many sets you need?${hasCountry ? "" : " Also, please share your destination country."}`;
+    suggestedReply = `Hi, thanks for your inquiry. We can help check the ${capacityText || "battery"}${inverterText ? ` and ${inverterText}` : " and inverter"} solution${countryText ? ` for ${countryText}` : ""}. May I know how many sets you need and whether the inverter should be hybrid, off-grid, or on-grid?`;
   } else if (hasShipping) {
     nextStep = "确认目的国、城市、数量，并判断是否需要 DDP 到门服务。";
-    suggestedReply = "Hi, we can check the shipping solution for you. May I know the destination country, city, quantity, and whether you need DDP door-to-door delivery?";
+    suggestedReply = asksDdp || wantsDoorToDoor
+      ? `Hi, we can check DDP door-to-door delivery${countryText ? ` to ${countryText}` : ""}. May I know the destination city, product model, and quantity? Then I can check the shipping cost and delivery option for you.`
+      : `Hi, we can check the shipping solution for you.${countryText ? ` I noted the destination is ${countryText}.` : ""} May I know the destination city, product model, and quantity?`;
   } else if (hasDocs) {
     nextStep = "发送资料或证书前，先确认客户关注的型号、容量和用途。";
-    suggestedReply = "Sure, I can send the datasheet and certificates. May I know which model or capacity you are interested in, and whether you need it for resale or project installation?";
+    suggestedReply = "Sure, I can send the datasheet and CE certificate. May I know which model or capacity you are interested in, and whether this is for resale or project installation?";
   } else if (hasBattery && hasQuote) {
     nextStep = "确认客户所需数量、目的国和客户身份，再准备正式报价。";
-    suggestedReply = "Hi, thanks for your inquiry. I can quote this battery for you. May I know the required quantity and destination country? Also, is this for resale, installation projects, or your own use?";
+    suggestedReply = `Hi, thanks for your inquiry. I can quote the ${capacityText || "battery"} for you. May I know the required quantity${countryText ? "" : " and destination country"}? Also, is this for resale, installation projects, or your own use?`;
   } else if (hasQuote) {
     nextStep = "确认客户所需容量、数量、目的地和应用场景，再判断是否可以报价。";
-    suggestedReply = "Hi, thanks for your inquiry. To recommend the right battery and quote accurately, may I know your required capacity, quantity, destination country, and application?";
+    suggestedReply = capacityText
+      ? `Hi, thanks for your inquiry. I can quote the ${capacityText} battery for you. May I know the required quantity${countryText ? "" : " and destination country"}? Also, is this for resale, installation projects, or your own use?`
+      : "Hi, thanks for your inquiry. To recommend the right battery and quote accurately, may I know your required capacity, quantity, destination country, and application?";
   } else if (customerIsProspecting) {
     nextStep = "先确认客户是否匹配目标买家，再判断是否值得继续推进。";
     suggestedReply = "Thanks for your reply. May I know what type of solar battery products you are currently sourcing, and whether you mainly work with residential or commercial projects?";
@@ -602,6 +611,11 @@ function getRiskFocusItems(customer) {
 
 function HistoryItem({ item, onSaveAsPlaybook }) {
   const canSaveAsPlaybook = playbookEligibleResults.includes(item.result_feedback);
+  const interactionAnalysis = item.ai_analysis || {};
+  const historyNeed = interactionAnalysis.customerNeed || interactionAnalysis.mainBlocker || interactionAnalysis.suggestedAction || "无";
+  const historyMissing = Array.isArray(interactionAnalysis.missingInformation)
+    ? interactionAnalysis.missingInformation.join(" / ")
+    : interactionAnalysis.missingInformation || "无";
 
   return (
     <article className="history-item">
@@ -618,14 +632,16 @@ function HistoryItem({ item, onSaveAsPlaybook }) {
           <p>{item.original_message || "无"}</p>
           <h4>我方已回复</h4>
           <p>{item.our_reply || "无"}</p>
-          <h4>AI 建议话术</h4>
+          <h4>建议回复草稿</h4>
           <p>{item.ai_suggested_reply || "无"}</p>
           <h4>最终发送话术</h4>
           <p>{item.final_sent_reply || "未发送"}</p>
         </div>
         <div>
-          <h4>AI 分析 JSON</h4>
-          <pre className="json-box compact-json">{JSON.stringify(item.ai_analysis || {}, null, 2)}</pre>
+          <h4>客户需求判断</h4>
+          <p>{historyNeed}</p>
+          <h4>缺失信息</h4>
+          <p>{historyMissing}</p>
           <h4>是否修改</h4>
           <p>{item.reply_modified ? "是" : "否"}</p>
           <h4>发送时间</h4>
@@ -2316,7 +2332,7 @@ export default function CustomerDetailPage() {
             </div>
             <div className="actions">
               <button className="primary" onClick={() => continueAnalyze()} disabled={isAnalyzing || !session}>
-                {isAnalyzing ? "AI 分析中..." : "AI 继续分析下一步"}
+                {isAnalyzing ? "分析中..." : "分析客户新回复"}
               </button>
             </div>
           </section>
@@ -2324,11 +2340,32 @@ export default function CustomerDetailPage() {
           {analysis && (
             <section className="panel">
               <div className="section-title">
-                <h2>下一步 AI 分析结果</h2>
-                <span>可保存草稿或标记已发送</span>
+                <h2>分析结果</h2>
+                <span>确认回复后可保存草稿或标记已发送</span>
               </div>
-              <pre className="json-box">{JSON.stringify(analysis, null, 2)}</pre>
-              <Field label="运营最终发送话术">
+              <div className="detail-grid" style={{ gap: 16, marginBottom: 16 }}>
+                <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                  <strong>客户需求</strong>
+                  <p>{analysis.customerNeed || analysis.mainBlocker || "待判断"}</p>
+                </div>
+                <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                  <strong>客户类型判断</strong>
+                  <p>{analysis.customerType || "待判断"}</p>
+                </div>
+                <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                  <strong>关键信息缺失</strong>
+                  <div style={{ color: "#334155", lineHeight: 1.8, marginTop: 6 }}>
+                    {(Array.isArray(analysis.missingInformation) ? analysis.missingInformation : [analysis.missingInformation || "暂无"]).map((item) => (
+                      <div key={item}>• {item}</div>
+                    ))}
+                  </div>
+                </div>
+                <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                  <strong>下一步动作</strong>
+                  <p>{analysis.suggestedAction || "待确认"}</p>
+                </div>
+              </div>
+              <Field label="建议英文回复">
                 <textarea rows={5} value={finalReply} onChange={(event) => setFinalReply(event.target.value)} />
               </Field>
               <div className="actions">
