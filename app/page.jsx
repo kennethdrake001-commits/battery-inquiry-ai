@@ -232,6 +232,147 @@ function isDueForFollowUp(customer, today = new Date()) {
   return followUpDate.getTime() <= endOfToday.getTime();
 }
 
+function normalizeText(value) {
+  return `${value || ""}`.trim().toLowerCase();
+}
+
+function hasQuotedStatus(customer = {}) {
+  const stage = normalizeText(customer.stage);
+  const status = normalizeText(customer.current_status || customer.status);
+  return [
+    "quoted",
+    "已报价",
+    "已发送报价",
+    "报价后待跟进",
+    "quoted waiting reply"
+  ].includes(stage) || [
+    "已报价",
+    "已发送报价",
+    "报价后待跟进",
+    "已报价未回复"
+  ].includes(status);
+}
+
+function hasSentInfoStatus(customer = {}) {
+  const stage = normalizeText(customer.stage);
+  const status = normalizeText(customer.current_status || customer.status);
+  return [
+    "sent info",
+    "material_sent",
+    "material sent",
+    "已发资料",
+    "已发送资料"
+  ].includes(stage) || [
+    "已发资料",
+    "已发送资料",
+    "sent info"
+  ].includes(status);
+}
+
+function isNewLeadCustomer(customer = {}) {
+  const stage = normalizeText(customer.stage);
+  const status = normalizeText(customer.current_status || customer.status);
+  return [
+    "new",
+    "new inquiry",
+    "new_lead",
+    "prospecting",
+    "待判断",
+    "新线索",
+    "新询盘"
+  ].includes(stage) || [
+    "新线索",
+    "待判断",
+    "新询盘",
+    "prospecting"
+  ].includes(status);
+}
+
+function getFollowUpDateLabel(customer = {}, task = null, today = new Date()) {
+  const dateValue = customer?.next_follow_up_at || customer?.follow_up_date || task?.next_follow_up_at || "";
+  if (!dateValue) return "未安排";
+
+  const followUpDate = new Date(dateValue);
+  if (Number.isNaN(followUpDate.getTime())) return formatDateOnly(dateValue);
+
+  const startOfToday = new Date(today);
+  startOfToday.setHours(0, 0, 0, 0);
+  const endOfToday = new Date(today);
+  endOfToday.setHours(23, 59, 59, 999);
+
+  const formatted = formatDateOnly(dateValue);
+  if (followUpDate.getTime() < startOfToday.getTime()) {
+    return `已超期：${formatted}`;
+  }
+  if (followUpDate.getTime() <= endOfToday.getTime()) {
+    return "今天跟进";
+  }
+  return formatted;
+}
+
+function getNextActionText(customer = {}, task = null, today = new Date()) {
+  if (isFollowUpOverdue(customer, today)) {
+    return "立即补跟进，确认客户当前采购进度";
+  }
+  if (isCustomerReplyPending(customer)) {
+    return "查看客户回复内容，确认下一步沟通方向";
+  }
+  if (hasQuotedStatus(customer) || task?.task_reason?.includes("报价")) {
+    return "跟进报价反馈，确认客户是否接受价格和方案";
+  }
+  if (hasSentInfoStatus(customer)) {
+    return "跟进资料阅读情况，确认客户是否需要报价";
+  }
+  if (isDueForFollowUp(customer, today)) {
+    return "按计划跟进客户，推进到下一阶段";
+  }
+  if (isNewLeadCustomer(customer)) {
+    return "补充客户需求信息，判断是否值得推进";
+  }
+  if (isHighPriorityCustomer(customer)) {
+    return "优先查看客户情况，确认是否需要今天主动推进";
+  }
+  if (isProspectingCustomer(customer)) {
+    return "判断客户是否值得继续触达，安排下一次开发动作";
+  }
+
+  const fallback = formatNextActionForDisplay(
+    customer.current_next_action || customer.next_action || task?.current_next_action || getNextAction(customer)
+  );
+  if (!fallback || fallback === "暂无动作" || fallback === "需要人工判断下一步动作") {
+    return "补充客户信息，判断下一步推进动作";
+  }
+  return fallback;
+}
+
+function getReminderReason(customer = {}, task = null, today = new Date()) {
+  if (isFollowUpOverdue(customer, today)) {
+    return "跟进时间已超期，避免客户流失或被同行抢走";
+  }
+  if (isCustomerReplyPending(customer)) {
+    return "客户已经回复，需要尽快处理，避免错过成交窗口";
+  }
+  if (hasQuotedStatus(customer) || task?.task_reason?.includes("报价")) {
+    return "客户已收到报价，需要跟进预算、交期、付款方式和疑问点";
+  }
+  if (hasSentInfoStatus(customer)) {
+    return "资料已发送，需要推动客户从了解产品进入报价阶段";
+  }
+  if (isDueForFollowUp(customer, today)) {
+    return "今天是计划跟进日期，需要完成本次跟进动作";
+  }
+  if (isNewLeadCustomer(customer)) {
+    return "新客户还未完成需求判断，需要确认采购身份、国家、容量需求和应用场景";
+  }
+  if (isHighPriorityCustomer(customer)) {
+    return "该客户被标记为重点客户，即使没有明确跟进日期也需要优先关注";
+  }
+  if (isProspectingCustomer(customer)) {
+    return "主动开发客户需要持续推进，避免停留在名单阶段";
+  }
+  return "当前客户信息不足，需要先完善需求、来源和阶段判断";
+}
+
 export default function HomePage() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [session, setSession] = useState(null);
@@ -438,7 +579,8 @@ export default function HomePage() {
         : getStageLabel(getStageValue(customer)),
       nextAction: formatNextActionForDisplay(customer.current_next_action || customer.next_action || getNextAction(customer)),
       followUpDate: formatDateOnly(customer.next_follow_up_at || customer.follow_up_date),
-      isHighPriority: isHighPriorityCustomer(customer)
+      isHighPriority: isHighPriorityCustomer(customer),
+      rawCustomer: customer
     }));
   }
 
@@ -535,10 +677,12 @@ export default function HomePage() {
         currentStatus: customer && isLeadProgressCustomer(customer)
           ? getLeadProgressStageLabel(customer)
           : getStageLabel(getStageValue(customer || task)),
-        nextAction: formatNextActionForDisplay(task.current_next_action || getNextAction(customer || task)),
-        followUpDate: formatDateOnly((customer && (customer.next_follow_up_at || customer.follow_up_date)) || task.next_follow_up_at),
-        reason: task.task_reason || "根据当前推进建议执行",
-        isHighPriority: customer ? isHighPriorityCustomer(customer) : false
+        nextAction: getNextActionText(customer || task, task),
+        followUpDate: getFollowUpDateLabel(customer || task, task),
+        reason: getReminderReason(customer || task, task),
+        isHighPriority: customer ? isHighPriorityCustomer(customer) : false,
+        rawCustomer: customer,
+        rawTask: task
       };
     });
   }, [tasks, visibleCustomers]);
@@ -559,9 +703,9 @@ export default function HomePage() {
     source: item.source,
     customerType: item.customerType,
     currentStatus: item.currentStatus,
-    nextAction: item.nextAction,
-    followUpDate: item.followUpDate || "待安排",
-    reason: item.reason || selectedActionGroup.reason || "根据当前推进建议执行",
+    nextAction: getNextActionText(item.rawCustomer || {}, item.rawTask || null),
+    followUpDate: getFollowUpDateLabel(item.rawCustomer || {}, item.rawTask || null),
+    reason: getReminderReason(item.rawCustomer || {}, item.rawTask || null),
     isHighPriority: Boolean(item.isHighPriority)
   }));
 
