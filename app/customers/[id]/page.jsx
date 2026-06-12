@@ -90,6 +90,130 @@ function formatCustomerActionDisplay(action) {
   return formatNextActionForDisplay(text);
 }
 
+const messageKeywordSets = {
+  battery: ["kwh", "kw", "kva", "51.2v", "48v", "100ah", "118ah", "200ah", "280ah", "314ah", "5kwh", "6kwh", "10kwh", "15kwh", "16kwh", "20kwh", "40kwh", "50kwh", "battery", "lithium battery", "solar battery", "lifepo4"],
+  inverter: ["inverter", "mppt", "hybrid", "off-grid", "on-grid", "grid-tie", "5kw inverter", "10kw inverter", "split phase", "single phase", "three phase"],
+  quote: ["price", "quote", "quotation", "how much", "cost", "best price", "fob", "cif", "ddp"],
+  shipping: ["ship", "shipping", "delivery", "ddp", "door to door", "customs", "clearance", "destination", "port", "freight"],
+  docs: ["datasheet", "catalog", "catalogue", "certificate", "certification", "ce", "msds", "un38.3", "iec", "iec62619", "warranty"],
+  customerType: ["installer", "distributor", "wholesaler", "reseller", "epc", "contractor", "solar company", "project", "dealer"],
+  quantity: ["pcs", "units", "sets", "pieces", "quantity", "qty", "container", "sample", "bulk order"],
+  application: ["home", "residential", "commercial", "industrial", "project", "backup", "solar system", "off grid", "on grid", "villa"],
+  trade: ["fob", "cif", "ddp", "exw"],
+  countries: ["tanzania", "germany", "spain", "italy", "poland", "usa", "uk", "france", "kenya", "nigeria", "south africa", "mexico", "chile", "peru", "pakistan", "philippines", "indonesia", "malaysia", "thailand", "uae", "saudi", "egypt", "canada", "australia", "brazil", "argentina", "turkey", "india"]
+};
+
+function messageIncludesAny(text, keywords) {
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
+function extractMessagePhrases(message) {
+  const text = `${message || ""}`;
+  const lower = text.toLowerCase();
+  const capacityMatches = text.match(/\b(?:\d+(?:\.\d+)?)\s?(?:kwh|kw|kva|ah|v)\b/gi) || [];
+  const inverterMatches = text.match(/\b(?:\d+(?:\.\d+)?)\s?kw inverter\b/gi) || [];
+  const quantityMatches = text.match(/\b\d+\s?(?:pcs|units|sets|pieces)\b/gi) || [];
+  const countries = messageKeywordSets.countries.filter((item) => lower.includes(item));
+
+  return {
+    capacities: [...new Set(capacityMatches)],
+    inverters: [...new Set(inverterMatches)],
+    quantities: [...new Set(quantityMatches)],
+    countries: [...new Set(countries.map((item) => item.replace(/\b\w/g, (char) => char.toUpperCase())))]
+  };
+}
+
+function analyzeCustomerMessageContent(message, customer = {}) {
+  const rawMessage = `${message || ""}`.trim();
+  if (!rawMessage) {
+    return null;
+  }
+
+  const lower = rawMessage.toLowerCase();
+  const details = extractMessagePhrases(rawMessage);
+  const hasBattery = messageIncludesAny(lower, messageKeywordSets.battery);
+  const hasInverter = messageIncludesAny(lower, messageKeywordSets.inverter);
+  const hasQuote = messageIncludesAny(lower, messageKeywordSets.quote);
+  const hasShipping = messageIncludesAny(lower, messageKeywordSets.shipping);
+  const hasDocs = messageIncludesAny(lower, messageKeywordSets.docs);
+  const hasQuantity = details.quantities.length > 0 || messageIncludesAny(lower, messageKeywordSets.quantity);
+  const hasApplication = messageIncludesAny(lower, messageKeywordSets.application);
+  const hasTrade = messageIncludesAny(lower, messageKeywordSets.trade);
+  const customerIsProspecting = getCustomerQueueCategory(customer) === "prospecting";
+
+  const detectedType = lower.includes("installer")
+    ? "客户看起来是安装商。"
+    : lower.includes("distributor") || lower.includes("dealer")
+      ? "客户看起来是经销商或渠道客户。"
+      : lower.includes("wholesaler") || lower.includes("reseller")
+        ? "客户看起来是批发或转售客户。"
+        : lower.includes("epc") || lower.includes("contractor") || lower.includes("solar company")
+          ? "客户看起来是 EPC / 工程项目类客户。"
+          : customer?.customer_type && customer.customer_type !== "Unknown"
+            ? `当前客户资料显示为${getCustomerTypeLabel(customer.customer_type)}，但消息里还没有更多身份线索。`
+            : "客户身份暂不明确，需要确认是安装商、经销商、批发商还是终端项目客户。";
+
+  const missingItems = [];
+  const hasCountry = details.countries.length > 0 || Boolean(`${customer?.country || customer?.destination_country || ""}`.trim());
+  if (!hasCountry) missingItems.push("国家 / 目的地");
+  if (!hasQuantity) missingItems.push("数量");
+  if (detectedType.includes("暂不明确")) missingItems.push("客户身份");
+  if (!hasApplication && !`${customer?.application_scenario || customer?.application_scene || ""}`.trim()) missingItems.push("应用场景");
+  if (!hasTrade && (hasQuote || hasShipping)) missingItems.push("贸易方式");
+  if (hasShipping && !lower.includes("ddp")) missingItems.push("是否需要清关 / DDP");
+  if (hasBattery && hasInverter && !messageIncludesAny(lower, ["hybrid", "off-grid", "on-grid", "single phase", "three phase", "split phase"])) missingItems.push("逆变器类型");
+  if (!hasBattery && !`${customer?.target_capacity || customer?.recommended_product || ""}`.trim()) missingItems.push("目标容量");
+  if (hasDocs && details.capacities.length === 0 && !`${customer?.target_capacity || customer?.recommended_product || ""}`.trim()) missingItems.push("具体型号 / 容量");
+
+  let requirementSummary = "客户想先了解产品资料和需求方案。";
+  if (hasBattery && hasInverter) {
+    const capacityText = details.capacities.join("、");
+    const inverterText = details.inverters.join("、");
+    requirementSummary = `客户同时关注电池和逆变器匹配${capacityText ? `，已提到 ${capacityText}` : ""}${inverterText ? `，并提到 ${inverterText}` : ""}${details.countries.length > 0 ? `，目的地为 ${details.countries.join(" / ")}` : ""}。`;
+  } else if (hasShipping) {
+    requirementSummary = `客户主要在询问运输或交付方案${details.countries.length > 0 ? `，目前提到的目的地是 ${details.countries.join(" / ")}` : ""}。`;
+  } else if (hasDocs) {
+    requirementSummary = "客户想先了解产品资料或认证文件，需要确认具体型号、容量和用途。";
+  } else if (hasBattery && hasQuote) {
+    requirementSummary = `客户对电池产品有初步规格需求${details.capacities.length > 0 ? `，提到了 ${details.capacities.join("、")}` : ""}，并希望先拿到报价。`;
+  } else if (hasQuote) {
+    requirementSummary = "客户主要在询价，但产品规格、数量和目的地信息还不完整。";
+  } else if (hasBattery) {
+    requirementSummary = `客户在询问电池产品需求${details.capacities.length > 0 ? `，已提到 ${details.capacities.join("、")}` : ""}。`;
+  }
+
+  let nextStep = "先确认客户的核心需求，再判断是否适合继续推进。";
+  let suggestedReply = "Hi, could you please share more details about your battery requirement? Then I can recommend a suitable solution for you.";
+
+  if (hasBattery && hasInverter) {
+    nextStep = "确认逆变器类型、数量、应用场景，并确认是否需要电池和逆变器一起报价。";
+    suggestedReply = `Hi, we can help check the battery and inverter matching. May I know whether the inverter is hybrid, off-grid, or on-grid, and how many sets you need?${hasCountry ? "" : " Also, please share your destination country."}`;
+  } else if (hasShipping) {
+    nextStep = "确认目的国、城市、数量，并判断是否需要 DDP 到门服务。";
+    suggestedReply = "Hi, we can check the shipping solution for you. May I know the destination country, city, quantity, and whether you need DDP door-to-door delivery?";
+  } else if (hasDocs) {
+    nextStep = "发送资料或证书前，先确认客户关注的型号、容量和用途。";
+    suggestedReply = "Sure, I can send the datasheet and certificates. May I know which model or capacity you are interested in, and whether you need it for resale or project installation?";
+  } else if (hasBattery && hasQuote) {
+    nextStep = "确认客户所需数量、目的国和客户身份，再准备正式报价。";
+    suggestedReply = "Hi, thanks for your inquiry. I can quote this battery for you. May I know the required quantity and destination country? Also, is this for resale, installation projects, or your own use?";
+  } else if (hasQuote) {
+    nextStep = "确认客户所需容量、数量、目的地和应用场景，再判断是否可以报价。";
+    suggestedReply = "Hi, thanks for your inquiry. To recommend the right battery and quote accurately, may I know your required capacity, quantity, destination country, and application?";
+  } else if (customerIsProspecting) {
+    nextStep = "先确认客户是否匹配目标买家，再判断是否值得继续推进。";
+    suggestedReply = "Thanks for your reply. May I know what type of solar battery products you are currently sourcing, and whether you mainly work with residential or commercial projects?";
+  }
+
+  return {
+    requirementSummary,
+    customerTypeSummary: detectedType,
+    missingItems: missingItems.length > 0 ? missingItems : ["暂无明显缺失信息"],
+    nextStep,
+    suggestedReply
+  };
+}
+
 const emptyPlaybookForm = {
   scene_name: "",
   customer_type: "",
@@ -576,6 +700,8 @@ export default function CustomerDetailPage() {
   const [activeTab, setActiveTab] = useState("overview");
   const [scheduleFollowUpDate, setScheduleFollowUpDate] = useState("");
   const [customerScript, setCustomerScript] = useState("");
+  const [messageAnalysisInput, setMessageAnalysisInput] = useState("");
+  const [messageAnalysisResult, setMessageAnalysisResult] = useState(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isEditingDemand, setIsEditingDemand] = useState(false);
   const [profileForm, setProfileForm] = useState(emptyProfileForm);
@@ -940,6 +1066,30 @@ export default function CustomerDetailPage() {
     setCustomerScript(script);
     setSuccess("已生成客户话术，可复制后直接发送。");
     setError("");
+  }
+
+  function analyzeCustomerMessage() {
+    const result = analyzeCustomerMessageContent(messageAnalysisInput, customer || {});
+    if (!result) {
+      setError("请先粘贴客户原始消息。");
+      setSuccess("");
+      return;
+    }
+    setMessageAnalysisResult(result);
+    setError("");
+    setSuccess("已完成客户消息分析。");
+  }
+
+  async function copySuggestedReply() {
+    if (!messageAnalysisResult?.suggestedReply) return;
+    try {
+      await navigator.clipboard.writeText(messageAnalysisResult.suggestedReply);
+      setSuccess("英文回复已复制。");
+      setError("");
+    } catch (copyError) {
+      setError(copyError.message || "复制英文回复失败。");
+      setSuccess("");
+    }
   }
 
   async function copyCustomerScript() {
@@ -2080,6 +2230,70 @@ export default function CustomerDetailPage() {
 
       {activeTab === "records" && (
         <>
+          <section className="panel">
+            <div className="section-title">
+              <h2>客户消息分析</h2>
+              <span>粘贴客户原始消息，系统会分析需求、缺失信息和建议回复。</span>
+            </div>
+            <Field label="客户原始消息">
+              <textarea
+                rows={6}
+                value={messageAnalysisInput}
+                onChange={(event) => setMessageAnalysisInput(event.target.value)}
+                placeholder="粘贴客户在 Alibaba、WhatsApp、邮件或 LinkedIn 里的原话"
+              />
+            </Field>
+            <div className="actions" style={{ marginTop: 12 }}>
+              <button className="primary" onClick={analyzeCustomerMessage}>分析客户消息</button>
+            </div>
+
+            {messageAnalysisResult && (
+              <div className="detail-grid" style={{ marginTop: 18, gap: 16 }}>
+                <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                  <strong>客户需求</strong>
+                  <p>{messageAnalysisResult.requirementSummary}</p>
+                </div>
+                <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                  <strong>客户类型判断</strong>
+                  <p>{messageAnalysisResult.customerTypeSummary}</p>
+                </div>
+                <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                  <strong>关键信息缺失</strong>
+                  <div style={{ color: "#334155", lineHeight: 1.8, marginTop: 6 }}>
+                    {messageAnalysisResult.missingItems.map((item) => (
+                      <div key={item}>• {item}</div>
+                    ))}
+                  </div>
+                </div>
+                <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                  <strong>下一步动作</strong>
+                  <p>{messageAnalysisResult.nextStep}</p>
+                </div>
+                <div
+                  className="detail-item"
+                  style={{
+                    borderRadius: 18,
+                    background: "#eff6ff",
+                    border: "1px solid #dbeafe",
+                    padding: 18,
+                    gridColumn: "1 / -1"
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+                    <strong>建议英文回复</strong>
+                    <button
+                      style={{ height: 36, padding: "0 12px", fontSize: 13, fontWeight: 500, background: "#fff", border: "1px solid #dbe5f1", color: "#1e293b", borderRadius: 10 }}
+                      onClick={copySuggestedReply}
+                    >
+                      复制英文回复
+                    </button>
+                  </div>
+                  <p style={{ margin: 0, color: "#0f172a", lineHeight: 1.7 }}>{messageAnalysisResult.suggestedReply}</p>
+                </div>
+              </div>
+            )}
+          </section>
+
           <section className="panel">
             <div className="section-title">
               <h2>继续跟进</h2>
