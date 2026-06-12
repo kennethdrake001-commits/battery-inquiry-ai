@@ -1293,52 +1293,140 @@ export default function ProspectingPage() {
             </div>
 
             <form onSubmit={handleCreateLeadSubmit}>
-              <div className="fields two-col">
-                <FieldLike label="公司名">
-                  <input value={manualLeadForm.companyName} onChange={(event) => updateManualLeadField("companyName", event.target.value)} placeholder="请输入公司名" />
-                </FieldLike>
-                <FieldLike label="国家">
-                  <input value={manualLeadForm.country} onChange={(event) => updateManualLeadField("country", event.target.value)} placeholder="请输入国家" />
-                </FieldLike>
-                <FieldLike label="客户类型">
-                  <select value={manualLeadForm.customerType} onChange={(event) => updateManualLeadField("customerType", event.target.value)}>
-                    <option value="Unknown">待判断</option>
-                    <option value="Solar Installer">Solar Installer</option>
-                    <option value="Solar Distributor">Solar Distributor</option>
-                    <option value="Battery Wholesaler">Battery Wholesaler</option>
-                    <option value="Inverter Distributor">Inverter Distributor</option>
-                    <option value="OEM / Brand Owner">OEM / Brand Owner</option>
-                    <option value="End User">End User</option>
-                  </select>
-                </FieldLike>
-                <FieldLike label="来源渠道">
-                  <select value={manualLeadForm.sourceChannel} onChange={(event) => updateManualLeadField("sourceChannel", event.target.value)}>
-                    {channelFilters.filter((item) => item !== "全部渠道").map((channel) => (
-                      <option key={channel} value={channel}>{channel}</option>
-                    ))}
-                  </select>
-                </FieldLike>
-                <FieldLike label="网站">
-                  <input value={manualLeadForm.website} onChange={(event) => updateManualLeadField("website", event.target.value)} placeholder="https://example.com" />
-                </FieldLike>
-                <FieldLike label="LinkedIn">
-                  <input value={manualLeadForm.linkedin} onChange={(event) => updateManualLeadField("linkedin", event.target.value)} placeholder="LinkedIn 链接" />
-                </FieldLike>
-                <FieldLike label="FB">
-                  <input value={manualLeadForm.facebook} onChange={(event) => updateManualLeadField("facebook", event.target.value)} placeholder="Facebook 链接" />
-                </FieldLike>
-                <FieldLike label="Email">
-                  <input value={manualLeadForm.email} onChange={(event) => updateManualLeadField("email", event.target.value)} placeholder="sales@example.com" />
-                </FieldLike>
-                <FieldLike label="WhatsApp">
-                  <input value={manualLeadForm.whatsapp} onChange={(event) => updateManualLeadField("whatsapp", event.target.value)} placeholder="+86 ..." />
-                </FieldLike>
-                <FieldLike label="下一步动作">
-                  <input value={manualLeadForm.nextAction} onChange={(event) => updateManualLeadField("nextAction", event.target.value)} placeholder="例如：发送首封开发信" />
-                </FieldLike>
-                <FieldLike label="备注">
-                  <textarea value={manualLeadForm.note} onChange={(event) => updateManualLeadField("note", event.target.value)} placeholder="补充记录这个线索的来源、网站观察、客户特点等" rows={4} />
-                </FieldLike>
+              <div style={{ display: "grid", gap: 18 }}>
+                <section
+                  style={{
+                    border: "1px solid rgba(226, 232, 240, 0.9)",
+                    borderRadius: 16,
+                    padding: 18,
+                    background: "#f8fafc"
+                  }}
+                >
+                  <div className="section-title" style={{ marginBottom: 14 }}>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: 18 }}>基础信息</h3>
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                      gap: 16
+                    }}
+                  >
+                    <FieldLike label="公司名">
+                      <input value={manualLeadForm.companyName} onChange={(event) => updateManualLeadField("companyName", event.target.value)} placeholder="请输入公司名" />
+                    </FieldLike>
+                    <FieldLike label="国家">
+                      <input value={manualLeadForm.country} onChange={(event) => updateManualLeadField("country", event.target.value)} placeholder="请输入国家" />
+                    </FieldLike>
+                    <FieldLike label="客户类型">
+                      <select value={manualLeadForm.customerType} onChange={(event) => updateManualLeadField("customerType", event.target.value)}>
+                        <option value="Unknown">待判断</option>
+                        <option value="Solar Installer">Solar Installer</option>
+                        <option value="Solar Distributor">Solar Distributor</option>
+                        <option value="Battery Wholesaler">Battery Wholesaler</option>
+                        <option value="Inverter Distributor">Inverter Distributor</option>
+                        <option value="OEM / Brand Owner">OEM / Brand Owner</option>
+                        <option value="End User">End User</option>
+                      </select>
+                    </FieldLike>
+                    <FieldLike label="来源渠道">
+                      <select value={manualLeadForm.sourceChannel} onChange={(event) => updateManualLeadField("sourceChannel", event.target.value)}>
+                        {channelFilters.filter((item) => item !== "全部渠道").map((channel) => (
+                          <option key={channel} value={channel}>{channel}</option>
+                        ))}
+                      </select>
+                    </FieldLike>
+                  </div>
+                </section>
+
+                <section
+                  style={{
+                    border: "1px solid rgba(226, 232, 240, 0.9)",
+                    borderRadius: 16,
+                    padding: 18,
+                    background: "#f8fafc"
+                  }}
+                >
+                  <div className="section-title" style={{ marginBottom: 14 }}>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: 18 }}>联系渠道</h3>
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                      gap: 16
+                    }}
+                  >
+                    <FieldLike label="网站">
+                      <input value={manualLeadForm.website} onChange={(event) => updateManualLeadField("website", event.target.value)} placeholder="https://example.com" />
+                    </FieldLike>
+                    <FieldLike label="Email">
+                      <input value={manualLeadForm.email} onChange={(event) => updateManualLeadField("email", event.target.value)} placeholder="sales@example.com" />
+                    </FieldLike>
+                    <FieldLike label="LinkedIn">
+                      <input value={manualLeadForm.linkedin} onChange={(event) => updateManualLeadField("linkedin", event.target.value)} placeholder="LinkedIn 链接" />
+                    </FieldLike>
+                    <FieldLike label="FB">
+                      <input value={manualLeadForm.facebook} onChange={(event) => updateManualLeadField("facebook", event.target.value)} placeholder="Facebook 链接" />
+                    </FieldLike>
+                    <FieldLike label="WhatsApp">
+                      <input value={manualLeadForm.whatsapp} onChange={(event) => updateManualLeadField("whatsapp", event.target.value)} placeholder="+86 ..." />
+                    </FieldLike>
+                  </div>
+                </section>
+
+                <section
+                  style={{
+                    border: "1px solid rgba(226, 232, 240, 0.9)",
+                    borderRadius: 16,
+                    padding: 18,
+                    background: "#f8fafc"
+                  }}
+                >
+                  <div className="section-title" style={{ marginBottom: 14 }}>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: 18 }}>推进信息</h3>
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                      gap: 16
+                    }}
+                  >
+                    <FieldLike label="下一步动作">
+                      <input
+                        list="prospecting-next-action-options"
+                        value={manualLeadForm.nextAction}
+                        onChange={(event) => updateManualLeadField("nextAction", event.target.value)}
+                        placeholder="例如：发送首封开发信"
+                      />
+                    </FieldLike>
+                    <datalist id="prospecting-next-action-options">
+                      <option value="筛选客户价值" />
+                      <option value="查找 LinkedIn 负责人" />
+                      <option value="查看 FB 是否活跃" />
+                      <option value="发送 LinkedIn 连接" />
+                      <option value="发送 FB 私信" />
+                      <option value="发送英文开发信" />
+                      <option value="等待客户回复" />
+                      <option value="跟进未回复客户" />
+                    </datalist>
+                    <FieldLike label="备注">
+                      <textarea
+                        value={manualLeadForm.note}
+                        onChange={(event) => updateManualLeadField("note", event.target.value)}
+                        placeholder="补充记录客户背景、产品需求、判断依据等"
+                        rows={5}
+                      />
+                    </FieldLike>
+                  </div>
+                </section>
               </div>
 
               <div className="actions" style={{ marginTop: 20, justifyContent: "flex-end" }}>
