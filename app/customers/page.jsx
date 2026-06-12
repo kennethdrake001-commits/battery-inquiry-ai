@@ -142,33 +142,6 @@ export default function CustomersPage() {
     setCustomers(rows || []);
   }
 
-  async function insertCustomerWithFallback(payload) {
-    let draft = { ...payload };
-
-    for (let index = 0; index < 6; index += 1) {
-      const { data, error: insertError } = await supabase
-        .from("customers")
-        .insert(draft)
-        .select("*")
-        .single();
-
-      if (!insertError) {
-        return { data, error: null };
-      }
-
-      const missingColumn = insertError.message?.match(/Could not find the '([^']+)' column/i)?.[1];
-      if (!missingColumn || !(missingColumn in draft)) {
-        return { data: null, error: insertError };
-      }
-
-      const nextDraft = { ...draft };
-      delete nextDraft[missingColumn];
-      draft = nextDraft;
-    }
-
-    return { data: null, error: new Error("保存客户失败：字段兼容处理超过重试次数。") };
-  }
-
   const filteredCustomers = useMemo(() => {
     return [...customers]
       .filter((customer) => {
@@ -272,52 +245,41 @@ export default function CustomersPage() {
     const now = new Date().toISOString();
     const note = prospectForm.note.trim();
     const leadSource = prospectForm.lead_source || "Google Maps";
-    const website = prospectForm.website.trim();
-    const linkedin = prospectForm.linkedin.trim();
-    const facebook = prospectForm.facebook.trim();
-    const whatsapp = prospectForm.whatsapp.trim();
-    const email = prospectForm.email.trim();
     const payload = {
       user_id: session.user.id,
       customer_name: customerName,
-      company_name: customerName,
       country: prospectForm.country.trim() || null,
       customer_type: prospectForm.customer_type || "Unknown",
       source: "主动开发",
-      customer_source: "主动开发",
-      lead_source: leadSource,
-      website: website || null,
-      linkedin: linkedin || null,
-      facebook: facebook || null,
-      whatsapp: whatsapp || null,
-      email: email || null,
       stage: "Prospecting",
       current_status: "新线索",
       current_next_action: "判断是否值得触达",
       next_action: "判断是否值得触达",
       lead_level: "C",
-      notes: note || null,
-      note: note || null,
-      internal_note: note || null,
       question: note || null,
       original_message: [
         "客户来源：主动开发",
         `线索渠道：${leadSource}`,
-        website ? `官网：${website}` : "",
-        linkedin ? `LinkedIn：${linkedin}` : "",
-        facebook ? `Facebook：${facebook}` : "",
-        whatsapp ? `WhatsApp：${whatsapp}` : "",
-        email ? `邮箱：${email}` : "",
+        prospectForm.website.trim() ? `官网：${prospectForm.website.trim()}` : "",
+        prospectForm.linkedin.trim() ? `LinkedIn：${prospectForm.linkedin.trim()}` : "",
+        prospectForm.facebook.trim() ? `Facebook：${prospectForm.facebook.trim()}` : "",
+        prospectForm.whatsapp.trim() ? `WhatsApp：${prospectForm.whatsapp.trim()}` : "",
+        prospectForm.email.trim() ? `邮箱：${prospectForm.email.trim()}` : "",
         note ? `备注：${note}` : ""
       ].filter(Boolean).join("\n"),
       updated_at: now
     };
 
-    const { error: insertError } = await insertCustomerWithFallback(payload);
+    console.warn("以下主动开发弹窗字段当前仅用于前端录入，未单独写入 customers 列：website, linkedin, facebook, whatsapp, email, lead_source。");
+
+    const { error: insertError } = await supabase
+      .from("customers")
+      .insert(payload);
+
     setIsSavingProspect(false);
 
     if (insertError) {
-      setError(`新增主动开发客户失败：${insertError.message}`);
+      setError(`新增主动开发客户失败：${insertError.message || "保存客户失败"}`);
       return;
     }
 
