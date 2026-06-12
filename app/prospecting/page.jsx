@@ -868,6 +868,34 @@ export default function ProspectingPage() {
     setNotice("客户已恢复为新线索。");
   }
 
+  async function deleteProspectingCustomer(customer) {
+    setError("");
+    setNotice("");
+
+    if (!session?.user?.id) {
+      setError("请先登录后再删除目标客户。");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "确认删除目标客户？\n\n删除后该目标客户将从目标客户池移除，无法在当前列表继续推进。\n如果只是暂时不开发，建议使用“标记无效”。"
+    );
+    if (!confirmed) return;
+
+    const { error: deleteError } = await supabase
+      .from("customers")
+      .delete()
+      .eq("id", customer.id);
+
+    if (deleteError) {
+      setError("删除失败，请稍后重试。");
+      return;
+    }
+
+    await loadCustomers();
+    setNotice("目标客户已删除。");
+  }
+
   async function markFirstEmailSent(customer) {
     setError("");
     setNotice("");
@@ -1241,6 +1269,7 @@ export default function ProspectingPage() {
                               <button type="button" onClick={() => markFirstEmailSent(customer)}>标记已触达</button>
                               <button type="button" onClick={() => markInvalid(customer)}>标记无效</button>
                               <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
+                              <button type="button" onClick={() => deleteProspectingCustomer(customer)}>删除</button>
                             </>
                           )}
                           {customer.prospectingStage === "已触达" && (
@@ -1249,6 +1278,7 @@ export default function ProspectingPage() {
                               <button type="button" onClick={() => markFollowUp(customer)}>跟进未回复</button>
                               <button type="button" onClick={() => markInvalid(customer)}>标记无效</button>
                               <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
+                              <button type="button" onClick={() => deleteProspectingCustomer(customer)}>删除</button>
                             </>
                           )}
                           {customer.prospectingStage === "有互动" && (
@@ -1257,6 +1287,7 @@ export default function ProspectingPage() {
                               <button type="button" onClick={() => markMaterialSent(customer)}>发送资料</button>
                               <button type="button" onClick={() => markInvalid(customer)}>标记无效</button>
                               <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
+                              <button type="button" onClick={() => deleteProspectingCustomer(customer)}>删除</button>
                             </>
                           )}
                           {customer.prospectingStage === "有需求" && (
@@ -1264,6 +1295,7 @@ export default function ProspectingPage() {
                               <button type="button" onClick={() => markMaterialSent(customer)}>标记已发资料</button>
                               <button type="button" onClick={() => convertToFormalCustomer(customer)}>转正式客户</button>
                               <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
+                              <button type="button" onClick={() => deleteProspectingCustomer(customer)}>删除</button>
                             </>
                           )}
                           {customer.prospectingStage === "已发资料" && (
@@ -1271,18 +1303,21 @@ export default function ProspectingPage() {
                               <button type="button" onClick={() => markQuoted(customer)}>标记已报价</button>
                               <button type="button" onClick={() => convertToFormalCustomer(customer)}>转正式客户</button>
                               <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
+                              <button type="button" onClick={() => deleteProspectingCustomer(customer)}>删除</button>
                             </>
                           )}
                           {customer.prospectingStage === "已报价" && (
                             <>
                               <button type="button" onClick={() => convertToFormalCustomer(customer)}>转正式客户</button>
                               <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
+                              <button type="button" onClick={() => deleteProspectingCustomer(customer)}>删除</button>
                             </>
                           )}
                           {customer.prospectingStage === "无效" && (
                             <>
                               <Link href={`/customers/${customer.id}`}>查看/编辑</Link>
                               <button type="button" onClick={() => restoreProspectingCustomer(customer)}>恢复为新线索</button>
+                              <button type="button" onClick={() => deleteProspectingCustomer(customer)}>删除</button>
                             </>
                           )}
                           {!["新线索", "已触达", "有互动", "有需求", "已发资料", "已报价", "无效"].includes(customer.prospectingStage) && (
@@ -1291,6 +1326,7 @@ export default function ProspectingPage() {
                               {customer.prospectingStage !== "成交" && customer.prospectingStage !== "丢单" && (
                                 <button type="button" onClick={() => convertToFormalCustomer(customer)}>转正式客户</button>
                               )}
+                              <button type="button" onClick={() => deleteProspectingCustomer(customer)}>删除</button>
                             </>
                           )}
                         </div>
