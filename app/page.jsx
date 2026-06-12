@@ -103,46 +103,25 @@ function AuthPanel({ session, onSessionChange }) {
 function getCardAppearance(kind, isActive) {
   const appearanceMap = {
     urgent: {
-      border: isActive ? "1px solid rgba(59, 130, 246, 0.34)" : "1px solid rgba(191, 219, 254, 0.9)",
-      background: isActive ? "linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%)" : "#ffffff",
+      border: isActive ? "1px solid rgb(191, 219, 254)" : "1px solid rgb(191, 219, 254)",
+      background: "rgba(239, 246, 255, 0.4)",
       shadow: isActive ? "0 10px 22px rgba(59, 130, 246, 0.12)" : "0 4px 12px rgba(15, 23, 42, 0.04)",
       accent: "#2563eb"
     },
     value: {
-      border: isActive ? "1px solid rgba(59, 130, 246, 0.34)" : "1px solid rgba(191, 219, 254, 0.9)",
-      background: isActive ? "linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%)" : "#ffffff",
+      border: isActive ? "1px solid rgb(191, 219, 254)" : "1px solid rgb(191, 219, 254)",
+      background: "rgba(239, 246, 255, 0.4)",
       shadow: isActive ? "0 10px 22px rgba(59, 130, 246, 0.12)" : "0 4px 12px rgba(15, 23, 42, 0.04)",
       accent: "#2563eb"
     },
     channel: {
-      border: isActive ? "1px solid rgba(59, 130, 246, 0.34)" : "1px solid rgba(191, 219, 254, 0.9)",
-      background: isActive ? "linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%)" : "#ffffff",
+      border: isActive ? "1px solid rgb(226, 232, 240)" : "1px solid rgb(226, 232, 240)",
+      background: "#ffffff",
       shadow: isActive ? "0 10px 22px rgba(59, 130, 246, 0.12)" : "0 4px 12px rgba(15, 23, 42, 0.04)",
-      accent: "#2563eb"
+      accent: "#334155"
     }
   };
   return appearanceMap[kind] || appearanceMap.channel;
-}
-
-function getSelectedBadgeStyle(kind) {
-  const colorMap = {
-    urgent: {
-      background: "rgba(245, 158, 11, 0.12)",
-      color: "#b45309",
-      border: "1px solid rgba(245, 158, 11, 0.24)"
-    },
-    value: {
-      background: "rgba(16, 185, 129, 0.12)",
-      color: "#047857",
-      border: "1px solid rgba(16, 185, 129, 0.24)"
-    },
-    channel: {
-      background: "rgba(59, 130, 246, 0.12)",
-      color: "#1d4ed8",
-      border: "1px solid rgba(59, 130, 246, 0.24)"
-    }
-  };
-  return colorMap[kind] || colorMap.channel;
 }
 
 function formatDateOnly(value) {
@@ -485,7 +464,7 @@ export default function HomePage() {
         title: "超期未跟进",
         subtitle: overdueCustomers.length === 0 ? "暂无超期未跟进客户" : "这些客户已经超过计划跟进日期",
         listTitle: "超期未跟进客户",
-        appearance: "urgent",
+        appearance: "channel",
         reason: "跟进已超期，需要尽快处理",
         customers: mapSummaryCustomers(overdueCustomers)
       },
@@ -494,7 +473,7 @@ export default function HomePage() {
         title: "已报价待跟进",
         subtitle: quotedFollowUpCustomers.length === 0 ? "暂无报价后待跟进客户" : "报价已发出，需要确认客户反馈",
         listTitle: "已报价待跟进客户",
-        appearance: "urgent",
+        appearance: "channel",
         reason: "报价已发送，需要跟进反馈",
         customers: mapSummaryCustomers(quotedFollowUpCustomers)
       },
@@ -503,7 +482,7 @@ export default function HomePage() {
         title: "客户已回复待处理",
         subtitle: repliedPendingCustomers.length === 0 ? "暂无待处理客户回复" : "客户已回复，需要尽快继续推进",
         listTitle: "客户已回复待处理",
-        appearance: "urgent",
+        appearance: "channel",
         reason: "客户已回复，待判断下一步",
         customers: mapSummaryCustomers(repliedPendingCustomers)
       }
@@ -620,7 +599,6 @@ export default function HomePage() {
               {summaryCards.map((card) => {
                 const appearance = getCardAppearance(card.appearance, activeSummaryKey === card.key);
                 const isActive = activeSummaryKey === card.key;
-                const selectedBadge = getSelectedBadgeStyle(card.appearance);
                 return (
                 <button
                   key={card.key}
@@ -643,29 +621,11 @@ export default function HomePage() {
                       transform: isActive ? "translateY(-1px)" : "none"
                     }}
                   >
-                    {isActive && (
-                      <span
-                        style={{
-                          position: "absolute",
-                          top: 14,
-                          right: 14,
-                          fontSize: 11,
-                          fontWeight: 700,
-                          padding: "4px 8px",
-                          borderRadius: 999,
-                          background: selectedBadge.background,
-                          color: selectedBadge.color,
-                          border: selectedBadge.border
-                        }}
-                      >
-                        当前筛选
-                      </span>
-                    )}
                     {card.customers.length > 0 && (
                       <span
                         style={{
                           position: "absolute",
-                          top: isActive ? 44 : 14,
+                          top: 14,
                           right: 14,
                           fontSize: 11,
                           fontWeight: 700,
@@ -679,11 +639,24 @@ export default function HomePage() {
                         建议处理
                       </span>
                     )}
-                    <strong style={{ color: appearance.accent, display: "block", fontSize: 14, paddingRight: card.customers.length > 0 ? 84 : 0 }}>{card.title}</strong>
+                    <strong
+                      style={{
+                        color: appearance.accent,
+                        display: "block",
+                        fontSize: 16,
+                        fontWeight: 600,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        paddingRight: card.customers.length > 0 ? 84 : 0
+                      }}
+                    >
+                      {card.title}
+                    </strong>
                     <div style={{ fontSize: card.customers.length > 0 ? 30 : 28, fontWeight: 800, lineHeight: 1.05, marginTop: 6, color: "#0f172a" }}>
                       {card.customers.length}
                     </div>
-                    <p style={{ marginTop: 6, color: "#64748b", lineHeight: 1.35, fontSize: 12 }}>{card.subtitle}</p>
+                    <p style={{ marginTop: 6, color: card.appearance === "channel" ? "#64748b" : "#475569", lineHeight: 1.35, fontSize: 12 }}>{card.subtitle}</p>
                   </article>
                 </button>
                 );
