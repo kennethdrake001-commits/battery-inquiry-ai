@@ -92,6 +92,8 @@ export default function CustomersPage() {
     customer_name: "",
     country: "",
     customer_type: "Unknown",
+    lead_source: "Google Maps",
+    contact_link: "",
     note: ""
   });
   const [loading, setLoading] = useState(true);
@@ -265,6 +267,8 @@ export default function CustomersPage() {
 
     const now = new Date().toISOString();
     const note = prospectForm.note.trim();
+    const contactLink = prospectForm.contact_link.trim();
+    const leadSource = prospectForm.lead_source || "Google Maps";
     const payload = {
       user_id: session.user.id,
       customer_name: customerName,
@@ -278,7 +282,12 @@ export default function CustomersPage() {
       next_action: "判断是否值得触达",
       lead_level: "C",
       question: note || null,
-      original_message: note ? `来源渠道：主动开发\n备注：${note}` : "来源渠道：主动开发",
+      original_message: [
+        "客户来源：主动开发",
+        `线索渠道：${leadSource}`,
+        contactLink ? `联系方式/主页：${contactLink}` : "",
+        note ? `备注：${note}` : ""
+      ].filter(Boolean).join("\n"),
       updated_at: now
     };
 
@@ -294,11 +303,13 @@ export default function CustomersPage() {
       customer_name: "",
       country: "",
       customer_type: "Unknown",
+      lead_source: "Google Maps",
+      contact_link: "",
       note: ""
     });
     setShowProspectModal(false);
     await loadCustomers();
-    setNotice("主动开发客户已加入客户池。");
+    setNotice("主动开发客户已保存。");
   }
 
   async function archiveCustomer(customer) {
@@ -562,15 +573,52 @@ export default function CustomersPage() {
       )}
 
       {showProspectModal && (
-        <div className="modal-backdrop" role="presentation" onClick={() => setShowProspectModal(false)}>
-          <div className="modal-card" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
-            <div className="section-title">
-              <h2>新增主动开发客户</h2>
-              <button type="button" onClick={() => setShowProspectModal(false)}>关闭</button>
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={() => setShowProspectModal(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15, 23, 42, 0.42)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+            zIndex: 1000
+          }}
+        >
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 680,
+              background: "#fff",
+              borderRadius: 20,
+              padding: 24,
+              boxShadow: "0 24px 60px rgba(15, 23, 42, 0.18)",
+              border: "1px solid rgba(148, 163, 184, 0.24)"
+            }}
+          >
+            <div className="section-title" style={{ alignItems: "flex-start", marginBottom: 12 }}>
+              <div>
+                <h2 style={{ marginBottom: 8 }}>新增主动开发客户</h2>
+                <p className="subtle" style={{ margin: 0 }}>
+                  用于录入你从 Google Maps、LinkedIn、FB、官网等渠道主动找到的目标客户。保存后默认进入主动开发客户池。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowProspectModal(false)}
+                aria-label="关闭弹窗"
+                style={{ minWidth: 44, paddingInline: 14 }}
+              >
+                关闭
+              </button>
             </div>
-            <p className="subtle" style={{ marginTop: 0 }}>
-              保存后默认进入主动开发客户池，阶段为 Prospecting，下一步动作为“判断是否值得触达”。
-            </p>
             <div className="form-grid">
               <label className="field">
                 <span>公司名 / 客户名</span>
@@ -593,12 +641,31 @@ export default function CustomersPage() {
                 <select value={prospectForm.customer_type} onChange={(event) => updateProspectForm("customer_type", event.target.value)}>
                   <option value="Unknown">待判断</option>
                   <option value="Solar Installer">安装商</option>
-                  <option value="Solar Distributor">太阳能经销商</option>
-                  <option value="Inverter Distributor">逆变器经销商</option>
-                  <option value="Battery Wholesaler">电池批发商</option>
-                  <option value="OEM / Brand Owner">OEM / 品牌方</option>
+                  <option value="Solar Distributor">经销商</option>
+                  <option value="Battery Wholesaler">批发商</option>
+                  <option value="OEM / Brand Owner">品牌商 / OEM</option>
                   <option value="End User">终端用户</option>
                 </select>
+              </label>
+              <label className="field">
+                <span>来源渠道</span>
+                <select value={prospectForm.lead_source} onChange={(event) => updateProspectForm("lead_source", event.target.value)}>
+                  <option value="Google Maps">Google Maps</option>
+                  <option value="LinkedIn">LinkedIn</option>
+                  <option value="FB">FB</option>
+                  <option value="Website">Website</option>
+                  <option value="WhatsApp">WhatsApp</option>
+                  <option value="Email">Email</option>
+                  <option value="Other">其他</option>
+                </select>
+              </label>
+              <label className="field field-span-2">
+                <span>联系方式 / 主页链接</span>
+                <input
+                  value={prospectForm.contact_link}
+                  onChange={(event) => updateProspectForm("contact_link", event.target.value)}
+                  placeholder="可填写官网、LinkedIn、FB、WhatsApp 或邮箱"
+                />
               </label>
               <label className="field field-span-2">
                 <span>备注</span>
@@ -606,7 +673,7 @@ export default function CustomersPage() {
                   rows={4}
                   value={prospectForm.note}
                   onChange={(event) => updateProspectForm("note", event.target.value)}
-                  placeholder="补充这个主动开发客户的背景说明、渠道来源或判断依据"
+                  placeholder="补充这个目标客户的背景、渠道来源或判断依据"
                 />
               </label>
             </div>
