@@ -575,6 +575,7 @@ export default function CustomerDetailPage() {
   const [success, setSuccess] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
   const [scheduleFollowUpDate, setScheduleFollowUpDate] = useState("");
+  const [customerScript, setCustomerScript] = useState("");
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isEditingDemand, setIsEditingDemand] = useState(false);
   const [profileForm, setProfileForm] = useState(emptyProfileForm);
@@ -907,6 +908,50 @@ export default function CustomerDetailPage() {
     }));
     setSuccess("已生成下一步建议，请确认后保存客户流程。");
     setError("");
+  }
+
+  function buildCustomerScript() {
+    const queueCategory = getCustomerQueueCategory(customer || {});
+    const nextAction = getCustomerNextAction(customer || {});
+
+    if (queueCategory === "new_inquiry") {
+      return "Hi, may I know your destination country, required quantity, customer type, and application? Then I can recommend the most suitable battery solution for you.";
+    }
+    if (queueCategory === "quoted_follow_up") {
+      return "Hi, just following up on the quotation I sent. May I know if the price, delivery time, or payment terms are acceptable for your project?";
+    }
+    if (queueCategory === "sent_info_follow_up") {
+      return "Hi, just checking if you received the battery specifications I sent. Would you like me to prepare a quotation based on your required quantity?";
+    }
+    if (queueCategory === "reply_pending") {
+      return "Thanks for your reply. I’ll review your requirements and confirm the next suitable battery solution for you.";
+    }
+    if (queueCategory === "prospecting") {
+      return "Hi, I noticed your company works in solar energy solutions. We supply LiFePO4 solar storage batteries for installers and distributors. May I know if you are currently sourcing battery products?";
+    }
+    if (nextAction.includes("报价")) {
+      return "Hi, just following up on the quotation I sent. May I know if the price, delivery time, or payment terms are acceptable for your project?";
+    }
+    return "Hi, could you please share more details about your battery requirement? Then I can recommend a suitable solution for you.";
+  }
+
+  function generateCustomerScript() {
+    const script = buildCustomerScript();
+    setCustomerScript(script);
+    setSuccess("已生成客户话术，可复制后直接发送。");
+    setError("");
+  }
+
+  async function copyCustomerScript() {
+    if (!customerScript) return;
+    try {
+      await navigator.clipboard.writeText(customerScript);
+      setSuccess("客户话术已复制。");
+      setError("");
+    } catch (copyError) {
+      setError(copyError.message || "复制话术失败。");
+      setSuccess("");
+    }
   }
 
   async function saveWorkflow() {
@@ -1643,20 +1688,59 @@ export default function CustomerDetailPage() {
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10, height: "100%" }}>
             <div className="section-title" style={{ marginBottom: 0 }}>
-              <h2 style={{ fontSize: 22, fontWeight: 700, color: "#0f172a" }}>下一步操作</h2>
+              <h2 style={{ fontSize: 22, fontWeight: 700, color: "#0f172a" }}>本次处理</h2>
             </div>
             {!archivedCustomer ? (
               <>
-                <div style={{ borderRadius: 16, border: "1px solid #e2e8f0", background: "#f8fafc", padding: 14 }}>
-                  <div style={{ color: "#475569", fontSize: 13, fontWeight: 600, marginBottom: 8 }}>决策操作</div>
-                  <div className="actions" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <button style={{ height: 44, padding: "0 12px", fontSize: 14, fontWeight: 500, background: "#fff", border: "1px solid #dbe5f1", color: "#1e293b", borderRadius: 12 }} onClick={generateWorkflowRecommendation} disabled={isSaving}>生成下一步建议</button>
-                    <button className="primary" style={{ height: 44, padding: "0 12px", fontSize: 14, fontWeight: 600, borderRadius: 12 }} onClick={saveWorkflow} disabled={isSaving}>保存客户流程</button>
+                <div style={{ borderRadius: 16, border: "1px solid #e2e8f0", background: "#fff", padding: 14, display: "grid", gap: 12 }}>
+                  <div>
+                    <div style={{ color: "#64748b", fontSize: 12, fontWeight: 700, marginBottom: 8 }}>第一步：确认动作</div>
+                    <button
+                      style={{ width: "100%", height: 44, padding: "0 12px", fontSize: 14, fontWeight: 500, background: "#fff", border: "1px solid #dbe5f1", color: "#1e293b", borderRadius: 12 }}
+                      onClick={generateWorkflowRecommendation}
+                      disabled={isSaving}
+                    >
+                      生成下一步动作
+                    </button>
                   </div>
-                </div>
-                <div style={{ borderRadius: 16, border: "1px solid #e2e8f0", background: "#fff", padding: 14 }}>
-                  <div style={{ color: "#475569", fontSize: 13, fontWeight: 600, marginBottom: 8 }}>跟进操作</div>
-                  <div className="actions" style={{ display: "grid", gap: 8 }}>
+
+                  <div>
+                    <div style={{ color: "#64748b", fontSize: 12, fontWeight: 700, marginBottom: 8 }}>第二步：执行跟进</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      <button
+                        style={{ height: 44, padding: "0 12px", fontSize: 14, fontWeight: 500, background: "#fff", border: "1px solid #dbe5f1", color: "#1e293b", borderRadius: 12 }}
+                        onClick={generateCustomerScript}
+                        disabled={isSaving}
+                      >
+                        生成客户话术
+                      </button>
+                      <button
+                        style={{ height: 44, padding: "0 12px", fontSize: 14, fontWeight: 500, background: "#f8fafc", border: "1px solid #dbe5f1", color: "#1e293b", borderRadius: 12 }}
+                        onClick={markFollowedUp}
+                        disabled={isSaving}
+                      >
+                        标记已跟进
+                      </button>
+                    </div>
+                    {customerScript && (
+                      <div style={{ marginTop: 10, borderRadius: 14, border: "1px solid #dbe5f1", background: "#f8fafc", padding: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+                          <strong style={{ fontSize: 13, color: "#475569" }}>客户话术</strong>
+                          <button
+                            style={{ height: 32, padding: "0 10px", fontSize: 12, fontWeight: 500, background: "#fff", border: "1px solid #dbe5f1", color: "#1e293b", borderRadius: 10 }}
+                            onClick={copyCustomerScript}
+                            disabled={isSaving}
+                          >
+                            复制话术
+                          </button>
+                        </div>
+                        <p style={{ margin: 0, color: "#0f172a", fontSize: 13, lineHeight: 1.6 }}>{customerScript}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <div style={{ color: "#64748b", fontSize: 12, fontWeight: 700, marginBottom: 8 }}>第三步：安排下次跟进</div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                       <input
                         type="date"
@@ -1664,29 +1748,33 @@ export default function CustomerDetailPage() {
                         onChange={(event) => setScheduleFollowUpDate(event.target.value)}
                         style={{ minWidth: 0, height: 44, padding: "0 12px", borderRadius: 12, border: "1px solid #dbe5f1", background: "#fff", fontSize: 14 }}
                       />
-                      <button style={{ height: 44, padding: "0 12px", fontSize: 14, fontWeight: 500, background: "#f8fafc", border: "1px solid #dbe5f1", color: "#1e293b", borderRadius: 12 }} onClick={scheduleNextFollowUp} disabled={isSaving}>设置下次跟进</button>
+                      <button
+                        style={{ height: 44, padding: "0 12px", fontSize: 14, fontWeight: 500, background: "#f8fafc", border: "1px solid #dbe5f1", color: "#1e293b", borderRadius: 12 }}
+                        onClick={scheduleNextFollowUp}
+                        disabled={isSaving}
+                      >
+                        设置下次跟进
+                      </button>
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                      {(showLeadNewButtons || showLeadContactedButtons || showLeadRespondedButtons) ? (
-                        <>
-                          {showLeadNewButtons && <button style={{ height: 44, padding: "0 12px", fontSize: 14, fontWeight: 500, background: "#f8fafc", border: "1px solid #dbe5f1", color: "#1e293b", borderRadius: 12 }} onClick={markLeadContacted} disabled={isSaving}>标记已触达</button>}
-                          {showLeadContactedButtons && <button style={{ height: 44, padding: "0 12px", fontSize: 14, fontWeight: 500, background: "#f8fafc", border: "1px solid #dbe5f1", color: "#1e293b", borderRadius: 12 }} onClick={markLeadResponded} disabled={isSaving}>标记有回应</button>}
-                          {showLeadRespondedButtons && <button style={{ height: 44, padding: "0 12px", fontSize: 14, fontWeight: 500, background: "#f8fafc", border: "1px solid #dbe5f1", color: "#1e293b", borderRadius: 12 }} onClick={markHasNeed} disabled={isSaving}>标记有需求</button>}
-                          <button style={{ height: 44, padding: "0 12px", fontSize: 14, fontWeight: 500, background: "#fff", border: "1px solid #e5e7eb", color: "#64748b", borderRadius: 12 }} onClick={markInvalidLead} disabled={isSaving}>标记无效</button>
-                        </>
-                      ) : (
-                        <>
-                          <div />
-                          <button style={{ height: 44, padding: "0 12px", fontSize: 14, fontWeight: 500, background: "#fff", border: "1px solid #e5e7eb", color: "#64748b", borderRadius: 12 }} onClick={markInvalidLead} disabled={isSaving}>标记无效</button>
-                        </>
-                      )}
-                    </div>
-                    {showSalesProgressButtons && (
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                        <button style={{ height: 44, padding: "0 12px", fontSize: 14, fontWeight: 500, background: "#f8fafc", border: "1px solid #dbe5f1", color: "#1e293b", borderRadius: 12 }} onClick={markMaterialSent} disabled={isSaving}>已发送产品资料</button>
-                        <button style={{ height: 44, padding: "0 12px", fontSize: 14, fontWeight: 500, background: "#f8fafc", border: "1px solid #dbe5f1", color: "#1e293b", borderRadius: 12 }} onClick={markQuoteSent} disabled={isSaving}>已发送报价</button>
-                      </div>
-                    )}
+                  </div>
+
+                  <button
+                    className="primary"
+                    style={{ height: 46, padding: "0 14px", fontSize: 14, fontWeight: 600, borderRadius: 12 }}
+                    onClick={saveWorkflow}
+                    disabled={isSaving}
+                  >
+                    保存并完成本次处理
+                  </button>
+
+                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <button
+                      style={{ height: 40, padding: "0 12px", fontSize: 13, fontWeight: 500, background: "#fff", border: "1px solid #e5e7eb", color: "#64748b", borderRadius: 12 }}
+                      onClick={markInvalidLead}
+                      disabled={isSaving}
+                    >
+                      标记无效
+                    </button>
                   </div>
                 </div>
               </>
