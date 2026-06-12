@@ -1344,8 +1344,8 @@ export default function CustomerDetailPage() {
       <header className="hero">
         <div>
           <p className="eyebrow">客户详情</p>
-          <h1>{customer?.customer_name || "客户详情"}</h1>
-          <p>{customer?.country || "未知国家"} · {leadSourceLabel || customer?.source || "未知来源"}</p>
+          <h1>客户推进处理页</h1>
+          <p>先确认客户身份和当前推进状态，再进入下方标签处理资料、需求和跟进记录。</p>
         </div>
         <AppNav />
       </header>
@@ -1353,6 +1353,15 @@ export default function CustomerDetailPage() {
       {session ? <div className="auth-card">已登录：{session.user.email}</div> : <div className="auth-card">请先登录。</div>}
       {error && <div className="error">{error}</div>}
       {success && <div className="success">{success}</div>}
+
+      <section className="panel">
+        <div className="section-title">
+          <h2>{customer?.customer_name || "客户身份"}</h2>
+          <span>
+            {customer?.country || "未知国家"} · {leadSourceLabel || customer?.source || "未知来源"} · {currentType || "待判断"} · 客户等级 {currentLeadLevel || "C"}
+          </span>
+        </div>
+      </section>
 
       <section className="panel">
         <div className="section-title">
@@ -1386,22 +1395,21 @@ export default function CustomerDetailPage() {
         ) : (
           <>
             <div className="actions" style={{ marginTop: 16, flexWrap: "wrap" }}>
+              <button onClick={generateWorkflowRecommendation} disabled={isSaving}>生成下一步建议</button>
+              <button className="primary" onClick={saveWorkflow} disabled={isSaving}>保存客户流程</button>
               {showLeadNewButtons && (
                 <>
                   <button onClick={markLeadContacted} disabled={isSaving}>标记已触达</button>
-                  <button onClick={markInvalidLead} disabled={isSaving}>标记无效</button>
                 </>
               )}
               {showLeadContactedButtons && (
                 <>
                   <button onClick={markLeadResponded} disabled={isSaving}>标记有回应</button>
-                  <button onClick={markInvalidLead} disabled={isSaving}>标记无效</button>
                 </>
               )}
               {showLeadRespondedButtons && (
                 <>
                   <button onClick={markHasNeed} disabled={isSaving}>标记有需求</button>
-                  <button onClick={markInvalidLead} disabled={isSaving}>标记无效</button>
                 </>
               )}
               {showSalesProgressButtons && (
@@ -1419,6 +1427,7 @@ export default function CustomerDetailPage() {
                     style={{ maxWidth: 220 }}
                   />
                   <button onClick={scheduleNextFollowUp} disabled={isSaving}>设置下次跟进</button>
+                  <button onClick={markInvalidLead} disabled={isSaving}>标记无效</button>
                 </>
               )}
             </div>
@@ -1435,7 +1444,7 @@ export default function CustomerDetailPage() {
               : { border: "1px solid #dbe5f1", color: "#1d2433", background: "#f8fafc" }}
             onClick={() => setActiveTab("overview")}
           >
-            概览
+            推进概览
           </button>
           <button
             className={activeTab === "profile" ? "primary" : ""}
@@ -1470,12 +1479,8 @@ export default function CustomerDetailPage() {
       {activeTab === "overview" && (
         <section className="panel">
           <div className="section-title">
-            <h2>概览</h2>
-            <span>快速判断现在推进到哪一步，以及最近发生了什么</span>
-            <div className="actions compact">
-              <button onClick={generateWorkflowRecommendation} disabled={isSaving}>生成下一步建议</button>
-              <button className="primary" onClick={saveWorkflow} disabled={isSaving}>保存客户流程</button>
-            </div>
+            <h2>推进概览</h2>
+            <span>这里保留客户摘要、需求摘要和最近一次跟进记录，不再重复顶部推进字段。</span>
           </div>
           {leadProgressCustomer && (
             <div className="notice-panel" style={{ marginBottom: 16 }}>
@@ -1497,13 +1502,12 @@ export default function CustomerDetailPage() {
               <p><strong>产品需求：</strong>{demandForm.recommended_product || demandForm.target_capacity || customer?.quote_content || "待确认"}</p>
               <p><strong>数量 / 贸易方式：</strong>{demandForm.quantity || "待确认"} / {demandForm.shipping_term || "待确认"}</p>
               <p><strong>缺失信息：</strong>{workflowForm.missingInfo || demandForm.missing_info || customer?.missing_info || "暂无"}</p>
-              <p><strong>当前卡点：</strong>{blockerText}</p>
             </div>
           </div>
           <div className="detail-grid" style={{ marginTop: 16 }}>
-            <div className="detail-item"><strong>下一步动作</strong><p>{localizedCurrentAction}</p></div>
-            <div className="detail-item"><strong>下次跟进日期</strong><p>{formatDateOnly(workflowForm.followUpDate || customer?.next_follow_up_at || customer?.follow_up_date)}</p></div>
             <div className="detail-item"><strong>最近一次跟进记录</strong><p>{latestInteractionSummary}</p></div>
+            <div className="detail-item"><strong>最近客户回复时间</strong><p>{formatDateTime(customer?.last_customer_reply_at)}</p></div>
+            <div className="detail-item"><strong>最近报价时间</strong><p>{formatDateTime(customer?.last_quote_at)}</p></div>
           </div>
         </section>
       )}
