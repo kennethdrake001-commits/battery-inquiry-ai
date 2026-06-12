@@ -127,6 +127,27 @@ function getCardAppearance(kind, isActive) {
   return appearanceMap[kind] || appearanceMap.channel;
 }
 
+function getSelectedBadgeStyle(kind) {
+  const colorMap = {
+    urgent: {
+      background: "rgba(245, 158, 11, 0.12)",
+      color: "#b45309",
+      border: "1px solid rgba(245, 158, 11, 0.24)"
+    },
+    value: {
+      background: "rgba(16, 185, 129, 0.12)",
+      color: "#047857",
+      border: "1px solid rgba(16, 185, 129, 0.24)"
+    },
+    channel: {
+      background: "rgba(59, 130, 246, 0.12)",
+      color: "#1d4ed8",
+      border: "1px solid rgba(59, 130, 246, 0.24)"
+    }
+  };
+  return colorMap[kind] || colorMap.channel;
+}
+
 function formatDateOnly(value) {
   if (!value) return "待安排";
   const text = `${value}`.trim();
@@ -372,6 +393,7 @@ export default function HomePage() {
               {priorityCards.map((card) => {
                 const appearance = getCardAppearance(card.appearance, activeSummaryKey === card.key);
                 const isActive = activeSummaryKey === card.key;
+                const selectedBadge = getSelectedBadgeStyle(card.appearance);
                 return (
                 <button
                   key={card.key}
@@ -390,14 +412,33 @@ export default function HomePage() {
                       borderRadius: 20,
                       padding: "16px 18px",
                       transition: "all 0.2s ease",
-                      position: "relative"
+                      position: "relative",
+                      transform: isActive ? "translateY(-1px)" : "none"
                     }}
                   >
-                    {card.customers.length > 0 && (
+                    {isActive && (
                       <span
                         style={{
                           position: "absolute",
                           top: 14,
+                          right: 14,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          padding: "4px 8px",
+                          borderRadius: 999,
+                          background: selectedBadge.background,
+                          color: selectedBadge.color,
+                          border: selectedBadge.border
+                        }}
+                      >
+                        当前筛选
+                      </span>
+                    )}
+                    {card.customers.length > 0 && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: isActive ? 44 : 14,
                           right: 14,
                           fontSize: 11,
                           fontWeight: 700,
@@ -432,6 +473,7 @@ export default function HomePage() {
               {leadActionCards.map((card) => {
                 const appearance = getCardAppearance(card.appearance, activeSummaryKey === card.key);
                 const isActive = activeSummaryKey === card.key;
+                const selectedBadge = getSelectedBadgeStyle(card.appearance);
                 return (
                   <button
                     key={card.key}
@@ -450,14 +492,33 @@ export default function HomePage() {
                         borderRadius: 18,
                         padding: "14px 16px",
                         transition: "all 0.2s ease",
-                        position: "relative"
+                        position: "relative",
+                        transform: isActive ? "translateY(-1px)" : "none"
                       }}
                     >
-                      {card.customers.length > 0 && (
+                      {isActive && (
                         <span
                           style={{
                             position: "absolute",
                             top: 12,
+                            right: 12,
+                            fontSize: 10,
+                            fontWeight: 700,
+                            padding: "3px 7px",
+                            borderRadius: 999,
+                            background: selectedBadge.background,
+                            color: selectedBadge.color,
+                            border: selectedBadge.border
+                          }}
+                        >
+                          当前筛选
+                        </span>
+                      )}
+                      {card.customers.length > 0 && (
+                        <span
+                          style={{
+                            position: "absolute",
+                            top: isActive ? 38 : 12,
                             right: 12,
                             fontSize: 10,
                             fontWeight: 700,
