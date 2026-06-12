@@ -85,6 +85,7 @@ export default function CustomersPage() {
   const [session, setSession] = useState(null);
   const [customers, setCustomers] = useState([]);
   const [filters, setFilters] = useState(emptyFilters);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [showProspectModal, setShowProspectModal] = useState(false);
   const [isSavingProspect, setIsSavingProspect] = useState(false);
   const [prospectForm, setProspectForm] = useState({
@@ -244,6 +245,8 @@ export default function CustomersPage() {
     setProspectForm((current) => ({ ...current, [field]: value }));
   }
 
+  const customerScopeOptions = ["全部客户", "询盘客户", "主动开发客户", "重点客户", "已归档"];
+
   async function saveProspectCustomer() {
     if (!supabase || !session?.user) {
       setError("请先登录后再新增主动开发客户。");
@@ -366,7 +369,7 @@ export default function CustomersPage() {
         <>
           <section className="panel">
             <div className="section-title">
-              <h2>筛选条件</h2>
+              <h2>客户筛选</h2>
               <div className="actions compact">
                 <Link className="primary" href="/customers/new">新增询盘客户</Link>
                 <button type="button" onClick={() => setShowProspectModal(true)}>新增主动开发客户</button>
@@ -375,99 +378,124 @@ export default function CustomersPage() {
               </div>
             </div>
             <p className="subtle" style={{ marginTop: 0 }}>
-              批量导入功能暂时保留在旧主动开发页面，后续会合并到客户页。
+              先按客户范围查看，再用搜索快速找到客户。复杂条件放在高级筛选里。
             </p>
+            <div className="field" style={{ marginBottom: 16 }}>
+              <span>客户范围</span>
+              <div className="actions compact" style={{ flexWrap: "wrap", marginTop: 8, gap: 10 }}>
+                {customerScopeOptions.map((option) => {
+                  const active = filters.customerScope === option;
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      className={active ? "primary" : ""}
+                      onClick={() => updateFilter("customerScope", option)}
+                    >
+                      {option}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <div className="form-grid">
               <label className="field">
-                <span>客户范围</span>
-                <select value={filters.customerScope} onChange={(event) => updateFilter("customerScope", event.target.value)}>
-                  <option value="全部客户">全部客户</option>
-                  <option value="询盘客户">询盘客户</option>
-                  <option value="主动开发客户">主动开发客户</option>
-                  <option value="重点客户">重点客户</option>
-                  <option value="已归档">已归档</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>客户名 / 公司名搜索</span>
+                <span>搜索客户名 / 公司名</span>
                 <input value={filters.keyword} onChange={(event) => updateFilter("keyword", event.target.value)} placeholder="输入客户名或公司名" />
               </label>
-              <label className="field">
-                <span>国家</span>
-                <input value={filters.country} onChange={(event) => updateFilter("country", event.target.value)} placeholder="输入国家筛选" />
-              </label>
-              <label className="field">
-                <span>客户类型</span>
-                <select value={filters.customerType} onChange={(event) => updateFilter("customerType", event.target.value)}>
-                  <option value="">全部</option>
-                  <option value="End User">终端用户</option>
-                  <option value="Solar Installer">安装商</option>
-                  <option value="Solar Distributor">太阳能经销商</option>
-                  <option value="Battery Wholesaler">电池批发商</option>
-                  <option value="Inverter Distributor">逆变器经销商</option>
-                  <option value="OEM / Brand Owner">OEM / 品牌方</option>
-                  <option value="Unknown">待判断</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>来源渠道</span>
-                <select value={filters.leadSource} onChange={(event) => updateFilter("leadSource", event.target.value)}>
-                  <option value="">全部</option>
-                  {["Google Maps", "LinkedIn", "FB", "Alibaba", "Website", "Referral", "Email", "WhatsApp", "主动开发", "Other"].map((item) => (
-                    <option key={item} value={item}>{getLeadSourceLabel(item) || getSourceLabel(item)}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>客户等级</span>
-                <select value={filters.leadLevel} onChange={(event) => updateFilter("leadLevel", event.target.value)}>
-                  <option value="">全部</option>
-                  <option value="A">A</option>
-                  <option value="B">B</option>
-                  <option value="C">C</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>当前状态</span>
-                <select value={filters.status} onChange={(event) => updateFilter("status", event.target.value)}>
-                  <option value="">全部</option>
-                  {["新线索", "已触达", "有互动", "有需求", "已发资料", "已报价", "跟进中", "成交", "丢单", "无效"].map((item) => (
-                    <option key={item} value={item}>{item}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>下一步动作</span>
-                <input value={filters.nextAction} onChange={(event) => updateFilter("nextAction", event.target.value)} placeholder="输入下一步动作关键词" />
-              </label>
-              <label className="field">
-                <span>下次跟进时间</span>
-                <select value={filters.followUpRange} onChange={(event) => updateFilter("followUpRange", event.target.value)}>
-                  <option value="">全部</option>
-                  <option value="今日及以前">今日及以前</option>
-                  <option value="已安排">已安排</option>
-                  <option value="未安排">未安排</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>渠道状态</span>
-                <input value={filters.channelStatus} onChange={(event) => updateFilter("channelStatus", event.target.value)} placeholder="如 已发送连接 / 已私信 / 已回复" />
-              </label>
-              <label className="field">
-                <span>是否合作商候选</span>
-                <select value={filters.partnerCandidate} onChange={(event) => updateFilter("partnerCandidate", event.target.value)}>
-                  <option value="">全部</option>
-                  <option value="是">是</option>
-                  <option value="否">否</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>只看重点客户</span>
-                <select value={filters.onlyImportant} onChange={(event) => updateFilter("onlyImportant", event.target.value)}>
-                  <option value="否">否</option>
-                  <option value="是">是</option>
-                </select>
-              </label>
+            </div>
+            <div className="panel" style={{ marginTop: 16, padding: 16 }}>
+              <div className="section-title">
+                <div>
+                  <h3 style={{ marginBottom: 6 }}>高级筛选</h3>
+                  <p className="subtle" style={{ margin: 0 }}>
+                    按国家、客户类型、来源、阶段、跟进时间进一步筛选。
+                  </p>
+                </div>
+                <button type="button" onClick={() => setShowAdvancedFilters((current) => !current)}>
+                  {showAdvancedFilters ? "收起高级筛选" : "展开高级筛选"}
+                </button>
+              </div>
+              {showAdvancedFilters && (
+                <div className="form-grid" style={{ marginTop: 16 }}>
+                  <label className="field">
+                    <span>国家</span>
+                    <input value={filters.country} onChange={(event) => updateFilter("country", event.target.value)} placeholder="输入国家筛选" />
+                  </label>
+                  <label className="field">
+                    <span>客户类型</span>
+                    <select value={filters.customerType} onChange={(event) => updateFilter("customerType", event.target.value)}>
+                      <option value="">全部</option>
+                      <option value="End User">终端用户</option>
+                      <option value="Solar Installer">安装商</option>
+                      <option value="Solar Distributor">太阳能经销商</option>
+                      <option value="Battery Wholesaler">电池批发商</option>
+                      <option value="Inverter Distributor">逆变器经销商</option>
+                      <option value="OEM / Brand Owner">OEM / 品牌方</option>
+                      <option value="Unknown">待判断</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>来源渠道</span>
+                    <select value={filters.leadSource} onChange={(event) => updateFilter("leadSource", event.target.value)}>
+                      <option value="">全部</option>
+                      {["Google Maps", "LinkedIn", "FB", "Alibaba", "Website", "Referral", "Email", "WhatsApp", "主动开发", "Other"].map((item) => (
+                        <option key={item} value={item}>{getLeadSourceLabel(item) || getSourceLabel(item)}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>客户等级</span>
+                    <select value={filters.leadLevel} onChange={(event) => updateFilter("leadLevel", event.target.value)}>
+                      <option value="">全部</option>
+                      <option value="A">A</option>
+                      <option value="B">B</option>
+                      <option value="C">C</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>当前状态</span>
+                    <select value={filters.status} onChange={(event) => updateFilter("status", event.target.value)}>
+                      <option value="">全部</option>
+                      {["新线索", "已触达", "有互动", "有需求", "已发资料", "已报价", "跟进中", "成交", "丢单", "无效"].map((item) => (
+                        <option key={item} value={item}>{item}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>下一步动作</span>
+                    <input value={filters.nextAction} onChange={(event) => updateFilter("nextAction", event.target.value)} placeholder="输入下一步动作关键词" />
+                  </label>
+                  <label className="field">
+                    <span>下次跟进时间</span>
+                    <select value={filters.followUpRange} onChange={(event) => updateFilter("followUpRange", event.target.value)}>
+                      <option value="">全部</option>
+                      <option value="今日及以前">今日及以前</option>
+                      <option value="已安排">已安排</option>
+                      <option value="未安排">未安排</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>渠道状态</span>
+                    <input value={filters.channelStatus} onChange={(event) => updateFilter("channelStatus", event.target.value)} placeholder="如 已发送连接 / 已私信 / 已回复" />
+                  </label>
+                  <label className="field">
+                    <span>是否合作商候选</span>
+                    <select value={filters.partnerCandidate} onChange={(event) => updateFilter("partnerCandidate", event.target.value)}>
+                      <option value="">全部</option>
+                      <option value="是">是</option>
+                      <option value="否">否</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>只看重点客户</span>
+                    <select value={filters.onlyImportant} onChange={(event) => updateFilter("onlyImportant", event.target.value)}>
+                      <option value="否">否</option>
+                      <option value="是">是</option>
+                    </select>
+                  </label>
+                </div>
+              )}
             </div>
           </section>
 
