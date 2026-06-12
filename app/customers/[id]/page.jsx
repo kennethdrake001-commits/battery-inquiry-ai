@@ -1344,8 +1344,8 @@ export default function CustomerDetailPage() {
       <header className="hero">
         <div>
           <p className="eyebrow">客户详情</p>
-          <h1>客户推进处理页</h1>
-          <p>先确认客户身份和当前推进状态，再进入下方标签处理资料、需求和跟进记录。</p>
+          <h1 style={{ marginBottom: 8 }}>{customer?.customer_name || "客户详情"}</h1>
+          <p>{customer?.country || "未知国家"} · {leadSourceLabel || customer?.source || "未知来源"} · {currentType || "待判断"} · 客户等级 {currentLeadLevel || "C"}</p>
         </div>
         <AppNav />
       </header>
@@ -1353,85 +1353,124 @@ export default function CustomerDetailPage() {
       {error && <div className="error">{error}</div>}
       {success && <div className="success">{success}</div>}
 
-      <section className="panel">
-        <div className="section-title">
-          <h2>{customer?.customer_name || "客户身份"}</h2>
-          <span>
-            {customer?.country || "未知国家"} · {leadSourceLabel || customer?.source || "未知来源"} · {currentType || "待判断"} · 客户等级 {currentLeadLevel || "C"}
-          </span>
-        </div>
-      </section>
+      <section
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(280px, 0.35fr) minmax(0, 1fr)",
+          gap: 20,
+          alignItems: "start",
+          marginBottom: 20
+        }}
+      >
+        <article className="panel" style={{ borderRadius: 20, padding: 20 }}>
+          <div className="section-title" style={{ marginBottom: 16 }}>
+            <h2>客户档案</h2>
+            <span>先确认这个客户是谁</span>
+          </div>
+          <div className="detail-grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+            <div className="detail-item" style={{ borderRadius: 16, background: "#f8fafc", padding: 14 }}>
+              <strong style={{ color: "#64748b", fontSize: 13 }}>客户名</strong>
+              <p>{customer?.customer_name || "待补充"}</p>
+            </div>
+            <div className="detail-item" style={{ borderRadius: 16, background: "#f8fafc", padding: 14 }}>
+              <strong style={{ color: "#64748b", fontSize: 13 }}>来源渠道</strong>
+              <p>{leadSourceLabel || customer?.source || "待补充"}</p>
+            </div>
+            <div className="detail-item" style={{ borderRadius: 16, background: "#f8fafc", padding: 14 }}>
+              <strong style={{ color: "#64748b", fontSize: 13 }}>国家</strong>
+              <p>{customer?.country || "未知国家"}</p>
+            </div>
+            <div className="detail-item" style={{ borderRadius: 16, background: "#f8fafc", padding: 14 }}>
+              <strong style={{ color: "#64748b", fontSize: 13 }}>客户类型</strong>
+              <p>{currentType}</p>
+            </div>
+            <div className="detail-item" style={{ borderRadius: 16, background: "#f8fafc", padding: 14 }}>
+              <strong style={{ color: "#64748b", fontSize: 13 }}>客户等级</strong>
+              <p>{currentLeadLevel || "C"}</p>
+            </div>
+            <div className="detail-item" style={{ borderRadius: 16, background: "#f8fafc", padding: 14 }}>
+              <strong style={{ color: "#64748b", fontSize: 13 }}>合作商候选</strong>
+              <p>{partnerCandidateLabel}</p>
+            </div>
+            <div className="detail-item" style={{ borderRadius: 16, background: "#f8fafc", padding: 14 }}>
+              <strong style={{ color: "#64748b", fontSize: 13 }}>联系人</strong>
+              <p>{profileForm.contact_name || "待补充"}</p>
+            </div>
+            <div className="detail-item" style={{ borderRadius: 16, background: "#f8fafc", padding: 14 }}>
+              <strong style={{ color: "#64748b", fontSize: 13 }}>联系方式</strong>
+              <p>{profileForm.email || profileForm.whatsapp || "待补充"}</p>
+            </div>
+            <div className="detail-item" style={{ borderRadius: 16, background: "#f8fafc", padding: 14, gridColumn: "1 / -1" }}>
+              <strong style={{ color: "#64748b", fontSize: 13 }}>公司名 / 官网</strong>
+              <p>{profileForm.website || customer?.company_name || "待补充"}</p>
+            </div>
+          </div>
+        </article>
 
-      <section className="panel">
-        <div className="section-title">
-          <h2>当前推进</h2>
-          <span>先看当前该做什么，再进入下面各标签处理</span>
-        </div>
-        <div className="detail-grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", marginBottom: 12 }}>
-          <div className="detail-item" style={{ background: "#f8fbff", borderRadius: 16, padding: 16 }}>
-            <strong>当前阶段</strong>
-            <p><span className="soft-badge">{displayStage || displayStatus || "待判断"}</span></p>
+        <article className="panel" style={{ borderRadius: 20, padding: 20 }}>
+          <div className="section-title" style={{ marginBottom: 16 }}>
+            <h2>当前推进</h2>
+            <span>先看当前该做什么，再进入下方标签处理</span>
           </div>
-          <div className="detail-item" style={{ background: "#f8fbff", borderRadius: 16, padding: 16 }}>
-            <strong>下一步动作</strong>
-            <p>{localizedPersistedAction}</p>
+          <div className="detail-grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12, marginBottom: 12 }}>
+            <div className="detail-item" style={{ background: "#f8fbff", borderRadius: 18, padding: 18, border: "1px solid #dbeafe" }}>
+              <strong style={{ color: "#64748b", fontSize: 13 }}>当前阶段</strong>
+              <p style={{ fontSize: 18, fontWeight: 600 }}><span className="soft-badge">{displayStage || displayStatus || "待判断"}</span></p>
+            </div>
+            <div className="detail-item" style={{ background: "#f8fbff", borderRadius: 18, padding: 18, border: "1px solid #dbeafe" }}>
+              <strong style={{ color: "#64748b", fontSize: 13 }}>下一步动作</strong>
+              <p style={{ fontSize: 16, fontWeight: 600 }}>{localizedPersistedAction}</p>
+            </div>
+            <div className="detail-item" style={{ background: "#f8fbff", borderRadius: 18, padding: 18, border: "1px solid #dbeafe" }}>
+              <strong style={{ color: "#64748b", fontSize: 13 }}>下次跟进</strong>
+              <p style={{ fontSize: 16, fontWeight: 600 }}>{followUpDateDisplay}</p>
+            </div>
           </div>
-          <div className="detail-item" style={{ background: "#f8fbff", borderRadius: 16, padding: 16 }}>
-            <strong>下次跟进日期</strong>
-            <p>{followUpDateDisplay}</p>
+
+          <div className="detail-grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12, marginBottom: 12 }}>
+            <div className="detail-item" style={{ borderRadius: 16, background: "#f8fafc", padding: 14 }}>
+              <strong style={{ color: "#64748b", fontSize: 13 }}>客户类型</strong>
+              <p>{currentType}</p>
+            </div>
+            <div className="detail-item" style={{ borderRadius: 16, background: "#f8fafc", padding: 14 }}>
+              <strong style={{ color: "#64748b", fontSize: 13 }}>国家</strong>
+              <p>{customer?.country || "待补充"}</p>
+            </div>
+            <div className="detail-item" style={{ borderRadius: 16, background: "#fff7ed", padding: 14, gridColumn: "1 / -1", border: "1px solid #fed7aa" }}>
+              <strong style={{ color: "#9a3412", fontSize: 13 }}>当前卡点</strong>
+              <p>{blockerText}</p>
+            </div>
           </div>
-        </div>
-        <div className="detail-grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
-          <div className="detail-item"><strong>客户类型</strong><p>{currentType}</p></div>
-          <div className="detail-item"><strong>国家</strong><p>{customer?.country || "待补充"}</p></div>
-          <div className="detail-item"><strong>当前卡点</strong><p>{blockerText}</p></div>
-        </div>
-        {archivedCustomer ? (
-          <div className="notice-panel" style={{ marginTop: 16 }}>
-            <strong>客户已归档</strong>
-            <p>客户已归档，如需继续推进，请先恢复客户。</p>
-          </div>
-        ) : (
-          <>
-            <div className="actions" style={{ marginTop: 16, flexWrap: "wrap" }}>
+
+          {archivedCustomer ? (
+            <div className="notice-panel" style={{ marginTop: 16 }}>
+              <strong>客户已归档</strong>
+              <p>客户已归档，如需继续推进，请先恢复客户。</p>
+            </div>
+          ) : (
+            <div className="actions" style={{ marginTop: 16, flexWrap: "wrap", gap: 10 }}>
               <button onClick={generateWorkflowRecommendation} disabled={isSaving}>生成下一步建议</button>
               <button className="primary" onClick={saveWorkflow} disabled={isSaving}>保存客户流程</button>
-              {showLeadNewButtons && (
-                <>
-                  <button onClick={markLeadContacted} disabled={isSaving}>标记已触达</button>
-                </>
-              )}
-              {showLeadContactedButtons && (
-                <>
-                  <button onClick={markLeadResponded} disabled={isSaving}>标记有回应</button>
-                </>
-              )}
-              {showLeadRespondedButtons && (
-                <>
-                  <button onClick={markHasNeed} disabled={isSaving}>标记有需求</button>
-                </>
-              )}
+              <input
+                type="date"
+                value={scheduleFollowUpDate}
+                onChange={(event) => setScheduleFollowUpDate(event.target.value)}
+                style={{ maxWidth: 220 }}
+              />
+              <button onClick={scheduleNextFollowUp} disabled={isSaving}>设置下次跟进</button>
+              {showLeadNewButtons && <button onClick={markLeadContacted} disabled={isSaving}>标记已触达</button>}
+              {showLeadContactedButtons && <button onClick={markLeadResponded} disabled={isSaving}>标记有回应</button>}
+              {showLeadRespondedButtons && <button onClick={markHasNeed} disabled={isSaving}>标记有需求</button>}
               {showSalesProgressButtons && (
                 <>
                   <button onClick={markMaterialSent} disabled={isSaving}>已发送产品资料</button>
                   <button onClick={markQuoteSent} disabled={isSaving}>已发送报价</button>
                 </>
               )}
-              {!archivedCustomer && (
-                <>
-                  <input
-                    type="date"
-                    value={scheduleFollowUpDate}
-                    onChange={(event) => setScheduleFollowUpDate(event.target.value)}
-                    style={{ maxWidth: 220 }}
-                  />
-                  <button onClick={scheduleNextFollowUp} disabled={isSaving}>设置下次跟进</button>
-                  <button onClick={markInvalidLead} disabled={isSaving}>标记无效</button>
-                </>
-              )}
+              <button onClick={markInvalidLead} disabled={isSaving}>标记无效</button>
             </div>
-          </>
-        )}
+          )}
+        </article>
       </section>
 
       <section className="panel">
@@ -1487,26 +1526,26 @@ export default function CustomerDetailPage() {
               <p>这是获客推进客户，请按来源渠道、互动状态和下次跟进时间持续推进。</p>
             </div>
           )}
-          <div className="two-col">
-            <div>
-              <h4>客户基础摘要</h4>
-              <p><strong>客户名：</strong>{customer?.customer_name || "待补充"}</p>
+          <div className="detail-grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
+            <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+              <strong>客户基础摘要</strong>
               <p><strong>来源渠道：</strong>{leadSourceLabel || customer?.source || "待补充"}</p>
               <p><strong>客户类型：</strong>{currentType}</p>
               <p><strong>客户等级：</strong>{currentLeadLevel}</p>
               <p><strong>合作商候选：</strong>{partnerCandidateLabel}</p>
             </div>
-            <div>
-              <h4>当前需求摘要</h4>
+            <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+              <strong>当前需求摘要</strong>
               <p><strong>产品需求：</strong>{demandForm.recommended_product || demandForm.target_capacity || customer?.quote_content || "待确认"}</p>
               <p><strong>数量 / 贸易方式：</strong>{demandForm.quantity || "待确认"} / {demandForm.shipping_term || "待确认"}</p>
               <p><strong>缺失信息：</strong>{workflowForm.missingInfo || demandForm.missing_info || customer?.missing_info || "暂无"}</p>
             </div>
-          </div>
-          <div className="detail-grid" style={{ marginTop: 16 }}>
-            <div className="detail-item"><strong>最近一次跟进记录</strong><p>{latestInteractionSummary}</p></div>
-            <div className="detail-item"><strong>最近客户回复时间</strong><p>{formatDateTime(customer?.last_customer_reply_at)}</p></div>
-            <div className="detail-item"><strong>最近报价时间</strong><p>{formatDateTime(customer?.last_quote_at)}</p></div>
+            <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+              <strong>最近一次跟进</strong>
+              <p><strong>最近跟进记录：</strong>{latestInteractionSummary}</p>
+              <p><strong>最近客户回复时间：</strong>{formatDateTime(customer?.last_customer_reply_at)}</p>
+              <p><strong>最近报价时间：</strong>{formatDateTime(customer?.last_quote_at)}</p>
+            </div>
           </div>
         </section>
       )}
