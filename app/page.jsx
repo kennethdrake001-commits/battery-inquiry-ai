@@ -103,22 +103,22 @@ function AuthPanel({ session, onSessionChange }) {
 function getCardAppearance(kind, isActive) {
   const appearanceMap = {
     urgent: {
-      border: isActive ? "1px solid rgba(245, 158, 11, 0.4)" : "1px solid rgba(245, 158, 11, 0.14)",
-      background: isActive ? "linear-gradient(180deg, #fff9f1 0%, #fffdf8 100%)" : "#fffdfa",
-      shadow: isActive ? "0 10px 22px rgba(245, 158, 11, 0.1)" : "0 4px 12px rgba(15, 23, 42, 0.04)",
-      accent: "#b45309"
+      border: isActive ? "1px solid rgba(59, 130, 246, 0.34)" : "1px solid rgba(191, 219, 254, 0.9)",
+      background: isActive ? "linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%)" : "#ffffff",
+      shadow: isActive ? "0 10px 22px rgba(59, 130, 246, 0.12)" : "0 4px 12px rgba(15, 23, 42, 0.04)",
+      accent: "#2563eb"
     },
     value: {
-      border: isActive ? "1px solid rgba(52, 211, 153, 0.42)" : "1px solid rgba(52, 211, 153, 0.14)",
-      background: isActive ? "linear-gradient(180deg, #effcf6 0%, #f7fffb 100%)" : "#f7fffb",
-      shadow: isActive ? "0 10px 22px rgba(16, 185, 129, 0.1)" : "0 4px 12px rgba(15, 23, 42, 0.04)",
-      accent: "#047857"
+      border: isActive ? "1px solid rgba(59, 130, 246, 0.34)" : "1px solid rgba(191, 219, 254, 0.9)",
+      background: isActive ? "linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%)" : "#ffffff",
+      shadow: isActive ? "0 10px 22px rgba(59, 130, 246, 0.12)" : "0 4px 12px rgba(15, 23, 42, 0.04)",
+      accent: "#2563eb"
     },
     channel: {
-      border: isActive ? "1px solid rgba(96, 165, 250, 0.42)" : "1px solid rgba(96, 165, 250, 0.16)",
-      background: isActive ? "linear-gradient(180deg, #f3f8ff 0%, #f8fbff 100%)" : "#f8fbff",
-      shadow: isActive ? "0 10px 22px rgba(59, 130, 246, 0.09)" : "0 4px 12px rgba(15, 23, 42, 0.04)",
-      accent: "#1d4ed8"
+      border: isActive ? "1px solid rgba(59, 130, 246, 0.34)" : "1px solid rgba(191, 219, 254, 0.9)",
+      background: isActive ? "linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%)" : "#ffffff",
+      shadow: isActive ? "0 10px 22px rgba(59, 130, 246, 0.12)" : "0 4px 12px rgba(15, 23, 42, 0.04)",
+      accent: "#2563eb"
     }
   };
   return appearanceMap[kind] || appearanceMap.channel;
@@ -510,7 +510,6 @@ export default function HomePage() {
     ];
   }, [visibleCustomers]);
 
-  const summaryCards = useMemo(() => summaryGroups, [summaryGroups]);
   const highPriorityRows = useMemo(() => {
     return mapSummaryCustomers(
       visibleCustomers.filter((customer) => isHighPriorityCustomer(customer) && needsProgress(customer))
@@ -521,6 +520,29 @@ export default function HomePage() {
       visibleCustomers.filter((customer) => isProspectingCustomer(customer) && needsProgress(customer))
     ).slice(0, 5);
   }, [visibleCustomers]);
+  const summaryCards = useMemo(() => {
+    return [
+      ...summaryGroups,
+      {
+        key: "high-priority",
+        title: "重点客户",
+        subtitle: highPriorityRows.length === 0 ? "暂无重点客户" : "即使今天无明确日期，也建议优先关注",
+        listTitle: "重点客户",
+        appearance: "value",
+        reason: "高优先级客户，建议优先处理",
+        customers: highPriorityRows
+      },
+      {
+        key: "prospecting-progress",
+        title: "主动开发待推进",
+        subtitle: prospectingRows.length === 0 ? "暂无主动开发待推进客户" : "需要继续跟进的主动开发客户",
+        listTitle: "主动开发待推进客户",
+        appearance: "channel",
+        reason: "主动开发客户需要继续推进",
+        customers: prospectingRows
+      }
+    ];
+  }, [summaryGroups, highPriorityRows, prospectingRows]);
 
   const actionRows = useMemo(() => {
     return tasks.slice(0, 5).map((task) => {
@@ -543,7 +565,7 @@ export default function HomePage() {
   }, [tasks, visibleCustomers]);
 
   const remainingTaskCount = Math.max(tasks.length - 5, 0);
-  const activeSummary = summaryGroups.find((group) => group.key === activeSummaryKey) || null;
+  const activeSummary = summaryCards.find((group) => group.key === activeSummaryKey) || null;
   const selectedActionGroup = activeSummary || {
     key: "default-actions",
     title: "今日行动列表",
@@ -587,7 +609,14 @@ export default function HomePage() {
               <h2>今日工作重点</h2>
               <span>先看今天最需要推进的客户，再进入具体处理</span>
             </div>
-            <div className="task-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 220px))", gap: 12, justifyContent: "flex-start" }}>
+            <div
+              className="task-grid"
+              style={{
+                gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
+                gap: 12,
+                alignItems: "stretch"
+              }}
+            >
               {summaryCards.map((card) => {
                 const appearance = getCardAppearance(card.appearance, activeSummaryKey === card.key);
                 const isActive = activeSummaryKey === card.key;
@@ -606,9 +635,9 @@ export default function HomePage() {
                       border: appearance.border,
                       background: appearance.background,
                       boxShadow: appearance.shadow,
-                      minHeight: 112,
+                      minHeight: 108,
                       borderRadius: 18,
-                      padding: "14px 16px",
+                      padding: "14px 14px 12px",
                       transition: "all 0.2s ease",
                       position: "relative",
                       transform: isActive ? "translateY(-1px)" : "none"
@@ -650,11 +679,11 @@ export default function HomePage() {
                         建议处理
                       </span>
                     )}
-                    <strong style={{ color: appearance.accent, display: "block", paddingRight: card.customers.length > 0 ? 84 : 0 }}>{card.title}</strong>
-                    <div style={{ fontSize: card.customers.length > 0 ? 34 : 30, fontWeight: 800, lineHeight: 1.05, marginTop: 6, color: "#111827" }}>
+                    <strong style={{ color: appearance.accent, display: "block", fontSize: 14, paddingRight: card.customers.length > 0 ? 84 : 0 }}>{card.title}</strong>
+                    <div style={{ fontSize: card.customers.length > 0 ? 30 : 28, fontWeight: 800, lineHeight: 1.05, marginTop: 6, color: "#0f172a" }}>
                       {card.customers.length}
                     </div>
-                    <p style={{ marginTop: 6, color: "#475569", lineHeight: 1.4, fontSize: 13 }}>{card.subtitle}</p>
+                    <p style={{ marginTop: 6, color: "#64748b", lineHeight: 1.35, fontSize: 12 }}>{card.subtitle}</p>
                   </article>
                 </button>
                 );
@@ -759,134 +788,6 @@ export default function HomePage() {
               </div>
             )}
           </section>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-              gap: 16
-            }}
-          >
-            <section className="panel" style={{ margin: 0 }}>
-              <div className="section-title">
-                <div>
-                  <h2>重点客户</h2>
-                  <span>即使今天没有明确提醒日期，也应优先关注这些客户</span>
-                </div>
-              </div>
-
-              {highPriorityRows.length === 0 ? (
-                <p className="empty">暂无重点客户</p>
-              ) : (
-                <div style={{ display: "grid", gap: 10 }}>
-                  {highPriorityRows.map((item) => (
-                    <article
-                      key={`priority-${item.id}`}
-                      style={{
-                        border: "1px solid rgba(226, 232, 240, 0.85)",
-                        borderRadius: 16,
-                        padding: "14px 16px",
-                        background: "#ffffff",
-                        boxShadow: "0 4px 12px rgba(15, 23, 42, 0.04)"
-                      }}
-                    >
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
-                        <div style={{ minWidth: 0, flex: "1 1 260px" }}>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                            <strong style={{ fontSize: 16, color: "#0f172a" }}>{item.customerName}</strong>
-                            <span
-                              style={{
-                                fontSize: 12,
-                                fontWeight: 700,
-                                padding: "4px 8px",
-                                borderRadius: 999,
-                                background: "rgba(16, 185, 129, 0.12)",
-                                color: "#047857",
-                                border: "1px solid rgba(16, 185, 129, 0.2)"
-                              }}
-                            >
-                              重点客户
-                            </span>
-                            <span className="soft-badge">{item.source || "待补充"}</span>
-                            <span className="soft-badge">{item.customerType}</span>
-                            <span className="soft-badge">{item.currentStatus}</span>
-                          </div>
-                          <div style={{ display: "grid", gap: 6 }}>
-                            <div><strong>下一步建议：</strong>{item.nextAction || "暂无动作"}</div>
-                            <div><strong>下次跟进日期：</strong>{item.followUpDate}</div>
-                          </div>
-                        </div>
-                        <div className="actions compact" style={{ justifyContent: "flex-end", flex: "0 1 auto" }}>
-                          <Link className="primary" href={`/customers/${item.id}`}>进入处理</Link>
-                        </div>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="panel" style={{ margin: 0 }}>
-              <div className="section-title">
-                <div>
-                  <h2>主动开发待推进</h2>
-                  <span>主动开发来源客户放在这里单独查看，不和成交推进核心指标并列</span>
-                </div>
-              </div>
-
-              {prospectingRows.length === 0 ? (
-                <p className="empty">暂无主动开发待推进客户</p>
-              ) : (
-                <div style={{ display: "grid", gap: 10 }}>
-                  {prospectingRows.map((item) => (
-                    <article
-                      key={`prospecting-${item.id}`}
-                      style={{
-                        border: "1px solid rgba(226, 232, 240, 0.85)",
-                        borderRadius: 16,
-                        padding: "14px 16px",
-                        background: "#ffffff",
-                        boxShadow: "0 4px 12px rgba(15, 23, 42, 0.04)"
-                      }}
-                    >
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
-                        <div style={{ minWidth: 0, flex: "1 1 260px" }}>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                            <strong style={{ fontSize: 16, color: "#0f172a" }}>{item.customerName}</strong>
-                            {item.isHighPriority && (
-                              <span
-                                style={{
-                                  fontSize: 12,
-                                  fontWeight: 700,
-                                  padding: "4px 8px",
-                                  borderRadius: 999,
-                                  background: "rgba(16, 185, 129, 0.12)",
-                                  color: "#047857",
-                                  border: "1px solid rgba(16, 185, 129, 0.2)"
-                                }}
-                              >
-                                重点客户
-                              </span>
-                            )}
-                            <span className="soft-badge">{item.source || "主动开发"}</span>
-                            <span className="soft-badge">{item.customerType}</span>
-                            <span className="soft-badge">{item.currentStatus}</span>
-                          </div>
-                          <div style={{ display: "grid", gap: 6 }}>
-                            <div><strong>下一步建议：</strong>{item.nextAction || "暂无动作"}</div>
-                            <div><strong>下次跟进日期：</strong>{item.followUpDate}</div>
-                          </div>
-                        </div>
-                        <div className="actions compact" style={{ justifyContent: "flex-end", flex: "0 1 auto" }}>
-                          <Link className="primary" href={`/customers/${item.id}`}>进入处理</Link>
-                        </div>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
-          </div>
         </>
       )}
     </main>
