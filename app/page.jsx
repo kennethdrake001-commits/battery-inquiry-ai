@@ -100,6 +100,30 @@ function SummaryCard({ title, count, subtitle }) {
   );
 }
 
+function getCardAppearance(kind, isActive) {
+  const appearanceMap = {
+    urgent: {
+      border: isActive ? "1px solid #f59e0b" : "1px solid #fde7c7",
+      background: isActive ? "linear-gradient(180deg, #fff7ed 0%, #fffbeb 100%)" : "#fffdfa",
+      shadow: isActive ? "0 12px 24px rgba(245, 158, 11, 0.12)" : "0 6px 14px rgba(15, 23, 42, 0.05)",
+      accent: "#b45309"
+    },
+    value: {
+      border: isActive ? "1px solid #34d399" : "1px solid #d1fae5",
+      background: isActive ? "linear-gradient(180deg, #ecfdf5 0%, #f0fdf4 100%)" : "#f7fffb",
+      shadow: isActive ? "0 12px 24px rgba(16, 185, 129, 0.12)" : "0 6px 14px rgba(15, 23, 42, 0.05)",
+      accent: "#047857"
+    },
+    channel: {
+      border: isActive ? "1px solid #60a5fa" : "1px solid #dbeafe",
+      background: isActive ? "linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%)" : "#f8fbff",
+      shadow: isActive ? "0 12px 24px rgba(59, 130, 246, 0.12)" : "0 6px 14px rgba(15, 23, 42, 0.05)",
+      accent: "#1d4ed8"
+    }
+  };
+  return appearanceMap[kind] || appearanceMap.channel;
+}
+
 function formatDateOnly(value) {
   if (!value) return "待安排";
   const text = `${value}`.trim();
@@ -215,56 +239,71 @@ export default function HomePage() {
       {
         key: "today-follow-up",
         title: "今日待跟进",
-        subtitle: "今天应该处理的客户推进事项",
+        subtitle: todayFollowUpCustomers.length === 0 ? "今天暂无待跟进客户" : "今天应该优先处理的跟进事项",
+        listTitle: "今日待跟进客户",
+        appearance: "urgent",
+        reason: "今天需要跟进",
         customers: mapSummaryCustomers(todayFollowUpCustomers)
-      },
-      {
-        key: "new-lead",
-        title: "新线索待筛选",
-        subtitle: "刚进入系统，待判断价值与类型",
-        customers: mapSummaryCustomers(newLeadCustomers)
-      },
-      {
-        key: "linkedin-connected",
-        title: "LinkedIn 已通过未私信",
-        subtitle: "适合立刻发 LinkedIn 破冰私信",
-        customers: mapSummaryCustomers(linkedinConnectedCustomers)
-      },
-      {
-        key: "facebook-message-sent",
-        title: "FB 已私信未回复",
-        subtitle: "需要按节奏继续跟进 FB 对话",
-        customers: mapSummaryCustomers(facebookMessageSentCustomers)
       },
       {
         key: "has-need",
         title: "有需求未报价",
-        subtitle: "已有明确需求，但还没推进到报价",
+        subtitle: hasNeedCustomers.length === 0 ? "暂无未报价需求" : "客户已有明确需求，应尽快准备报价",
+        listTitle: "有需求未报价客户",
+        appearance: "urgent",
+        reason: "客户有需求但还没报价",
         customers: mapSummaryCustomers(hasNeedCustomers)
       },
       {
         key: "quoted-follow-up",
         title: "已报价待跟进",
-        subtitle: "报价已发出，需要跟进反馈",
+        subtitle: quotedFollowUpCustomers.length === 0 ? "报价已发送后，会在这里提醒跟进" : "报价已发出，需要跟进反馈",
+        listTitle: "已报价待跟进客户",
+        appearance: "urgent",
+        reason: "报价已发送，需要跟进反馈",
         customers: mapSummaryCustomers(quotedFollowUpCustomers)
       },
       {
         key: "high-potential",
         title: "高潜客户",
-        subtitle: "安装商/经销商类高价值推进客户",
+        subtitle: highPotentialCustomers.length === 0 ? "暂无高潜客户" : "安装商/经销商类高价值推进客户",
+        listTitle: "高潜客户",
+        appearance: "value",
+        reason: "安装商/经销商类高价值推进客户",
         customers: mapSummaryCustomers(highPotentialCustomers)
+      },
+      {
+        key: "new-lead",
+        title: "新线索待筛选",
+        subtitle: newLeadCustomers.length === 0 ? "暂无待筛选新线索" : "刚进入系统，待判断价值与类型",
+        listTitle: "新线索待筛选客户",
+        appearance: "channel",
+        reason: "新线索，待判断价值与类型",
+        customers: mapSummaryCustomers(newLeadCustomers)
+      },
+      {
+        key: "linkedin-connected",
+        title: "LinkedIn 已通过未私信",
+        subtitle: linkedinConnectedCustomers.length === 0 ? "暂无待发 LinkedIn 私信客户" : "适合立刻发 LinkedIn 破冰私信",
+        listTitle: "LinkedIn 已通过未私信客户",
+        appearance: "channel",
+        reason: "LinkedIn 已通过但还未发送破冰私信",
+        customers: mapSummaryCustomers(linkedinConnectedCustomers)
+      },
+      {
+        key: "facebook-message-sent",
+        title: "FB 已私信未回复",
+        subtitle: facebookMessageSentCustomers.length === 0 ? "暂无待跟进 FB 对话" : "需要按节奏继续跟进 FB 对话",
+        listTitle: "FB 已私信未回复客户",
+        appearance: "channel",
+        reason: "FB 已私信但还未回复",
+        customers: mapSummaryCustomers(facebookMessageSentCustomers)
       }
     ];
   }, [leadProgressCustomers]);
 
-  const dashboardCards = useMemo(() => {
-    return summaryGroups.map((group) => ({
-      key: group.key,
-      title: group.title,
-      count: group.customers.length,
-      subtitle: group.subtitle
-    }));
-  }, [summaryGroups]);
+  const priorityCards = useMemo(() => summaryGroups.slice(0, 4), [summaryGroups]);
+  const leadActionCards = useMemo(() => summaryGroups.slice(4), [summaryGroups]);
 
   const actionRows = useMemo(() => {
     return tasks.slice(0, 5).map((task) => {
@@ -277,13 +316,32 @@ export default function HomePage() {
         currentStatus: customer && isLeadProgressCustomer(customer)
           ? getLeadProgressStageLabel(customer)
           : getStageLabel(getStageValue(customer || task)),
-        nextAction: formatNextActionForDisplay(task.current_next_action || getNextAction(customer || task))
+        nextAction: formatNextActionForDisplay(task.current_next_action || getNextAction(customer || task)),
+        followUpDate: formatDateOnly((customer && (customer.next_follow_up_at || customer.follow_up_date)) || task.next_follow_up_at),
+        reason: task.task_reason || "根据当前推进建议执行"
       };
     });
   }, [tasks, visibleCustomers]);
 
   const remainingTaskCount = Math.max(tasks.length - 5, 0);
   const activeSummary = summaryGroups.find((group) => group.key === activeSummaryKey) || null;
+  const selectedActionGroup = activeSummary || {
+    key: "default-actions",
+    title: "今日行动列表",
+    listTitle: "今日行动列表",
+    customers: actionRows,
+    reason: "根据当前推进建议执行"
+  };
+
+  const selectedRows = (selectedActionGroup.customers || []).map((item) => ({
+    id: item.id,
+    customerName: item.customerName,
+    customerType: item.customerType,
+    currentStatus: item.currentStatus,
+    nextAction: item.nextAction,
+    followUpDate: item.followUpDate || "待安排",
+    reason: item.reason || selectedActionGroup.reason || "根据当前推进建议执行"
+  }));
 
   return (
     <main className="app">
@@ -304,27 +362,86 @@ export default function HomePage() {
         <>
           <section className="panel">
             <div className="section-title">
-              <h2>核心提醒</h2>
-              <span>只看今天真正要处理的事情</span>
+              <h2>今日优先处理</h2>
+              <span>先处理最影响成交推进的客户</span>
             </div>
-            <div className="task-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
-              {dashboardCards.map((card) => (
+            <div className="task-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
+              {priorityCards.map((card) => {
+                const appearance = getCardAppearance(card.appearance, activeSummaryKey === card.key);
+                return (
                 <button
                   key={card.key}
                   type="button"
-                  onClick={() => setActiveSummaryKey(card.key)}
+                  onClick={() => setActiveSummaryKey(card.key === activeSummaryKey ? "" : card.key)}
                   style={{ all: "unset", cursor: "pointer", display: "block" }}
                   aria-label={`查看${card.title}客户列表`}
                 >
-                  <SummaryCard title={card.title} count={card.count} subtitle={card.subtitle} />
+                  <article
+                    className="notice-panel"
+                    style={{
+                      border: appearance.border,
+                      background: appearance.background,
+                      boxShadow: appearance.shadow,
+                      minHeight: 152,
+                      transition: "all 0.2s ease"
+                    }}
+                  >
+                    <strong style={{ color: appearance.accent }}>{card.title}</strong>
+                    <div style={{ fontSize: 36, fontWeight: 700, lineHeight: 1.1, marginTop: 10, color: "#111827" }}>
+                      {card.customers.length}
+                    </div>
+                    <p style={{ marginTop: 10, color: "#475569" }}>{card.subtitle}</p>
+                  </article>
                 </button>
-              ))}
+                );
+              })}
             </div>
           </section>
 
           <section className="panel">
             <div className="section-title">
-              <h2>今日行动列表</h2>
+              <h2>获客动作提醒</h2>
+              <span>多渠道触达客户后，按节奏推进互动</span>
+            </div>
+            <div className="task-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
+              {leadActionCards.map((card) => {
+                const appearance = getCardAppearance(card.appearance, activeSummaryKey === card.key);
+                return (
+                  <button
+                    key={card.key}
+                    type="button"
+                    onClick={() => setActiveSummaryKey(card.key === activeSummaryKey ? "" : card.key)}
+                    style={{ all: "unset", cursor: "pointer", display: "block" }}
+                    aria-label={`查看${card.title}客户列表`}
+                  >
+                    <article
+                      className="notice-panel"
+                      style={{
+                        border: appearance.border,
+                        background: appearance.background,
+                        boxShadow: appearance.shadow,
+                        minHeight: 152,
+                        transition: "all 0.2s ease"
+                      }}
+                    >
+                      <strong style={{ color: appearance.accent }}>{card.title}</strong>
+                      <div style={{ fontSize: 36, fontWeight: 700, lineHeight: 1.1, marginTop: 10, color: "#111827" }}>
+                        {card.customers.length}
+                      </div>
+                      <p style={{ marginTop: 10, color: "#475569" }}>{card.subtitle}</p>
+                    </article>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="section-title">
+              <div>
+                <h2>{selectedActionGroup.listTitle}</h2>
+                <span>打开今天该处理的客户，直接进入推进</span>
+              </div>
               <div className="actions compact">
                 <Link href="/tasks">查看全部任务</Link>
               </div>
@@ -332,96 +449,55 @@ export default function HomePage() {
 
             {loading ? (
               <p className="empty">加载中...</p>
-            ) : actionRows.length === 0 ? (
-              <p className="empty">今天暂时没有待处理动作。</p>
+            ) : selectedRows.length === 0 ? (
+              <p className="empty">暂无对应客户</p>
             ) : (
-              <div className="table-wrap">
-                <table className="compact-table">
-                  <thead>
-                    <tr>
-                      <th>优先级</th>
-                      <th>客户名</th>
-                      <th>客户类型</th>
-                      <th>当前状态</th>
-                      <th>下一步动作</th>
-                      <th>操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {actionRows.map((item) => (
-                      <tr key={item.id}>
-                        <td><span className={`priority-badge priority-${item.priority}`}>{item.priority}</span></td>
-                        <td>{item.customerName}</td>
-                        <td>{item.customerType}</td>
-                        <td>{item.currentStatus}</td>
-                        <td className="truncate-cell">{item.nextAction}</td>
-                        <td>
-                          <Link href={`/customers/${item.id}`}>进入处理</Link>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div style={{ display: "grid", gap: 12 }}>
+                {selectedRows.map((item) => (
+                  <article
+                    key={item.id}
+                    style={{
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 16,
+                      padding: 18,
+                      background: "#ffffff",
+                      boxShadow: "0 4px 12px rgba(15, 23, 42, 0.04)"
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+                      <div style={{ minWidth: 0, flex: "1 1 520px" }}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", marginBottom: 8 }}>
+                          <strong style={{ fontSize: 18, color: "#0f172a" }}>{item.customerName}</strong>
+                          <span className="soft-badge">{item.customerType}</span>
+                          <span className="soft-badge">{item.currentStatus}</span>
+                        </div>
+                        <div style={{ display: "grid", gap: 8 }}>
+                          <div><strong>下一步动作：</strong>{item.nextAction || "暂无动作"}</div>
+                          <div><strong>提醒原因：</strong>{item.reason}</div>
+                          <div><strong>跟进日期：</strong>{item.followUpDate}</div>
+                        </div>
+                      </div>
+                      <div className="actions compact" style={{ justifyContent: "flex-end", flex: "0 1 auto" }}>
+                        <Link className="primary" href={`/customers/${item.id}`}>进入处理</Link>
+                        <Link href={`/customers/${item.id}`}>设置跟进</Link>
+                        <Link href={`/customers/${item.id}`}>标记已发资料</Link>
+                        <Link href={`/customers/${item.id}`}>标记已报价</Link>
+                        <Link href={`/customers/${item.id}`}>标记无效</Link>
+                      </div>
+                    </div>
+                  </article>
+                ))}
               </div>
             )}
 
-            {remainingTaskCount > 0 && (
-              <div className="actions" style={{ justifyContent: "space-between", alignItems: "center" }}>
+            {!activeSummary && remainingTaskCount > 0 && (
+              <div className="actions" style={{ justifyContent: "space-between", alignItems: "center", marginTop: 16 }}>
                 <span className="notice">还有 {remainingTaskCount} 个任务</span>
                 <Link href="/tasks">查看全部任务</Link>
               </div>
             )}
           </section>
         </>
-      )}
-
-      {session && activeSummary && (
-        <div className="modal-backdrop">
-          <div
-            className="modal wide-modal"
-            style={{ maxWidth: 860, width: "min(860px, calc(100vw - 32px))", maxHeight: "80vh", overflow: "auto" }}
-          >
-            <div className="section-title" style={{ marginBottom: 16 }}>
-              <h2>{activeSummary.title}</h2>
-              <button onClick={() => setActiveSummaryKey("")}>关闭</button>
-            </div>
-
-            {activeSummary.customers.length === 0 ? (
-              <p className="empty">暂无对应客户</p>
-            ) : (
-              <div className="table-wrap">
-                <table className="compact-table">
-                  <thead>
-                    <tr>
-                      <th>客户名</th>
-                      <th>国家</th>
-                      <th>客户类型</th>
-                      <th>当前状态</th>
-                      <th>下一步动作</th>
-                      <th>跟进日期</th>
-                      <th>操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activeSummary.customers.map((item) => (
-                      <tr key={item.id}>
-                        <td>{item.customerName}</td>
-                        <td>{item.country}</td>
-                        <td>{item.customerType}</td>
-                        <td>{item.currentStatus}</td>
-                        <td className="truncate-cell">{item.nextAction}</td>
-                        <td>{item.followUpDate}</td>
-                        <td>
-                          <Link href={`/customers/${item.id}`}>进入处理</Link>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
       )}
     </main>
   );
