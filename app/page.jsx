@@ -74,7 +74,7 @@ function AuthPanel({ session, onSessionChange }) {
       >
         <span style={{ color: "#475569", fontSize: 14 }}>已登录：{session.user.email}</span>
         <div className="actions compact">
-          <Link className="primary" href="/customers/new">新增客户</Link>
+          <Link href="/customers/new">新增客户</Link>
           <button onClick={signOut}>退出登录</button>
         </div>
       </div>
@@ -452,12 +452,14 @@ export default function HomePage() {
       id: customer.id,
       customerName: getCustomerName(customer),
       country: customer.country || "待补充",
+      source: customer.source || customer.customer_source || "待补充",
       customerType: getCustomerTypeLabel(getCustomerTypeValue(customer)),
       currentStatus: isLeadProgressCustomer(customer)
         ? getLeadProgressStageLabel(customer)
         : getStageLabel(getStageValue(customer)),
       nextAction: formatNextActionForDisplay(customer.current_next_action || customer.next_action || getNextAction(customer)),
-      followUpDate: formatDateOnly(customer.next_follow_up_at || customer.follow_up_date)
+      followUpDate: formatDateOnly(customer.next_follow_up_at || customer.follow_up_date),
+      isHighPriority: isHighPriorityCustomer(customer)
     }));
   }
 
@@ -467,8 +469,6 @@ export default function HomePage() {
     const overdueCustomers = progressCustomers.filter((customer) => isFollowUpOverdue(customer));
     const quotedFollowUpCustomers = progressCustomers.filter((customer) => isQuotedWaitingReplyCustomer(customer));
     const repliedPendingCustomers = progressCustomers.filter((customer) => isCustomerReplyPending(customer));
-    const prospectingCustomers = progressCustomers.filter((customer) => isProspectingCustomer(customer));
-    const highPriorityCustomers = progressCustomers.filter((customer) => isHighPriorityCustomer(customer));
 
     return [
       {
@@ -506,29 +506,16 @@ export default function HomePage() {
         appearance: "urgent",
         reason: "客户已回复，待判断下一步",
         customers: mapSummaryCustomers(repliedPendingCustomers)
-      },
-      {
-        key: "prospecting-follow-up",
-        title: "主动开发待推进",
-        subtitle: prospectingCustomers.length === 0 ? "暂无主动开发待推进客户" : "主动开发客户仍需继续推进",
-        listTitle: "主动开发待推进客户",
-        appearance: "channel",
-        reason: "主动开发客户待继续推进",
-        customers: mapSummaryCustomers(prospectingCustomers)
-      },
-      {
-        key: "high-priority",
-        title: "高优先级客户",
-        subtitle: highPriorityCustomers.length === 0 ? "暂无高优先级客户" : "需要优先投入时间推进的客户",
-        listTitle: "高优先级客户",
-        appearance: "value",
-        reason: "高优先级客户，建议优先处理",
-        customers: mapSummaryCustomers(highPriorityCustomers)
       }
     ];
   }, [visibleCustomers]);
 
   const summaryCards = useMemo(() => summaryGroups, [summaryGroups]);
+  const prospectingRows = useMemo(() => {
+    return mapSummaryCustomers(
+      visibleCustomers.filter((customer) => isProspectingCustomer(customer) && needsProgress(customer))
+    ).slice(0, 5);
+  }, [visibleCustomers]);
 
   const actionRows = useMemo(() => {
     return tasks.slice(0, 5).map((task) => {
@@ -537,13 +524,15 @@ export default function HomePage() {
         id: task.id,
         priority: getTaskPriority(task, customer),
         customerName: task.customer_name,
+        source: (customer && (customer.source || customer.customer_source)) || "待补充",
         customerType: getCustomerTypeLabel(getCustomerTypeValue(customer || task)),
         currentStatus: customer && isLeadProgressCustomer(customer)
           ? getLeadProgressStageLabel(customer)
           : getStageLabel(getStageValue(customer || task)),
         nextAction: formatNextActionForDisplay(task.current_next_action || getNextAction(customer || task)),
         followUpDate: formatDateOnly((customer && (customer.next_follow_up_at || customer.follow_up_date)) || task.next_follow_up_at),
-        reason: task.task_reason || "根据当前推进建议执行"
+        reason: task.task_reason || "根据当前推进建议执行",
+        isHighPriority: customer ? isHighPriorityCustomer(customer) : false
       };
     });
   }, [tasks, visibleCustomers]);
@@ -561,11 +550,13 @@ export default function HomePage() {
   const selectedRows = (selectedActionGroup.customers || []).map((item) => ({
     id: item.id,
     customerName: item.customerName,
+    source: item.source,
     customerType: item.customerType,
     currentStatus: item.currentStatus,
     nextAction: item.nextAction,
     followUpDate: item.followUpDate || "待安排",
-    reason: item.reason || selectedActionGroup.reason || "根据当前推进建议执行"
+    reason: item.reason || selectedActionGroup.reason || "根据当前推进建议执行",
+    isHighPriority: Boolean(item.isHighPriority)
   }));
 
   return (
@@ -591,7 +582,7 @@ export default function HomePage() {
               <h2>今日工作重点</h2>
               <span>先看今天最需要推进的客户，再进入具体处理</span>
             </div>
-            <div className="task-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14 }}>
+            <div className="task-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 220px))", gap: 12, justifyContent: "flex-start" }}>
               {summaryCards.map((card) => {
                 const appearance = getCardAppearance(card.appearance, activeSummaryKey === card.key);
                 const isActive = activeSummaryKey === card.key;
@@ -610,9 +601,9 @@ export default function HomePage() {
                       border: appearance.border,
                       background: appearance.background,
                       boxShadow: appearance.shadow,
-                      minHeight: 128,
-                      borderRadius: 20,
-                      padding: "16px 18px",
+                      minHeight: 112,
+                      borderRadius: 18,
+                      padding: "14px 16px",
                       transition: "all 0.2s ease",
                       position: "relative",
                       transform: isActive ? "translateY(-1px)" : "none"
@@ -651,14 +642,14 @@ export default function HomePage() {
                           border: `1px solid ${appearance.border.includes("rgba") ? appearance.border.match(/rgba?\([^)]+\)|#[0-9a-fA-F]+/)?.[0] || "rgba(148,163,184,.25)" : "rgba(148,163,184,.25)"}`
                         }}
                       >
-                        {card.key === "high-priority" ? "优先关注" : "建议处理"}
+                        建议处理
                       </span>
                     )}
                     <strong style={{ color: appearance.accent, display: "block", paddingRight: card.customers.length > 0 ? 84 : 0 }}>{card.title}</strong>
-                    <div style={{ fontSize: card.customers.length > 0 ? 38 : 32, fontWeight: 800, lineHeight: 1.05, marginTop: 8, color: "#111827" }}>
+                    <div style={{ fontSize: card.customers.length > 0 ? 34 : 30, fontWeight: 800, lineHeight: 1.05, marginTop: 6, color: "#111827" }}>
                       {card.customers.length}
                     </div>
-                    <p style={{ marginTop: 8, color: "#475569", lineHeight: 1.45 }}>{card.subtitle}</p>
+                    <p style={{ marginTop: 6, color: "#475569", lineHeight: 1.4, fontSize: 13 }}>{card.subtitle}</p>
                   </article>
                 </button>
                 );
@@ -670,7 +661,7 @@ export default function HomePage() {
             <div className="section-title">
               <div>
                 <h2>{selectedActionGroup.listTitle}</h2>
-                <span>打开今天该处理的客户，直接进入推进</span>
+                <span>优先处理今天会影响成交推进的客户</span>
               </div>
               <div className="actions compact">
                 <Link href="/tasks">查看全部任务</Link>
@@ -698,22 +689,38 @@ export default function HomePage() {
                       <div style={{ minWidth: 0, flex: "1 1 520px" }}>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
                           <strong style={{ fontSize: 17, color: "#0f172a" }}>{item.customerName}</strong>
+                          {item.isHighPriority && (
+                            <span
+                              style={{
+                                fontSize: 12,
+                                fontWeight: 700,
+                                padding: "4px 8px",
+                                borderRadius: 999,
+                                background: "rgba(16, 185, 129, 0.12)",
+                                color: "#047857",
+                                border: "1px solid rgba(16, 185, 129, 0.2)"
+                              }}
+                            >
+                              高优先级
+                            </span>
+                          )}
+                          <span className="soft-badge">{item.source || "待补充"}</span>
                           <span className="soft-badge">{item.customerType}</span>
                           <span className="soft-badge">{item.currentStatus}</span>
                         </div>
                         <div style={{ display: "grid", gap: 6 }}>
-                          <div><strong>下一步动作：</strong>{item.nextAction || "暂无动作"}</div>
+                          <div><strong>下一步建议：</strong>{item.nextAction || "暂无动作"}</div>
                           <div><strong>提醒原因：</strong>{item.reason}</div>
                           <div><strong>跟进日期：</strong>{item.followUpDate}</div>
                         </div>
                       </div>
-                        <div className="actions compact" style={{ justifyContent: "flex-end", flex: "0 1 auto" }}>
+                        <div className="actions compact" style={{ justifyContent: "flex-end", flex: "0 1 auto", gap: 8 }}>
                           <Link className="primary" href={`/customers/${item.id}`}>进入处理</Link>
-                          <Link href={`/customers/${item.id}`}>设置跟进</Link>
                           <button
                             type="button"
                             onClick={() => handleQuickAction(item.id, "material-sent")}
                             disabled={actionLoading[`${item.id}:material-sent`]}
+                            style={{ opacity: 0.85 }}
                           >
                             {actionLoading[`${item.id}:material-sent`] ? "处理中..." : "标记已发资料"}
                           </button>
@@ -721,6 +728,7 @@ export default function HomePage() {
                             type="button"
                             onClick={() => handleQuickAction(item.id, "quoted")}
                             disabled={actionLoading[`${item.id}:quoted`]}
+                            style={{ opacity: 0.85 }}
                           >
                             {actionLoading[`${item.id}:quoted`] ? "处理中..." : "标记已报价"}
                           </button>
@@ -728,6 +736,7 @@ export default function HomePage() {
                             type="button"
                             onClick={() => handleQuickAction(item.id, "archive")}
                             disabled={actionLoading[`${item.id}:archive`]}
+                            style={{ opacity: 0.7 }}
                           >
                             {actionLoading[`${item.id}:archive`] ? "处理中..." : "标记无效"}
                           </button>
@@ -742,6 +751,67 @@ export default function HomePage() {
               <div className="actions" style={{ justifyContent: "space-between", alignItems: "center", marginTop: 16 }}>
                 <span className="notice">还有 {remainingTaskCount} 个任务</span>
                 <Link href="/tasks">查看全部任务</Link>
+              </div>
+            )}
+          </section>
+
+          <section className="panel">
+            <div className="section-title">
+              <div>
+                <h2>主动开发待推进</h2>
+                <span>主动开发来源客户放在这里单独查看，不和成交推进核心指标并列</span>
+              </div>
+            </div>
+
+            {prospectingRows.length === 0 ? (
+              <p className="empty">暂无主动开发待推进客户</p>
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                {prospectingRows.map((item) => (
+                  <article
+                    key={`prospecting-${item.id}`}
+                    style={{
+                      border: "1px solid rgba(226, 232, 240, 0.85)",
+                      borderRadius: 16,
+                      padding: "14px 16px",
+                      background: "#ffffff",
+                      boxShadow: "0 4px 12px rgba(15, 23, 42, 0.04)"
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+                      <div style={{ minWidth: 0, flex: "1 1 520px" }}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                          <strong style={{ fontSize: 16, color: "#0f172a" }}>{item.customerName}</strong>
+                          {item.isHighPriority && (
+                            <span
+                              style={{
+                                fontSize: 12,
+                                fontWeight: 700,
+                                padding: "4px 8px",
+                                borderRadius: 999,
+                                background: "rgba(16, 185, 129, 0.12)",
+                                color: "#047857",
+                                border: "1px solid rgba(16, 185, 129, 0.2)"
+                              }}
+                            >
+                              高优先级
+                            </span>
+                          )}
+                          <span className="soft-badge">{item.source || "主动开发"}</span>
+                          <span className="soft-badge">{item.customerType}</span>
+                          <span className="soft-badge">{item.currentStatus}</span>
+                        </div>
+                        <div style={{ display: "grid", gap: 6 }}>
+                          <div><strong>下一步建议：</strong>{item.nextAction || "暂无动作"}</div>
+                          <div><strong>下次跟进日期：</strong>{item.followUpDate}</div>
+                        </div>
+                      </div>
+                      <div className="actions compact" style={{ justifyContent: "flex-end", flex: "0 1 auto" }}>
+                        <Link className="primary" href={`/customers/${item.id}`}>进入处理</Link>
+                      </div>
+                    </div>
+                  </article>
+                ))}
               </div>
             )}
           </section>
