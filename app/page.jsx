@@ -867,30 +867,6 @@ export default function HomePage() {
                       </div>
                         <div className="actions compact" style={{ justifyContent: "flex-end", flex: "0 1 auto", gap: 8 }}>
                           <Link className="primary" href={`/customers/${item.id}`}>进入处理</Link>
-                          <button
-                            type="button"
-                            onClick={() => handleQuickAction(item.id, "material-sent")}
-                            disabled={actionLoading[`${item.id}:material-sent`]}
-                            style={{ opacity: 0.85 }}
-                          >
-                            {actionLoading[`${item.id}:material-sent`] ? "处理中..." : "标记已发资料"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleQuickAction(item.id, "quoted")}
-                            disabled={actionLoading[`${item.id}:quoted`]}
-                            style={{ opacity: 0.85 }}
-                          >
-                            {actionLoading[`${item.id}:quoted`] ? "处理中..." : "标记已报价"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleQuickAction(item.id, "archive")}
-                            disabled={actionLoading[`${item.id}:archive`]}
-                            style={{ opacity: 0.7 }}
-                          >
-                            {actionLoading[`${item.id}:archive`] ? "处理中..." : "标记无效"}
-                          </button>
                         </div>
                       </div>
                   </article>
