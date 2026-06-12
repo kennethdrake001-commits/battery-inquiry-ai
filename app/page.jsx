@@ -338,14 +338,28 @@ export default function HomePage() {
       return;
     }
 
-    const { error: interactionError } = await insertInteraction(interactionPayload);
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
+
+    let interactionError = null;
+
+    if (!user?.id) {
+      console.warn("No auth user found, skip interaction log");
+    } else {
+      const { error } = await insertInteraction({
+        ...interactionPayload,
+        user_id: user.id
+      });
+      interactionError = error;
+    }
 
     await loadCustomers({ silent: true });
     setActionLoading((current) => ({ ...current, [actionKey]: false }));
 
     if (interactionError) {
-      setNotice(successMessage);
-      setError(`客户状态已更新，但跟进记录写入失败：${interactionError.message}`);
+      console.warn("客户状态已更新，但跟进记录未保存", interactionError);
+      setNotice("客户状态已更新，但跟进记录未保存");
       return;
     }
 
