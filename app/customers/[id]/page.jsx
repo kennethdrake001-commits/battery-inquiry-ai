@@ -129,6 +129,11 @@ function normalizeComparableText(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function isDisplayEmptyValue(value) {
+  const normalized = normalizeComparableText(value);
+  return !normalized || ["unknown", "待判断", "未识别", "未知", "n/a", "-", "null", "undefined"].includes(normalized);
+}
+
 function getDetectedCustomerTypeValue(messageLower) {
   if (messageLower.includes("installer")) return "安装商";
   if (messageLower.includes("distributor") || messageLower.includes("dealer")) return "经销商";
@@ -219,7 +224,7 @@ function buildDetectedFieldSelection(result, customer) {
 
   return result.detectedFields.reduce((acc, field) => {
     const currentValue = getCustomerFieldCurrentValue(customer, field.key);
-    const hasConflict = currentValue && normalizeComparableText(currentValue) !== normalizeComparableText(field.value);
+    const hasConflict = !isDisplayEmptyValue(currentValue) && normalizeComparableText(currentValue) !== normalizeComparableText(field.value);
     acc[field.key] = !hasConflict;
     return acc;
   }, {});
@@ -2720,31 +2725,33 @@ export default function CustomerDetailPage() {
                       </div>
 
                       {analysisFieldDefinitions.length > 0 ? (
-                        <div style={{ display: "grid", gap: 12 }}>
+                        <div style={{ display: "grid", gap: 8 }}>
                           {analysisFieldDefinitions.map((fieldDefinition) => {
                             const field = messageAnalysisResult.detectedFields?.find((item) => item.key === fieldDefinition.key) || null;
                             const currentValue = getCustomerFieldCurrentValue(customer, fieldDefinition.key);
-                            const hasConflict = field && currentValue && normalizeComparableText(currentValue) !== normalizeComparableText(field.value);
+                            const hasCurrentValue = !isDisplayEmptyValue(currentValue);
+                            const hasConflict = field && hasCurrentValue && normalizeComparableText(currentValue) !== normalizeComparableText(field.value);
 
                             if (!field) {
                               return (
                                 <div
                                   key={fieldDefinition.key}
                                   style={{
-                                    display: "flex",
-                                    alignItems: "flex-start",
-                                    gap: 12,
-                                    padding: 14,
-                                    borderRadius: 14,
+                                    display: "grid",
+                                    gridTemplateColumns: "40px 160px minmax(0, 1fr) minmax(0, 1fr)",
+                                    alignItems: "center",
+                                    columnGap: 12,
+                                    rowGap: 4,
+                                    padding: "12px 14px",
+                                    borderRadius: 12,
                                     border: "1px solid #e2e8f0",
-                                    background: "#fff"
+                                    background: "#f8fafc"
                                   }}
                                 >
-                                  <input type="checkbox" disabled style={{ marginTop: 2 }} />
-                                  <div style={{ display: "grid", gap: 4 }}>
-                                    <strong style={{ color: "#0f172a", fontSize: 14 }}>{fieldDefinition.label}</strong>
-                                    <span style={{ color: "#94a3b8", fontSize: 13 }}>未识别</span>
-                                  </div>
+                                  <input type="checkbox" disabled style={{ margin: 0, justifySelf: "center" }} />
+                                  <strong style={{ color: "#334155", fontSize: 13, fontWeight: 600 }}>{fieldDefinition.label}</strong>
+                                  <span style={{ color: "#94a3b8", fontSize: 14 }}>未识别</span>
+                                  <span style={{ color: "#94a3b8", fontSize: 12 }}>暂无可应用值</span>
                                 </div>
                               );
                             }
@@ -2753,32 +2760,38 @@ export default function CustomerDetailPage() {
                               <label
                                 key={`${fieldDefinition.key}-${field.value}`}
                                 style={{
-                                  display: "flex",
-                                  alignItems: "flex-start",
-                                  gap: 12,
-                                  padding: 14,
-                                  borderRadius: 14,
+                                  display: "grid",
+                                  gridTemplateColumns: "40px 160px minmax(0, 1fr) minmax(0, 1fr)",
+                                  alignItems: "center",
+                                  columnGap: 12,
+                                  rowGap: 4,
+                                  padding: "12px 14px",
+                                  borderRadius: 12,
                                   border: "1px solid #dbe5f1",
-                                  background: hasConflict ? "#fff7ed" : "#fff"
+                                  background: "#fff"
                                 }}
                               >
                                 <input
                                   type="checkbox"
                                   checked={Boolean(selectedDetectedFields[field.key])}
                                   onChange={() => toggleDetectedField(field.key)}
-                                  style={{ marginTop: 2 }}
+                                  style={{ margin: 0, justifySelf: "center" }}
                                 />
-                                <div style={{ display: "grid", gap: 4 }}>
-                                  <strong style={{ color: "#0f172a", fontSize: 14 }}>{fieldDefinition.label}</strong>
-                                  <span style={{ color: "#0f172a", fontSize: 14 }}>{field.value}</span>
-                                  {currentValue ? (
-                                    <span style={{ color: hasConflict ? "#c2410c" : "#64748b", fontSize: 12 }}>
-                                      当前值：{currentValue}{hasConflict ? "（与识别结果不同，默认不覆盖）" : ""}
-                                    </span>
-                                  ) : (
-                                    <span style={{ color: "#64748b", fontSize: 12 }}>当前值为空，可直接应用</span>
-                                  )}
-                                </div>
+                                <strong style={{ color: "#334155", fontSize: 13, fontWeight: 600 }}>{fieldDefinition.label}</strong>
+                                <span style={{ color: "#0f172a", fontSize: 14, fontWeight: 500, lineHeight: 1.5 }}>{field.value}</span>
+                                {hasConflict ? (
+                                  <span style={{ color: "#c2410c", fontSize: 12, lineHeight: 1.5 }}>
+                                    当前值：{currentValue} · 默认不覆盖
+                                  </span>
+                                ) : hasCurrentValue ? (
+                                  <span style={{ color: "#64748b", fontSize: 12, lineHeight: 1.5 }}>
+                                    当前值：{currentValue}
+                                  </span>
+                                ) : (
+                                  <span style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.5 }}>
+                                    当前值为空
+                                  </span>
+                                )}
                               </label>
                             );
                           })}
