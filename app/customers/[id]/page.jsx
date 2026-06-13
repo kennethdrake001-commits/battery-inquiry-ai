@@ -111,17 +111,143 @@ function extractMessagePhrases(message) {
   const text = `${message || ""}`;
   const lower = text.toLowerCase();
   const capacityMatches = text.match(/\b(?:\d+(?:\.\d+)?)\s?(?:kwh|kw|kva|ah|v)\b/gi) || [];
+  const batteryCapacityMatches = text.match(/\b(?:\d+(?:\.\d+)?)\s?kwh\b/gi) || [];
   const inverterMatches = text.match(/\b(?:\d+(?:\.\d+)?)\s?kw inverter\b/gi) || [];
   const quantityMatches = text.match(/\b\d+\s?(?:pcs|units|sets|pieces)\b/gi) || [];
   const countries = messageKeywordSets.countries.filter((item) => lower.includes(item));
 
   return {
     capacities: [...new Set(capacityMatches)],
+    batteryCapacities: [...new Set(batteryCapacityMatches)],
     inverters: [...new Set(inverterMatches)],
     quantities: [...new Set(quantityMatches)],
     countries: [...new Set(countries.map((item) => item.replace(/\b\w/g, (char) => char.toUpperCase())))]
   };
 }
+
+function normalizeComparableText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getDetectedCustomerTypeValue(messageLower) {
+  if (messageLower.includes("installer")) return "安装商";
+  if (messageLower.includes("distributor") || messageLower.includes("dealer")) return "经销商";
+  if (messageLower.includes("wholesaler") || messageLower.includes("reseller")) return "批发商";
+  if (messageLower.includes("epc") || messageLower.includes("contractor") || messageLower.includes("solar company")) return "EPC";
+  return "";
+}
+
+function getDetectedTradeTermValue(messageLower) {
+  if (messageLower.includes("ddp")) return "DDP";
+  if (messageLower.includes("fob")) return "FOB";
+  if (messageLower.includes("cif")) return "CIF";
+  if (messageLower.includes("exw")) return "EXW";
+  return "";
+}
+
+function getDetectedFieldEntries(messageLower, details) {
+  const detectedFields = [];
+  const batteryCapacity = details.batteryCapacities[0] || "";
+  const quantity = details.quantities[0] || "";
+  const country = details.countries[0] || "";
+  const customerType = getDetectedCustomerTypeValue(messageLower);
+  const shippingTerm = getDetectedTradeTermValue(messageLower);
+  const inverterNeed = details.inverters[0] || "";
+  const batteryLabel = messageLower.includes("batteries") ? "batteries" : "battery";
+
+  let recommendedProduct = "";
+  if (batteryCapacity && inverterNeed) {
+    recommendedProduct = `${batteryCapacity} battery + ${inverterNeed}`;
+  } else if (batteryCapacity) {
+    recommendedProduct = `${batteryCapacity} ${batteryLabel}`;
+  } else if (inverterNeed) {
+    recommendedProduct = inverterNeed;
+  }
+
+  if (batteryCapacity) {
+    detectedFields.push({ key: "target_capacity", label: "目标容量", value: batteryCapacity });
+  }
+  if (quantity) {
+    detectedFields.push({ key: "quantity", label: "数量", value: quantity });
+  }
+  if (country) {
+    detectedFields.push({ key: "country", label: "国家 / 目的地", value: country });
+  }
+  if (shippingTerm) {
+    detectedFields.push({ key: "shipping_term", label: "贸易方式", value: shippingTerm });
+  }
+  if (customerType) {
+    detectedFields.push({ key: "customer_type", label: "客户类型", value: customerType });
+  }
+  if (recommendedProduct) {
+    detectedFields.push({ key: "recommended_product", label: "产品需求", value: recommendedProduct });
+  }
+  if (inverterNeed) {
+    detectedFields.push({
+      key: "product_note",
+      label: "逆变器需求",
+      value: inverterNeed
+    });
+  }
+
+  return detectedFields;
+}
+
+function getCustomerFieldCurrentValue(customer, fieldKey) {
+  switch (fieldKey) {
+    case "country":
+      return customer?.country || "";
+    case "customer_type":
+      return customer?.customer_type || "";
+    case "target_capacity":
+      return customer?.target_capacity || "";
+    case "quantity":
+      return customer?.quantity || "";
+    case "shipping_term":
+      return customer?.shipping_term || "";
+    case "recommended_product":
+      return customer?.recommended_product || "";
+    case "product_note":
+      return customer?.product_note || "";
+    default:
+      return customer?.[fieldKey] || "";
+  }
+}
+
+function buildDetectedFieldSelection(result, customer) {
+  if (!result?.detectedFields?.length) return {};
+
+  return result.detectedFields.reduce((acc, field) => {
+    const currentValue = getCustomerFieldCurrentValue(customer, field.key);
+    const hasConflict = currentValue && normalizeComparableText(currentValue) !== normalizeComparableText(field.value);
+    acc[field.key] = !hasConflict;
+    return acc;
+  }, {});
+}
+
+function getMessageAnalysisSignature(message, result) {
+  if (!message || !result) return "";
+  return JSON.stringify({
+    message: String(message).trim(),
+    nextStep: result.nextStep,
+    reply: result.suggestedReply,
+    fields: result.detectedFields || []
+  });
+}
+
+function getDetectedFieldValue(detectedFields, key) {
+  return detectedFields.find((field) => field.key === key)?.value || "";
+}
+
+const analysisFieldDefinitions = [
+  { key: "country", label: "国家 / 目的地" },
+  { key: "target_capacity", label: "目标容量" },
+  { key: "quantity", label: "数量" },
+  { key: "recommended_product", label: "产品需求" },
+  { key: "product_note", label: "逆变器需求" },
+  { key: "shipping_term", label: "运输方式" },
+  { key: "customer_type", label: "客户类型" }
+];
 
 function analyzeCustomerMessageContent(message, customer = {}) {
   const rawMessage = `${message || ""}`.trim();
@@ -140,6 +266,36 @@ function analyzeCustomerMessageContent(message, customer = {}) {
   const hasApplication = messageIncludesAny(lower, messageKeywordSets.application);
   const hasTrade = messageIncludesAny(lower, messageKeywordSets.trade);
   const customerIsProspecting = getCustomerQueueCategory(customer) === "prospecting";
+  const detectedFields = getDetectedFieldEntries(lower, details);
+  const extractedInfo = {
+    country: getDetectedFieldValue(detectedFields, "country"),
+    customer_type: getDetectedFieldValue(detectedFields, "customer_type"),
+    quantity: getDetectedFieldValue(detectedFields, "quantity"),
+    target_capacity: getDetectedFieldValue(detectedFields, "target_capacity"),
+    product_need: getDetectedFieldValue(detectedFields, "recommended_product"),
+    inverter_need: getDetectedFieldValue(detectedFields, "product_note"),
+    shipping_term: getDetectedFieldValue(detectedFields, "shipping_term"),
+    application_scene: hasApplication ? "已提到应用场景" : ""
+  };
+  const resolvedInfo = {
+    country: extractedInfo.country || customer?.country || customer?.destination_country || "",
+    customer_type: extractedInfo.customer_type || customer?.customer_type || "",
+    quantity: extractedInfo.quantity || customer?.quantity || "",
+    target_capacity: extractedInfo.target_capacity || customer?.target_capacity || "",
+    product_need: extractedInfo.product_need || customer?.recommended_product || customer?.target_capacity || "",
+    inverter_need: extractedInfo.inverter_need || customer?.product_note || "",
+    shipping_term: extractedInfo.shipping_term || customer?.shipping_term || customer?.trade_term || "",
+    application_scene: extractedInfo.application_scene || customer?.application_scenario || customer?.application_scene || ""
+  };
+  const normalizedType = normalizeComparableText(resolvedInfo.customer_type);
+  const normalizedTrade = normalizeComparableText(resolvedInfo.shipping_term);
+  const customerTypeLabel = resolvedInfo.customer_type || "";
+  const isInstallerLike = includesAny(normalizedType, ["安装商", "installer", "epc", "contractor"]);
+  const isDistributorLike = includesAny(normalizedType, ["经销商", "distributor", "dealer", "批发商", "wholesaler", "reseller"]);
+  const asksDdp = lower.includes("ddp");
+  const wantsDoorToDoor = lower.includes("door to door");
+  const isDoorToDoorRequest = asksDdp || wantsDoorToDoor;
+  const quoteContext = hasQuote || Boolean(resolvedInfo.shipping_term) || Boolean(resolvedInfo.quantity);
 
   const detectedType = lower.includes("installer")
     ? "客户看起来是安装商。"
@@ -148,62 +304,92 @@ function analyzeCustomerMessageContent(message, customer = {}) {
       : lower.includes("wholesaler") || lower.includes("reseller")
         ? "客户看起来是批发或转售客户。"
         : lower.includes("epc") || lower.includes("contractor") || lower.includes("solar company")
-          ? "客户看起来是 EPC / 工程项目类客户。"
-          : customer?.customer_type && customer.customer_type !== "Unknown"
+      ? "客户看起来是 EPC / 工程项目类客户。"
+      : customer?.customer_type && customer.customer_type !== "Unknown"
             ? `当前客户资料显示为${getCustomerTypeLabel(customer.customer_type)}，但消息里还没有更多身份线索。`
             : "客户身份暂不明确，需要确认是安装商、经销商、批发商还是终端项目客户。";
 
   const missingItems = [];
-  const hasCountry = details.countries.length > 0 || Boolean(`${customer?.country || customer?.destination_country || ""}`.trim());
-  if (!hasCountry) missingItems.push("国家 / 目的地");
-  if (!hasQuantity) missingItems.push("数量");
-  if (detectedType.includes("暂不明确")) missingItems.push("客户身份");
-  if (!hasApplication && !`${customer?.application_scenario || customer?.application_scene || ""}`.trim()) missingItems.push("应用场景");
-  if (!hasTrade && (hasQuote || hasShipping)) missingItems.push("贸易方式");
-  if (hasShipping && !lower.includes("ddp")) missingItems.push("是否需要清关 / DDP");
-  if (hasBattery && hasInverter && !messageIncludesAny(lower, ["hybrid", "off-grid", "on-grid", "single phase", "three phase", "split phase"])) missingItems.push("逆变器类型");
-  if (!hasBattery && !`${customer?.target_capacity || customer?.recommended_product || ""}`.trim()) missingItems.push("目标容量");
-  if (hasDocs && details.capacities.length === 0 && !`${customer?.target_capacity || customer?.recommended_product || ""}`.trim()) missingItems.push("具体型号 / 容量");
+  if (!resolvedInfo.country && !isDoorToDoorRequest) missingItems.push("国家 / 目的地");
+  if (!resolvedInfo.quantity && !hasDocs) missingItems.push("数量");
+  if (!customerTypeLabel && !hasDocs) missingItems.push("客户身份");
+  if (!resolvedInfo.target_capacity && !hasDocs) missingItems.push("目标容量");
+
+  if (hasBattery && hasInverter && !messageIncludesAny(lower, ["hybrid", "off-grid", "on-grid", "single phase", "three phase", "split phase"])) {
+    missingItems.push("逆变器兼容要求");
+  }
+
+  if (quoteContext && !resolvedInfo.application_scene && !hasDocs) {
+    missingItems.push("应用场景");
+  }
+
+  if (quoteContext && !resolvedInfo.shipping_term && !isDoorToDoorRequest) {
+    missingItems.push("贸易方式");
+  }
+
+  if ((resolvedInfo.quantity || resolvedInfo.target_capacity || resolvedInfo.product_need) && !hasDocs) {
+    missingItems.push("交期要求");
+    missingItems.push("认证要求");
+  }
+
+  if (isDoorToDoorRequest) {
+    missingItems.push("目的城市");
+  }
+
+  const dedupedMissingItems = [...new Set(missingItems)];
 
   let requirementSummary = "客户想先了解产品资料和需求方案。";
   if (hasBattery && hasInverter) {
-    const capacityText = details.capacities.join("、");
-    const inverterText = details.inverters.join("、");
-    requirementSummary = `客户同时关注电池和逆变器匹配${capacityText ? `，已提到 ${capacityText}` : ""}${inverterText ? `，并提到 ${inverterText}` : ""}${details.countries.length > 0 ? `，目的地为 ${details.countries.join(" / ")}` : ""}。`;
+    requirementSummary = `客户同时关注 ${resolvedInfo.product_need || "电池和逆变器方案"}${resolvedInfo.country ? `，目的地为 ${resolvedInfo.country}` : ""}。`;
   } else if (hasShipping) {
-    requirementSummary = `客户主要在询问运输或交付方案${details.countries.length > 0 ? `，目前提到的目的地是 ${details.countries.join(" / ")}` : ""}。`;
+    requirementSummary = `客户主要在询问运输或交付方案${resolvedInfo.country ? `，目前提到的目的地是 ${resolvedInfo.country}` : ""}${resolvedInfo.product_need ? `，产品需求是 ${resolvedInfo.product_need}` : ""}。`;
   } else if (hasDocs) {
     requirementSummary = "客户想先了解产品资料或认证文件，需要确认具体型号、容量和用途。";
   } else if (hasBattery && hasQuote) {
-    requirementSummary = `客户对电池产品有初步规格需求${details.capacities.length > 0 ? `，提到了 ${details.capacities.join("、")}` : ""}，并希望先拿到报价。`;
+    requirementSummary = `客户对 ${resolvedInfo.product_need || "电池产品"}有初步报价需求${resolvedInfo.country ? `，目的地为 ${resolvedInfo.country}` : ""}${resolvedInfo.quantity ? `，数量为 ${resolvedInfo.quantity}` : ""}${resolvedInfo.shipping_term ? `，贸易方式为 ${resolvedInfo.shipping_term}` : ""}。`;
   } else if (hasQuote) {
     requirementSummary = "客户主要在询价，但产品规格、数量和目的地信息还不完整。";
   } else if (hasBattery) {
-    requirementSummary = `客户在询问电池产品需求${details.capacities.length > 0 ? `，已提到 ${details.capacities.join("、")}` : ""}。`;
+    requirementSummary = `客户在询问 ${resolvedInfo.product_need || "电池产品"}${resolvedInfo.country ? `，目标市场为 ${resolvedInfo.country}` : ""}。`;
   }
 
   let nextStep = "先确认客户的核心需求，再判断是否适合继续推进。";
   let suggestedReply = "Hi, could you please share more details about your battery requirement? Then I can recommend a suitable solution for you.";
-  const capacityText = details.capacities.join(" and ");
-  const inverterText = details.inverters.join(" and ");
-  const countryText = details.countries[0] || "";
-  const wantsDoorToDoor = lower.includes("door to door");
-  const asksDdp = lower.includes("ddp");
+  const capacityText = resolvedInfo.target_capacity || (details.batteryCapacities.length > 0 ? details.batteryCapacities : details.capacities).join(" and ");
+  const inverterText = resolvedInfo.inverter_need || details.inverters.join(" and ");
+  const countryText = resolvedInfo.country || "";
+  const quantityText = resolvedInfo.quantity || "";
+  const shippingText = resolvedInfo.shipping_term || (isDoorToDoorRequest ? "DDP" : "");
+  const productText = resolvedInfo.product_need || capacityText || "battery";
+  const customerTypeText = customerTypeLabel || "";
 
   if (hasBattery && hasInverter) {
-    nextStep = "确认逆变器类型、数量、应用场景，并确认是否需要电池和逆变器一起报价。";
-    suggestedReply = `Hi, thanks for your inquiry. We can help check the ${capacityText || "battery"}${inverterText ? ` and ${inverterText}` : " and inverter"} solution${countryText ? ` for ${countryText}` : ""}. May I know how many sets you need and whether the inverter should be hybrid, off-grid, or on-grid?`;
-  } else if (hasShipping) {
-    nextStep = "确认目的国、城市、数量，并判断是否需要 DDP 到门服务。";
-    suggestedReply = asksDdp || wantsDoorToDoor
-      ? `Hi, we can check DDP door-to-door delivery${countryText ? ` to ${countryText}` : ""}. May I know the destination city, product model, and quantity? Then I can check the shipping cost and delivery option for you.`
+    if (quantityText && countryText) {
+      nextStep = `确认逆变器兼容需求、应用场景和交期要求，再准备 ${quantityText} 的 ${productText} 方案报价。`;
+      suggestedReply = `Hi, thanks for your inquiry. We can help check the ${productText} solution${countryText ? ` for ${countryText}` : ""}. Since you need ${quantityText}, may I know whether the inverter should be hybrid, off-grid, or on-grid, and what delivery time you expect?`;
+    } else {
+      nextStep = "确认逆变器兼容要求、数量和应用场景，并确认是否需要电池和逆变器一起报价。";
+      suggestedReply = `Hi, thanks for your inquiry. We can help check the ${capacityText || "battery"}${inverterText ? ` and ${inverterText}` : " and inverter"} solution${countryText ? ` for ${countryText}` : ""}. May I know how many sets you need and whether the inverter should be hybrid, off-grid, or on-grid?`;
+    }
+  } else if (hasShipping || isDoorToDoorRequest) {
+    nextStep = isDoorToDoorRequest
+      ? `确认目的城市、${quantityText ? "具体产品型号" : "产品型号和数量"}，再检查${countryText ? `${countryText} 的` : ""} DDP 到门方案。`
+      : "确认目的城市、具体产品型号和数量，再检查运输方案。";
+    suggestedReply = isDoorToDoorRequest
+      ? `Hi, we can check DDP door-to-door delivery${countryText ? ` to ${countryText}` : ""}. May I know the destination city, ${resolvedInfo.product_need ? "the exact model" : "product model"}${quantityText ? "" : ", and quantity"}? Then I can check the shipping cost and delivery option for you.`
       : `Hi, we can check the shipping solution for you.${countryText ? ` I noted the destination is ${countryText}.` : ""} May I know the destination city, product model, and quantity?`;
   } else if (hasDocs) {
     nextStep = "发送资料或证书前，先确认客户关注的型号、容量和用途。";
     suggestedReply = "Sure, I can send the datasheet and CE certificate. May I know which model or capacity you are interested in, and whether this is for resale or project installation?";
+  } else if (hasBattery && hasQuote && quantityText && countryText && customerTypeText) {
+    nextStep = `确认客户交期、认证要求和逆变器兼容需求，再准备 ${quantityText} ${productText} 的 ${shippingText || "正式"} 报价。`;
+    suggestedReply = `Hi, thanks for your inquiry. We can quote the ${productText} for your ${isInstallerLike ? "installation business" : isDistributorLike ? "distribution business" : "project"} in ${countryText}. Since you need ${quantityText}${shippingText ? ` on ${shippingText} terms` : ""}, may I know your preferred delivery time and whether you have any certification or inverter compatibility requirements?`;
   } else if (hasBattery && hasQuote) {
-    nextStep = "确认客户所需数量、目的国和客户身份，再准备正式报价。";
-    suggestedReply = `Hi, thanks for your inquiry. I can quote the ${capacityText || "battery"} for you. May I know the required quantity${countryText ? "" : " and destination country"}? Also, is this for resale, installation projects, or your own use?`;
+    const followUpNeeds = dedupedMissingItems.filter((item) => ["数量", "国家 / 目的地", "客户身份", "应用场景", "贸易方式"].includes(item));
+    nextStep = followUpNeeds.length > 0
+      ? `先补齐${followUpNeeds.join("、")}，再准备正式报价。`
+      : "确认报价前的交期、认证和兼容要求，再准备正式报价。";
+    suggestedReply = `Hi, thanks for your inquiry. I can quote the ${capacityText || "battery"} for you.${countryText ? ` I noted the destination is ${countryText}.` : ""}${quantityText ? ` The quantity is ${quantityText}.` : ""} ${!quantityText ? "May I know the required quantity" : "May I know your preferred delivery time"}${!countryText ? `${!quantityText ? " and destination country" : " and destination country"}` : ""}?${!customerTypeText ? " Also, is this for resale, installation projects, or your own use?" : customerTypeText ? " Also, please let me know if you have any certification or inverter compatibility requirements." : ""}`;
   } else if (hasQuote) {
     nextStep = "确认客户所需容量、数量、目的地和应用场景，再判断是否可以报价。";
     suggestedReply = capacityText
@@ -217,9 +403,11 @@ function analyzeCustomerMessageContent(message, customer = {}) {
   return {
     requirementSummary,
     customerTypeSummary: detectedType,
-    missingItems: missingItems.length > 0 ? missingItems : ["暂无明显缺失信息"],
+    missingItems: dedupedMissingItems.length > 0 ? dedupedMissingItems : ["暂无明显缺失信息"],
     nextStep,
-    suggestedReply
+    suggestedReply,
+    detectedFields,
+    extractedInfo
   };
 }
 
@@ -718,6 +906,8 @@ export default function CustomerDetailPage() {
   const [customerScript, setCustomerScript] = useState("");
   const [messageAnalysisInput, setMessageAnalysisInput] = useState("");
   const [messageAnalysisResult, setMessageAnalysisResult] = useState(null);
+  const [selectedDetectedFields, setSelectedDetectedFields] = useState({});
+  const [savedAnalysisRecordKey, setSavedAnalysisRecordKey] = useState("");
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isEditingDemand, setIsEditingDemand] = useState(false);
   const [profileForm, setProfileForm] = useState(emptyProfileForm);
@@ -823,7 +1013,7 @@ export default function CustomerDetailPage() {
       .eq("id", pendingFeedbackInteraction.id);
 
     if (updateError) {
-      setError(updateError.message);
+      setError(`更新下一步动作失败，请稍后重试。${updateError.message ? ` ${updateError.message}` : ""}`);
       return;
     }
 
@@ -1092,8 +1282,176 @@ export default function CustomerDetailPage() {
       return;
     }
     setMessageAnalysisResult(result);
+    setSelectedDetectedFields(buildDetectedFieldSelection(result, customer || {}));
+    setSavedAnalysisRecordKey("");
     setError("");
     setSuccess("已完成客户消息分析。");
+  }
+
+  function toggleDetectedField(fieldKey) {
+    setSelectedDetectedFields((current) => ({
+      ...current,
+      [fieldKey]: !current[fieldKey]
+    }));
+  }
+
+  async function applyAnalysisNextAction() {
+    if (!customer || !messageAnalysisResult?.nextStep) {
+      setError("请先完成客户消息分析。");
+      setSuccess("");
+      return;
+    }
+
+    setError("");
+    setSuccess("");
+    setIsSaving(true);
+
+    const nextActionText = messageAnalysisResult.nextStep;
+    const now = new Date().toISOString();
+    const { error: updateError } = await updateCustomerWithExistingFields({
+      current_next_action: nextActionText,
+      next_action: nextActionText,
+      updated_at: now
+    });
+
+    setIsSaving(false);
+
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+
+    setCustomer((current) => current ? {
+      ...current,
+      current_next_action: nextActionText,
+      next_action: nextActionText,
+      updated_at: now
+    } : current);
+    setWorkflowForm((current) => ({
+      ...current,
+      nextAction: nextActionText
+    }));
+    setSuccess("下一步动作已更新。");
+  }
+
+  function buildAnalysisInteractionNote(result) {
+    return [
+      "客户消息分析",
+      `客户需求：${result.requirementSummary}`,
+      `客户类型判断：${result.customerTypeSummary}`,
+      `关键信息缺失：${(result.missingItems || []).join("、")}`,
+      `下一步动作：${result.nextStep}`,
+      `建议英文回复：${result.suggestedReply}`
+    ].join("\n");
+  }
+
+  async function saveAnalysisAsInteraction() {
+    if (!customer || !messageAnalysisResult || !messageAnalysisInput.trim()) {
+      setError("请先完成客户消息分析。");
+      setSuccess("");
+      return;
+    }
+
+    const analysisKey = getMessageAnalysisSignature(messageAnalysisInput, messageAnalysisResult);
+    if (savedAnalysisRecordKey && savedAnalysisRecordKey === analysisKey) {
+      setError("这次分析结果已经保存过跟进记录。");
+      setSuccess("");
+      return;
+    }
+
+    setError("");
+    setSuccess("");
+    setIsSaving(true);
+
+    const authResult = await supabase.auth.getUser();
+    const authUser = authResult?.data?.user || session?.user || null;
+    if (!authUser?.id) {
+      setIsSaving(false);
+      setError("无法获取当前登录用户，请重新登录后再试。");
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const interactionPayload = {
+      user_id: authUser.id,
+      customer_id: customer.id,
+      interaction_status: "客户消息分析",
+      customer_new_reply: messageAnalysisInput.trim(),
+      operator_note: buildAnalysisInteractionNote(messageAnalysisResult),
+      created_at: now,
+      updated_at: now
+    };
+
+    const { error: interactionError } = await supabase
+      .from("interactions")
+      .insert(interactionPayload);
+
+    setIsSaving(false);
+
+    if (interactionError) {
+      setError(`保存跟进记录失败，请稍后重试。${interactionError.message ? ` ${interactionError.message}` : ""}`);
+      return;
+    }
+
+    setSavedAnalysisRecordKey(analysisKey);
+    setSuccess("分析结果已保存为跟进记录。");
+    await loadData();
+  }
+
+  async function applyDetectedFieldsToCustomer() {
+    if (!customer || !messageAnalysisResult?.detectedFields?.length) {
+      setError("当前没有可应用的识别信息。");
+      setSuccess("");
+      return;
+    }
+
+    const selectedFields = messageAnalysisResult.detectedFields.filter((field) => selectedDetectedFields[field.key]);
+    if (selectedFields.length === 0) {
+      setError("请先勾选要应用到客户资料的信息。");
+      setSuccess("");
+      return;
+    }
+
+    const payload = {
+      updated_at: new Date().toISOString()
+    };
+
+    selectedFields.forEach((field) => {
+      payload[field.key] = field.value;
+    });
+
+    setError("");
+    setSuccess("");
+    setIsSaving(true);
+
+    const { error: updateError } = await updateCustomerWithExistingFields(payload);
+    setIsSaving(false);
+
+    if (updateError) {
+      setError(`更新客户资料失败，请稍后重试。${updateError.message ? ` ${updateError.message}` : ""}`);
+      return;
+    }
+
+    setCustomer((current) => current ? { ...current, ...payload } : current);
+    setProfileForm((current) => ({
+      ...current,
+      customer_type: payload.customer_type ?? current.customer_type,
+      country: payload.country ?? current.country
+    }));
+    setDemandForm((current) => ({
+      ...current,
+      target_capacity: payload.target_capacity ?? current.target_capacity,
+      quantity: payload.quantity ?? current.quantity,
+      shipping_term: payload.shipping_term ?? current.shipping_term,
+      recommended_product: payload.recommended_product ?? current.recommended_product,
+      product_note: payload.product_note ?? current.product_note
+    }));
+    setWorkflowForm((current) => ({
+      ...current,
+      quantity: payload.quantity ?? current.quantity,
+      shippingTerm: payload.shipping_term ?? current.shippingTerm
+    }));
+    setSuccess("客户资料已更新。");
   }
 
   async function copySuggestedReply() {
@@ -2255,7 +2613,10 @@ export default function CustomerDetailPage() {
               <textarea
                 rows={6}
                 value={messageAnalysisInput}
-                onChange={(event) => setMessageAnalysisInput(event.target.value)}
+                onChange={(event) => {
+                  setMessageAnalysisInput(event.target.value);
+                  setSavedAnalysisRecordKey("");
+                }}
                 placeholder="粘贴客户在 Alibaba、WhatsApp、邮件或 LinkedIn 里的原话"
               />
             </Field>
@@ -2264,49 +2625,177 @@ export default function CustomerDetailPage() {
             </div>
 
             {messageAnalysisResult && (
-              <div className="detail-grid" style={{ marginTop: 18, gap: 16 }}>
-                <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
-                  <strong>客户需求</strong>
-                  <p>{messageAnalysisResult.requirementSummary}</p>
-                </div>
-                <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
-                  <strong>客户类型判断</strong>
-                  <p>{messageAnalysisResult.customerTypeSummary}</p>
-                </div>
-                <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
-                  <strong>关键信息缺失</strong>
-                  <div style={{ color: "#334155", lineHeight: 1.8, marginTop: 6 }}>
-                    {messageAnalysisResult.missingItems.map((item) => (
-                      <div key={item}>• {item}</div>
-                    ))}
+              <>
+                <div className="detail-grid" style={{ marginTop: 18, gap: 16 }}>
+                  <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                    <strong>客户需求</strong>
+                    <p>{messageAnalysisResult.requirementSummary}</p>
+                  </div>
+                  <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                    <strong>客户类型判断</strong>
+                    <p>{messageAnalysisResult.customerTypeSummary}</p>
+                  </div>
+                  <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                    <strong>关键信息缺失</strong>
+                    <div style={{ color: "#334155", lineHeight: 1.8, marginTop: 6 }}>
+                      {messageAnalysisResult.missingItems.map((item) => (
+                        <div key={item}>• {item}</div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                    <strong>下一步动作</strong>
+                    <p>{messageAnalysisResult.nextStep}</p>
+                  </div>
+                  <div
+                    className="detail-item"
+                    style={{
+                      borderRadius: 18,
+                      background: "#eff6ff",
+                      border: "1px solid #dbeafe",
+                      padding: 18,
+                      gridColumn: "1 / -1"
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+                      <strong>建议英文回复</strong>
+                      <button
+                        style={{ height: 36, padding: "0 12px", fontSize: 13, fontWeight: 500, background: "#fff", border: "1px solid #dbe5f1", color: "#1e293b", borderRadius: 10 }}
+                        onClick={copySuggestedReply}
+                      >
+                        复制英文回复
+                      </button>
+                    </div>
+                    <p style={{ margin: 0, color: "#0f172a", lineHeight: 1.7 }}>{messageAnalysisResult.suggestedReply}</p>
                   </div>
                 </div>
-                <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
-                  <strong>下一步动作</strong>
-                  <p>{messageAnalysisResult.nextStep}</p>
-                </div>
+
                 <div
-                  className="detail-item"
                   style={{
+                    marginTop: 18,
                     borderRadius: 18,
-                    background: "#eff6ff",
-                    border: "1px solid #dbeafe",
-                    padding: 18,
-                    gridColumn: "1 / -1"
+                    border: "1px solid #dbe5f1",
+                    background: "#ffffff",
+                    padding: 18
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
-                    <strong>建议英文回复</strong>
-                    <button
-                      style={{ height: 36, padding: "0 12px", fontSize: 13, fontWeight: 500, background: "#fff", border: "1px solid #dbe5f1", color: "#1e293b", borderRadius: 10 }}
-                      onClick={copySuggestedReply}
-                    >
-                      复制英文回复
-                    </button>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+                    <strong style={{ color: "#0f172a", fontSize: 16 }}>应用分析结果</strong>
+                    <span style={{ color: "#64748b", fontSize: 13 }}>按需把分析结果写入当前客户，不会自动更新任何数据。</span>
                   </div>
-                  <p style={{ margin: 0, color: "#0f172a", lineHeight: 1.7 }}>{messageAnalysisResult.suggestedReply}</p>
+
+                  <div className="detail-grid" style={{ gap: 16 }}>
+                    <div className="detail-item" style={{ borderRadius: 16, background: "#f8fafc", padding: 16 }}>
+                      <strong>推进应用</strong>
+                      <p style={{ color: "#475569", marginTop: 6 }}>把分析得到的下一步动作写入当前推进。</p>
+                      <button className="primary" onClick={applyAnalysisNextAction} disabled={isSaving} style={{ marginTop: 10 }}>
+                        应用为下一步动作
+                      </button>
+                    </div>
+
+                    <div className="detail-item" style={{ borderRadius: 16, background: "#f8fafc", padding: 16 }}>
+                      <strong>记录保存</strong>
+                      <p style={{ color: "#475569", marginTop: 6 }}>将本次消息分析写入跟进记录时间线。</p>
+                      <button
+                        onClick={saveAnalysisAsInteraction}
+                        disabled={isSaving || savedAnalysisRecordKey === getMessageAnalysisSignature(messageAnalysisInput, messageAnalysisResult)}
+                        style={{ marginTop: 10 }}
+                      >
+                        保存为跟进记录
+                      </button>
+                    </div>
+
+                    <div
+                      className="detail-item"
+                      style={{
+                        borderRadius: 16,
+                        background: "#f8fafc",
+                        padding: 16,
+                        gridColumn: "1 / -1"
+                      }}
+                    >
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+                        <strong>资料应用</strong>
+                        <span style={{ color: "#64748b", fontSize: 13 }}>勾选要应用到客户资料的信息。有现有不同值时，默认不会覆盖。</span>
+                      </div>
+
+                      {analysisFieldDefinitions.length > 0 ? (
+                        <div style={{ display: "grid", gap: 12 }}>
+                          {analysisFieldDefinitions.map((fieldDefinition) => {
+                            const field = messageAnalysisResult.detectedFields?.find((item) => item.key === fieldDefinition.key) || null;
+                            const currentValue = getCustomerFieldCurrentValue(customer, fieldDefinition.key);
+                            const hasConflict = field && currentValue && normalizeComparableText(currentValue) !== normalizeComparableText(field.value);
+
+                            if (!field) {
+                              return (
+                                <div
+                                  key={fieldDefinition.key}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "flex-start",
+                                    gap: 12,
+                                    padding: 14,
+                                    borderRadius: 14,
+                                    border: "1px solid #e2e8f0",
+                                    background: "#fff"
+                                  }}
+                                >
+                                  <input type="checkbox" disabled style={{ marginTop: 2 }} />
+                                  <div style={{ display: "grid", gap: 4 }}>
+                                    <strong style={{ color: "#0f172a", fontSize: 14 }}>{fieldDefinition.label}</strong>
+                                    <span style={{ color: "#94a3b8", fontSize: 13 }}>未识别</span>
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <label
+                                key={`${fieldDefinition.key}-${field.value}`}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "flex-start",
+                                  gap: 12,
+                                  padding: 14,
+                                  borderRadius: 14,
+                                  border: "1px solid #dbe5f1",
+                                  background: hasConflict ? "#fff7ed" : "#fff"
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(selectedDetectedFields[field.key])}
+                                  onChange={() => toggleDetectedField(field.key)}
+                                  style={{ marginTop: 2 }}
+                                />
+                                <div style={{ display: "grid", gap: 4 }}>
+                                  <strong style={{ color: "#0f172a", fontSize: 14 }}>{fieldDefinition.label}</strong>
+                                  <span style={{ color: "#0f172a", fontSize: 14 }}>{field.value}</span>
+                                  {currentValue ? (
+                                    <span style={{ color: hasConflict ? "#c2410c" : "#64748b", fontSize: 12 }}>
+                                      当前值：{currentValue}{hasConflict ? "（与识别结果不同，默认不覆盖）" : ""}
+                                    </span>
+                                  ) : (
+                                    <span style={{ color: "#64748b", fontSize: 12 }}>当前值为空，可直接应用</span>
+                                  )}
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p style={{ margin: 0, color: "#64748b" }}>当前消息没有识别到可直接写入客户资料的字段。</p>
+                      )}
+
+                      <div className="actions" style={{ marginTop: 14 }}>
+                        <button onClick={applyDetectedFieldsToCustomer} disabled={isSaving}>
+                          应用到客户资料
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              </>
             )}
           </section>
 
