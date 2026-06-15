@@ -6,7 +6,7 @@ import {
   chatScreenshotSystemPrompt
 } from "../../../lib/chatScreenshotPrompt";
 
-const openRouterVisionModel = process.env.OPENROUTER_VISION_MODEL || "google/gemma-3-27b-it:free";
+const openRouterVisionModel = process.env.OPENROUTER_VISION_MODEL || "openrouter/free";
 const maxImages = 10;
 const maxImageBytes = 8 * 1024 * 1024;
 const supportedMimeTypes = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp"]);
@@ -69,7 +69,7 @@ function ensureFreeVisionModel(modelId) {
   if (!normalized) {
     throw new Error("provider_not_configured");
   }
-  if (!normalized.endsWith(":free")) {
+  if (normalized !== "openrouter/free" && !normalized.endsWith(":free")) {
     throw new Error("non_free_model_forbidden");
   }
   return normalized;
@@ -177,23 +177,43 @@ async function callOpenRouterVision({ platform, salespersonName, salespersonBubb
     const data = await response.json().catch(() => null);
     if (!response.ok) {
       const errorText = String(data?.error?.message || "");
+      const lowerErrorText = errorText.toLowerCase();
       if (
         response.status === 402
-        || /insufficient/i.test(errorText)
-        || /payment/i.test(errorText)
-        || /credits?/i.test(errorText)
+        || lowerErrorText.includes("insufficient")
+        || lowerErrorText.includes("payment")
+        || lowerErrorText.includes("credit")
       ) {
-        throw new Error("paid_model_not_allowed");
+        throw new Error("free_tier_limited");
       }
       if (
         response.status === 404
-        || response.status === 429
-        || /free/i.test(errorText)
-        || /unavailable/i.test(errorText)
-        || /not available/i.test(errorText)
-        || /no provider/i.test(errorText)
+        || lowerErrorText.includes("no provider")
+        || lowerErrorText.includes("no model")
+        || lowerErrorText.includes("not available")
+        || lowerErrorText.includes("unavailable")
+        || lowerErrorText.includes("vision")
+        || lowerErrorText.includes("image")
       ) {
         throw new Error("free_model_unavailable");
+      }
+      if (
+        response.status === 429
+        || lowerErrorText.includes("rate limit")
+        || lowerErrorText.includes("too many requests")
+        || lowerErrorText.includes("quota")
+      ) {
+        throw new Error("free_tier_limited");
+      }
+      if (
+        response.status === 400
+        || lowerErrorText.includes("image_url")
+        || lowerErrorText.includes("base64")
+        || lowerErrorText.includes("invalid image")
+        || lowerErrorText.includes("unsupported image")
+        || lowerErrorText.includes("invalid request")
+      ) {
+        throw new Error("invalid_image_request");
       }
       throw new Error(errorText || "provider_request_failed");
     }
@@ -257,16 +277,19 @@ export async function POST(request) {
       return NextResponse.json({ error: "聊天截图分析失败，请稍后重试。" }, { status: 504 });
     }
     if (error.message === "provider_not_configured") {
-      return NextResponse.json({ error: "AI 服务尚未配置，请先设置 OPENROUTER_API_KEY。" }, { status: 500 });
+      return NextResponse.json({ error: "OpenRouter AI 服务尚未配置，请先设置 OPENROUTER_API_KEY。" }, { status: 500 });
     }
     if (error.message === "non_free_model_forbidden") {
-      return NextResponse.json({ error: "当前仅允许使用 OpenRouter 免费视觉模型，请将模型配置为 :free 版本。" }, { status: 500 });
+      return NextResponse.json({ error: "当前仅允许使用 OpenRouter 免费模型路由或 :free 模型，已拒绝调用付费模型。" }, { status: 500 });
     }
-    if (error.message === "paid_model_not_allowed") {
-      return NextResponse.json({ error: "当前配置的 OpenRouter 模型不是免费模型，已拒绝调用付费模型。" }, { status: 502 });
+    if (error.message === "free_tier_limited") {
+      return NextResponse.json({ error: "OpenRouter 免费额度或请求频率已达到限制，请稍后再试。" }, { status: 429 });
     }
     if (error.message === "free_model_unavailable") {
-      return NextResponse.json({ error: "OpenRouter 免费视觉模型当前不可用，请稍后重试或更换可用的免费模型。" }, { status: 502 });
+      return NextResponse.json({ error: "当前没有可用的免费视觉模型，请稍后再试。" }, { status: 502 });
+    }
+    if (error.message === "invalid_image_request") {
+      return NextResponse.json({ error: "聊天截图格式无法识别，请重新粘贴或上传更清晰的图片。" }, { status: 400 });
     }
     if (error.message === "too_many_images") {
       return NextResponse.json({ error: "最多分析10张聊天截图。" }, { status: 400 });
