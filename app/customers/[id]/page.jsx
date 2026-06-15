@@ -214,6 +214,8 @@ function getCustomerFieldCurrentValue(customer, fieldKey) {
       return customer?.recommended_product || "";
     case "product_note":
       return customer?.product_note || "";
+    case "application_scenario":
+      return customer?.application_scenario || customer?.application_scene || "";
     default:
       return customer?.[fieldKey] || "";
   }
@@ -250,9 +252,93 @@ const analysisFieldDefinitions = [
   { key: "quantity", label: "数量" },
   { key: "recommended_product", label: "产品需求" },
   { key: "product_note", label: "逆变器需求" },
+  { key: "application_scenario", label: "应用场景" },
   { key: "shipping_term", label: "运输方式" },
   { key: "customer_type", label: "客户类型" }
 ];
+
+const screenshotPlatformOptions = ["Alibaba", "WhatsApp", "LinkedIn", "Email", "Other"];
+const screenshotBubbleSideOptions = [
+  { value: "auto", label: "自动判断" },
+  { value: "right", label: "通常在右侧" },
+  { value: "left", label: "通常在左侧" }
+];
+const maxChatScreenshots = 10;
+const maxChatScreenshotSize = 8 * 1024 * 1024;
+const supportedScreenshotMimeTypes = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp"]);
+
+function formatBytes(bytes) {
+  if (!bytes) return "0 KB";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function speakerLabel(speaker) {
+  if (speaker === "customer") return "客户";
+  if (speaker === "salesperson") return "我方";
+  return "无法判断";
+}
+
+function sideLabel(position) {
+  if (position === "left") return "左侧";
+  if (position === "right") return "右侧";
+  return "未知";
+}
+
+function buildDetectedFieldsFromChatAnalysis(analysis) {
+  if (!analysis) return [];
+  const info = analysis.confirmedInformation || {};
+  return [
+    info.country ? { key: "country", label: "国家 / 目的地", value: info.country } : null,
+    info.quantity ? { key: "quantity", label: "数量", value: info.quantity } : null,
+    info.targetCapacity ? { key: "target_capacity", label: "目标容量", value: info.targetCapacity } : null,
+    info.productNeed ? { key: "recommended_product", label: "产品需求", value: info.productNeed } : null,
+    info.inverterRequirement ? { key: "product_note", label: "逆变器需求", value: info.inverterRequirement } : null,
+    info.applicationScenario ? { key: "application_scenario", label: "应用场景", value: info.applicationScenario } : null,
+    info.shippingTerm ? { key: "shipping_term", label: "运输方式", value: info.shippingTerm } : null,
+    analysis.customerType ? { key: "customer_type", label: "客户类型", value: analysis.customerType } : null
+  ].filter(Boolean);
+}
+
+function convertChatAnalysisToApplyPayload(analysis) {
+  if (!analysis) return null;
+  return {
+    requirementSummary: analysis.customerNeed || analysis.conversationSummary || "",
+    customerTypeSummary: analysis.customerType || "",
+    missingItems: Array.isArray(analysis.missingInformation) && analysis.missingInformation.length > 0
+      ? analysis.missingInformation
+      : ["暂无明显缺失信息"],
+    nextStep: analysis.nextAction || "",
+    suggestedReply: analysis.englishReply || "",
+    detectedFields: buildDetectedFieldsFromChatAnalysis(analysis),
+    extractedInfo: analysis.confirmedInformation || {}
+  };
+}
+
+function getChatAnalysisSignature(result, screenshots, correctedMessages) {
+  if (!result) return "";
+  return JSON.stringify({
+    screenshots: (screenshots || []).map((item) => item.digest),
+    correctedMessages: correctedMessages || [],
+    nextAction: result.nextAction,
+    englishReply: result.englishReply,
+    messages: result.messageCount,
+    blocker: result.currentBlocker
+  });
+}
+
+function getLastSpeakerHint(lastSpeaker) {
+  if (lastSpeaker === "customer") return "客户有新回复，建议尽快处理。";
+  if (lastSpeaker === "salesperson") return "我方已发送消息，当前更可能处于等待客户回复。";
+  return "无法判断最后发言方，请人工确认对话明细。";
+}
+
+function getScreenshotStatusText(item) {
+  if (item.isDuplicate) return "重复截图";
+  if (item.isLowResolution) return "分辨率偏低";
+  return "";
+}
 
 function analyzeCustomerMessageContent(message, customer = {}) {
   const rawMessage = `${message || ""}`.trim();
@@ -909,8 +995,22 @@ export default function CustomerDetailPage() {
   const [activeTab, setActiveTab] = useState("overview");
   const [scheduleFollowUpDate, setScheduleFollowUpDate] = useState("");
   const [customerScript, setCustomerScript] = useState("");
+  const [analysisInputMode, setAnalysisInputMode] = useState(() => {
+    if (typeof window === "undefined") return "screenshots";
+    const savedMode = window.localStorage.getItem("customer-message-analysis-mode");
+    return savedMode === "text" || savedMode === "screenshots" ? savedMode : "screenshots";
+  });
   const [messageAnalysisInput, setMessageAnalysisInput] = useState("");
   const [messageAnalysisResult, setMessageAnalysisResult] = useState(null);
+  const [screenshotPlatform, setScreenshotPlatform] = useState("Alibaba");
+  const [salespersonNameHint, setSalespersonNameHint] = useState("");
+  const [salespersonBubbleSide, setSalespersonBubbleSide] = useState("auto");
+  const [chatScreenshots, setChatScreenshots] = useState([]);
+  const [chatScreenshotAnalysis, setChatScreenshotAnalysis] = useState(null);
+  const [editableChatMessages, setEditableChatMessages] = useState([]);
+  const [isAnalyzingChatScreenshots, setIsAnalyzingChatScreenshots] = useState(false);
+  const [draggingScreenshotArea, setDraggingScreenshotArea] = useState(false);
+  const [previewScreenshotUrl, setPreviewScreenshotUrl] = useState("");
   const [selectedDetectedFields, setSelectedDetectedFields] = useState({});
   const [savedAnalysisRecordKey, setSavedAnalysisRecordKey] = useState("");
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -918,6 +1018,8 @@ export default function CustomerDetailPage() {
   const [profileForm, setProfileForm] = useState(emptyProfileForm);
   const [demandForm, setDemandForm] = useState(emptyDemandForm);
   const quoteSectionRef = useRef(null);
+  const screenshotFileInputRef = useRef(null);
+  const chatScreenshotsRef = useRef([]);
 
   const customerId = params?.id;
 
@@ -996,6 +1098,422 @@ export default function CustomerDetailPage() {
   useEffect(() => {
     loadData();
   }, [supabase, customerId]);
+
+  useEffect(() => {
+    chatScreenshotsRef.current = chatScreenshots;
+  }, [chatScreenshots]);
+
+  useEffect(() => {
+    return () => {
+      chatScreenshotsRef.current.forEach((item) => {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    window.localStorage.setItem("customer-message-analysis-mode", analysisInputMode);
+    return undefined;
+  }, [analysisInputMode]);
+
+  useEffect(() => {
+    if (analysisInputMode !== "screenshots") return undefined;
+
+    async function handleWindowPaste(event) {
+      const target = event.target;
+      const tagName = target?.tagName?.toLowerCase?.() || "";
+      const isEditable = target?.isContentEditable || ["textarea", "input", "select"].includes(tagName);
+      if (isEditable) return;
+
+      const items = Array.from(event.clipboardData?.items || []);
+      const imageItems = items.filter((item) => supportedScreenshotMimeTypes.has(item.type));
+      if (imageItems.length === 0) return;
+
+      event.preventDefault();
+      const files = imageItems
+        .map((item, index) => item.getAsFile() ? new File([item.getAsFile()], `pasted-chat-${Date.now()}-${index + 1}.png`, { type: item.type }) : null)
+        .filter(Boolean);
+      await appendChatScreenshotFiles(files, "paste");
+    }
+
+    window.addEventListener("paste", handleWindowPaste);
+    return () => window.removeEventListener("paste", handleWindowPaste);
+  }, [analysisInputMode, chatScreenshots, customer, demandForm, profileForm, workflowForm, session]);
+
+  function getCurrentAnalysisApplyPayload() {
+    if (analysisInputMode === "screenshots" && chatScreenshotAnalysis) {
+      return convertChatAnalysisToApplyPayload(chatScreenshotAnalysis);
+    }
+    if (analysisInputMode === "text" && messageAnalysisResult) {
+      return messageAnalysisResult;
+    }
+    if (chatScreenshotAnalysis) return convertChatAnalysisToApplyPayload(chatScreenshotAnalysis);
+    return messageAnalysisResult;
+  }
+
+  function getCurrentAnalysisSignature() {
+    if (analysisInputMode === "screenshots" && chatScreenshotAnalysis) {
+      return getChatAnalysisSignature(chatScreenshotAnalysis, chatScreenshots, editableChatMessages);
+    }
+    return getMessageAnalysisSignature(messageAnalysisInput, messageAnalysisResult);
+  }
+
+  function getCurrentAnalysisRecordText() {
+    if (analysisInputMode === "screenshots" && chatScreenshotAnalysis) {
+      const info = chatScreenshotAnalysis.confirmedInformation || {};
+      return [
+        `来源平台：${chatScreenshotAnalysis.platform || screenshotPlatform}`,
+        `沟通摘要：${chatScreenshotAnalysis.conversationSummary || "无"}`,
+        `客户最新需求：${chatScreenshotAnalysis.customerNeed || "无"}`,
+        `已确认信息：${[
+          info.country && `国家 ${info.country}`,
+          info.quantity && `数量 ${info.quantity}`,
+          info.targetCapacity && `容量 ${info.targetCapacity}`,
+          info.productNeed && `产品需求 ${info.productNeed}`,
+          info.shippingTerm && `贸易方式 ${info.shippingTerm}`,
+          chatScreenshotAnalysis.customerType && `客户类型 ${chatScreenshotAnalysis.customerType}`,
+          info.inverterRequirement && `逆变器需求 ${info.inverterRequirement}`,
+          info.applicationScenario && `应用场景 ${info.applicationScenario}`,
+          info.certificationRequirement && `认证要求 ${info.certificationRequirement}`,
+          info.deliveryTime && `交期 ${info.deliveryTime}`
+        ].filter(Boolean).join("；") || "无"}`,
+        `缺失信息：${(chatScreenshotAnalysis.missingInformation || []).join("、") || "无"}`,
+        `客户异议：${(chatScreenshotAnalysis.customerObjections || []).join("、") || "无"}`,
+        `已发送内容：${(chatScreenshotAnalysis.sentMaterials || []).join("、") || "无"}`,
+        `最后发言方：${speakerLabel(chatScreenshotAnalysis.lastSpeaker)}`,
+        `当前卡点：${chatScreenshotAnalysis.currentBlocker || "无"}`,
+        `下一步动作：${chatScreenshotAnalysis.nextAction || "无"}`,
+        `建议英文回复：${chatScreenshotAnalysis.englishReply || "无"}`,
+        `对话时间范围：${chatScreenshotAnalysis.conversationTimeRange || "无"}`
+      ].join("\n");
+    }
+
+    const currentAnalysis = getCurrentAnalysisApplyPayload();
+    return currentAnalysis
+      ? [
+        `客户原始消息：${messageAnalysisInput.trim()}`,
+        `客户需求：${currentAnalysis.requirementSummary}`,
+        `客户类型判断：${currentAnalysis.customerTypeSummary}`,
+        `关键信息缺失：${(currentAnalysis.missingItems || []).join("、")}`,
+        `下一步动作：${currentAnalysis.nextStep}`,
+        `建议英文回复：${currentAnalysis.suggestedReply}`,
+        operatorNote ? `人工备注：${operatorNote}` : ""
+      ].filter(Boolean).join("\n")
+      : "";
+  }
+
+  function getCurrentAnalysisDetectedFields() {
+    return getCurrentAnalysisApplyPayload()?.detectedFields || [];
+  }
+
+  async function blobToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("读取截图失败。"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function getImageDimensions(previewUrl) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
+      image.onerror = () => reject(new Error("读取截图尺寸失败。"));
+      image.src = previewUrl;
+    });
+  }
+
+  async function digestFile(file) {
+    const arrayBuffer = await file.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest("SHA-256", arrayBuffer);
+    return Array.from(new Uint8Array(hashBuffer)).map((value) => value.toString(16).padStart(2, "0")).join("");
+  }
+
+  async function buildScreenshotItem(file, source) {
+    const previewUrl = URL.createObjectURL(file);
+    try {
+      const [dataUrl, digest, dimensions] = await Promise.all([
+        blobToDataUrl(file),
+        digestFile(file),
+        getImageDimensions(previewUrl)
+      ]);
+
+      return {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        fileName: file.name || "粘贴的截图",
+        size: file.size,
+        type: file.type,
+        source,
+        previewUrl,
+        dataUrl,
+        digest,
+        width: dimensions.width,
+        height: dimensions.height,
+        isLowResolution: dimensions.width < 700 || dimensions.height < 500
+      };
+    } catch (error) {
+      URL.revokeObjectURL(previewUrl);
+      throw error;
+    }
+  }
+
+  function resetChatScreenshotAnalysis() {
+    setChatScreenshotAnalysis(null);
+    setEditableChatMessages([]);
+    setSavedAnalysisRecordKey("");
+    setSelectedDetectedFields({});
+  }
+
+  async function appendChatScreenshotFiles(files, source) {
+    const fileList = Array.from(files || []);
+    if (fileList.length === 0) return;
+
+    if (chatScreenshotsRef.current.length >= maxChatScreenshots) {
+      setError("最多分析 10 张聊天截图。");
+      setSuccess("");
+      return;
+    }
+
+    const remaining = maxChatScreenshots - chatScreenshotsRef.current.length;
+    if (fileList.length > remaining) {
+      setError("最多分析 10 张聊天截图。");
+    } else {
+      setError("");
+    }
+
+    const nextFiles = fileList.slice(0, remaining);
+    let addedCount = 0;
+    let duplicateCount = 0;
+    let lowResolutionCount = 0;
+    const newItems = [];
+    const existingDigests = new Set(chatScreenshotsRef.current.map((item) => item.digest));
+
+    for (const file of nextFiles) {
+      if (!supportedScreenshotMimeTypes.has(file.type)) {
+        setError("不支持该图片格式。");
+        continue;
+      }
+      if (file.size > maxChatScreenshotSize) {
+        setError("图片过大，请压缩后重试。");
+        continue;
+      }
+
+      const item = await buildScreenshotItem(file, source);
+      if (existingDigests.has(item.digest)) {
+        duplicateCount += 1;
+        URL.revokeObjectURL(item.previewUrl);
+        continue;
+      }
+
+      existingDigests.add(item.digest);
+      if (item.isLowResolution) lowResolutionCount += 1;
+      newItems.push(item);
+      addedCount += 1;
+    }
+
+    if (newItems.length > 0) {
+      setChatScreenshots((current) => [...current, ...newItems]);
+      resetChatScreenshotAnalysis();
+    }
+
+    if (addedCount > 0) {
+      const messages = [`已添加 ${addedCount} 张聊天截图。`];
+      if (duplicateCount > 0) messages.push(`已忽略 ${duplicateCount} 张重复截图。`);
+      if (lowResolutionCount > 0) messages.push("部分截图分辨率可能过低，可能影响文字和说话方识别。");
+      setSuccess(messages.join(" "));
+    } else if (duplicateCount > 0) {
+      setSuccess("这张截图已经添加过。");
+    }
+  }
+
+  function moveChatScreenshot(index, direction) {
+    setChatScreenshots((current) => {
+      const next = [...current];
+      const targetIndex = direction === "up" ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= next.length) return current;
+      [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+      return next;
+    });
+    resetChatScreenshotAnalysis();
+  }
+
+  function removeChatScreenshot(index) {
+    setChatScreenshots((current) => {
+      const target = current[index];
+      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+      return current.filter((_, itemIndex) => itemIndex !== index);
+    });
+    resetChatScreenshotAnalysis();
+  }
+
+  function clearAllChatScreenshots() {
+    chatScreenshotsRef.current.forEach((item) => {
+      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+    });
+    setChatScreenshots([]);
+    setPreviewScreenshotUrl("");
+    resetChatScreenshotAnalysis();
+  }
+
+  async function handleChatScreenshotFileInput(event) {
+    const files = Array.from(event.target.files || []);
+    await appendChatScreenshotFiles(files, "file");
+    event.target.value = "";
+  }
+
+  async function handleScreenshotDrop(event) {
+    event.preventDefault();
+    setDraggingScreenshotArea(false);
+    const files = Array.from(event.dataTransfer?.files || []);
+    await appendChatScreenshotFiles(files, "drop");
+  }
+
+  function buildChatScreenshotCustomerContext() {
+    return {
+      customerId: customer?.id,
+      customerName: customer?.customer_name || "",
+      stage: customer?.stage || "",
+      currentStatus: customer?.current_status || "",
+      nextAction: workflowForm.nextAction || customer?.current_next_action || customer?.next_action || "",
+      country: customer?.country || demandForm.destination_country || "",
+      customerType: customer?.customer_type || profileForm.customer_type || "",
+      targetCapacity: demandForm.target_capacity || customer?.target_capacity || "",
+      quantity: demandForm.quantity || customer?.quantity || "",
+      shippingTerm: demandForm.shipping_term || customer?.shipping_term || "",
+      recommendedProduct: demandForm.recommended_product || customer?.recommended_product || "",
+      applicationScenario: demandForm.application_scenario || customer?.application_scenario || customer?.application_scene || "",
+      destinationCity: demandForm.destination_city || customer?.destination_city || "",
+      notes: profileForm.notes || customer?.notes || ""
+    };
+  }
+
+  async function analyzeChatScreenshots() {
+    if (!session?.access_token) {
+      setError("无法获取当前登录用户，请重新登录后再试。");
+      setSuccess("");
+      return;
+    }
+    if (chatScreenshots.length === 0) {
+      setError("请至少粘贴或上传一张聊天截图。");
+      setSuccess("");
+      return;
+    }
+
+    setError("");
+    setSuccess("");
+    setIsAnalyzingChatScreenshots(true);
+
+    try {
+      const response = await fetch("/api/analyze-chat-screenshots", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          customerId: customer?.id,
+          platform: screenshotPlatform,
+          salespersonName: salespersonNameHint,
+          salespersonBubbleSide,
+          images: chatScreenshots.map((item) => ({
+            fileName: item.fileName,
+            size: item.size,
+            type: item.type,
+            width: item.width,
+            height: item.height,
+            source: item.source,
+            dataUrl: item.dataUrl
+          })),
+          customerContext: buildChatScreenshotCustomerContext()
+        })
+      });
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.analysis) {
+        throw new Error(payload?.error || "聊天截图分析失败，请稍后重试。");
+      }
+
+      setChatScreenshotAnalysis(payload.analysis);
+      setEditableChatMessages(payload.analysis.messages || []);
+      const applyPayload = convertChatAnalysisToApplyPayload(payload.analysis);
+      setSelectedDetectedFields(buildDetectedFieldSelection({ detectedFields: applyPayload.detectedFields || [] }, customer || {}));
+      setSavedAnalysisRecordKey("");
+      setSuccess("已完成聊天截图分析。");
+    } catch (analyzeError) {
+      setError(analyzeError.message || "聊天截图分析失败，请稍后重试。");
+      setSuccess("");
+    } finally {
+      setIsAnalyzingChatScreenshots(false);
+    }
+  }
+
+  function updateEditableChatMessageSpeaker(index, speaker) {
+    setEditableChatMessages((current) => current.map((item, itemIndex) => (
+      itemIndex === index ? { ...item, speaker } : item
+    )));
+    setSavedAnalysisRecordKey("");
+  }
+
+  function bulkAssignSpeakerByPosition(position, speaker) {
+    setEditableChatMessages((current) => current.map((item) => (
+      item.position === position ? { ...item, speaker } : item
+    )));
+    setSavedAnalysisRecordKey("");
+  }
+
+  async function regenerateChatAnalysisFromEditedMessages() {
+    if (!session?.access_token) {
+      setError("无法获取当前登录用户，请重新登录后再试。");
+      setSuccess("");
+      return;
+    }
+    if (!editableChatMessages.length) {
+      setError("当前没有可重新分析的对话明细。");
+      setSuccess("");
+      return;
+    }
+
+    setError("");
+    setSuccess("");
+    setIsAnalyzingChatScreenshots(true);
+
+    try {
+      const response = await fetch("/api/analyze-chat-screenshots", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          customerId: customer?.id,
+          platform: screenshotPlatform,
+          salespersonName: salespersonNameHint,
+          salespersonBubbleSide,
+          correctedMessages: editableChatMessages,
+          customerContext: buildChatScreenshotCustomerContext()
+        })
+      });
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.analysis) {
+        throw new Error(payload?.error || "聊天截图分析失败，请稍后重试。");
+      }
+
+      setChatScreenshotAnalysis(payload.analysis);
+      setEditableChatMessages(payload.analysis.messages || editableChatMessages);
+      const applyPayload = convertChatAnalysisToApplyPayload(payload.analysis);
+      setSelectedDetectedFields(buildDetectedFieldSelection({ detectedFields: applyPayload.detectedFields || [] }, customer || {}));
+      setSavedAnalysisRecordKey("");
+      setSuccess("已基于人工纠正重新生成分析结果。");
+    } catch (analyzeError) {
+      setError(analyzeError.message || "聊天截图分析失败，请稍后重试。");
+      setSuccess("");
+    } finally {
+      setIsAnalyzingChatScreenshots(false);
+    }
+  }
 
   const lastSentWithoutFeedback = useMemo(() => {
     return interactions.find((item) => item.sent_at && !item.result_feedback);
@@ -1301,7 +1819,8 @@ export default function CustomerDetailPage() {
   }
 
   async function applyAnalysisNextAction() {
-    if (!customer || !messageAnalysisResult?.nextStep) {
+    const currentAnalysis = getCurrentAnalysisApplyPayload();
+    if (!customer || !currentAnalysis?.nextStep) {
       setError("请先完成客户消息分析。");
       setSuccess("");
       return;
@@ -1311,7 +1830,7 @@ export default function CustomerDetailPage() {
     setSuccess("");
     setIsSaving(true);
 
-    const nextActionText = messageAnalysisResult.nextStep;
+    const nextActionText = currentAnalysis.nextStep;
     const now = new Date().toISOString();
     const { error: updateError } = await updateCustomerWithExistingFields({
       current_next_action: nextActionText,
@@ -1351,14 +1870,15 @@ export default function CustomerDetailPage() {
   }
 
   async function saveAnalysisAsInteraction() {
-    if (!customer || !messageAnalysisResult || !messageAnalysisInput.trim()) {
+    const currentAnalysis = getCurrentAnalysisApplyPayload();
+    const analysisSignature = getCurrentAnalysisSignature();
+    if (!customer || !currentAnalysis) {
       setError("请先完成客户消息分析。");
       setSuccess("");
       return;
     }
 
-    const analysisKey = getMessageAnalysisSignature(messageAnalysisInput, messageAnalysisResult);
-    if (savedAnalysisRecordKey && savedAnalysisRecordKey === analysisKey) {
+    if (savedAnalysisRecordKey && savedAnalysisRecordKey === analysisSignature) {
       setError("这次分析结果已经保存过跟进记录。");
       setSuccess("");
       return;
@@ -1381,8 +1901,10 @@ export default function CustomerDetailPage() {
       user_id: authUser.id,
       customer_id: customer.id,
       interaction_status: "客户消息分析",
-      customer_new_reply: messageAnalysisInput.trim(),
-      operator_note: buildAnalysisInteractionNote(messageAnalysisResult),
+      customer_new_reply: analysisInputMode === "screenshots"
+        ? (chatScreenshotAnalysis?.conversationSummary || "")
+        : messageAnalysisInput.trim(),
+      operator_note: getCurrentAnalysisRecordText(),
       created_at: now,
       updated_at: now
     };
@@ -1398,19 +1920,20 @@ export default function CustomerDetailPage() {
       return;
     }
 
-    setSavedAnalysisRecordKey(analysisKey);
+    setSavedAnalysisRecordKey(analysisSignature);
     setSuccess("分析结果已保存为跟进记录。");
     await loadData();
   }
 
   async function applyDetectedFieldsToCustomer() {
-    if (!customer || !messageAnalysisResult?.detectedFields?.length) {
+    const detectedFields = getCurrentAnalysisDetectedFields();
+    if (!customer || !detectedFields.length) {
       setError("当前没有可应用的识别信息。");
       setSuccess("");
       return;
     }
 
-    const selectedFields = messageAnalysisResult.detectedFields.filter((field) => selectedDetectedFields[field.key]);
+    const selectedFields = detectedFields.filter((field) => selectedDetectedFields[field.key]);
     if (selectedFields.length === 0) {
       setError("请先勾选要应用到客户资料的信息。");
       setSuccess("");
@@ -1447,6 +1970,7 @@ export default function CustomerDetailPage() {
       ...current,
       target_capacity: payload.target_capacity ?? current.target_capacity,
       quantity: payload.quantity ?? current.quantity,
+      application_scenario: payload.application_scenario ?? current.application_scenario,
       shipping_term: payload.shipping_term ?? current.shipping_term,
       recommended_product: payload.recommended_product ?? current.recommended_product,
       product_note: payload.product_note ?? current.product_note
@@ -2083,6 +2607,9 @@ export default function CustomerDetailPage() {
   const completenessItems = getCompletenessItems(customer || {});
   const judgementReason = getJudgementReason(customer || {});
   const riskFocusItems = getRiskFocusItems(customer || {});
+  const chatAnalysisApplyPayload = chatScreenshotAnalysis ? convertChatAnalysisToApplyPayload(chatScreenshotAnalysis) : null;
+  const chatAnalysisDetectedFields = chatAnalysisApplyPayload?.detectedFields || [];
+  const chatLastSpeakerHint = getLastSpeakerHint(chatScreenshotAnalysis?.lastSpeaker);
   const showLeadNewButtons = !archivedCustomer && leadProgressCustomer && leadProgressStage === "new_lead";
   const showLeadContactedButtons = !archivedCustomer && leadProgressCustomer && leadProgressStage === "contacted";
   const showLeadRespondedButtons = !archivedCustomer && leadProgressCustomer && leadProgressStage === "responded";
@@ -2612,153 +3139,438 @@ export default function CustomerDetailPage() {
           <section className="panel">
             <div className="section-title">
               <h2>客户消息分析</h2>
-              <span>粘贴客户原始消息，系统会分析需求、缺失信息和建议回复。</span>
+              <span>保留现有文字分析，同时支持直接粘贴或上传聊天截图。</span>
             </div>
-            <Field label="客户原始消息">
-              <textarea
-                rows={6}
-                value={messageAnalysisInput}
-                onChange={(event) => {
-                  setMessageAnalysisInput(event.target.value);
-                  setSavedAnalysisRecordKey("");
-                }}
-                placeholder="粘贴客户在 Alibaba、WhatsApp、邮件或 LinkedIn 里的原话"
-              />
-            </Field>
-            <div className="actions" style={{ marginTop: 12 }}>
-              <button className="primary" onClick={analyzeCustomerMessage}>分析客户消息</button>
-            </div>
+              <div className="tabs">
+                <button
+                  className={analysisInputMode === "screenshots" ? "primary" : ""}
+                  style={analysisInputMode === "screenshots"
+                    ? { border: "1px solid #155eef", color: "#155eef", background: "#eff6ff", fontWeight: 700 }
+                    : { border: "1px solid #dbe5f1", color: "#1d2433", background: "#f8fafc" }}
+                  onClick={() => setAnalysisInputMode("screenshots")}
+                >
+                  聊天截图
+                </button>
+                <button
+                  className={analysisInputMode === "text" ? "primary" : ""}
+                  style={analysisInputMode === "text"
+                    ? { border: "1px solid #155eef", color: "#155eef", background: "#eff6ff", fontWeight: 700 }
+                    : { border: "1px solid #dbe5f1", color: "#1d2433", background: "#f8fafc" }}
+                  onClick={() => setAnalysisInputMode("text")}
+	                >
+	                  粘贴文字
+	                </button>
+	              </div>
 
-            {messageAnalysisResult && (
+	            {analysisInputMode === "text" && (
               <>
-                <div className="detail-grid" style={{ marginTop: 18, gap: 16 }}>
-                  <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
-                    <strong>客户需求</strong>
-                    <p>{messageAnalysisResult.requirementSummary}</p>
-                  </div>
-                  <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
-                    <strong>客户类型判断</strong>
-                    <p>{messageAnalysisResult.customerTypeSummary}</p>
-                  </div>
-                  <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
-                    <strong>关键信息缺失</strong>
-                    <div style={{ color: "#334155", lineHeight: 1.8, marginTop: 6 }}>
-                      {messageAnalysisResult.missingItems.map((item) => (
-                        <div key={item}>• {item}</div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
-                    <strong>下一步动作</strong>
-                    <p>{messageAnalysisResult.nextStep}</p>
-                  </div>
-                  <div
-                    className="detail-item"
-                    style={{
-                      borderRadius: 18,
-                      background: "#eff6ff",
-                      border: "1px solid #dbeafe",
-                      padding: 18,
-                      gridColumn: "1 / -1"
+                <Field label="客户原始消息">
+                  <textarea
+                    rows={6}
+                    value={messageAnalysisInput}
+                    onChange={(event) => {
+                      setMessageAnalysisInput(event.target.value);
+                      setSavedAnalysisRecordKey("");
                     }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
-                      <strong>建议英文回复</strong>
-                      <button
-                        style={{ height: 36, padding: "0 12px", fontSize: 13, fontWeight: 500, background: "#fff", border: "1px solid #dbe5f1", color: "#1e293b", borderRadius: 10 }}
-                        onClick={copySuggestedReply}
+                    placeholder="粘贴客户在 Alibaba、WhatsApp、邮件或 LinkedIn 里的原话"
+                  />
+                </Field>
+                <div className="actions" style={{ marginTop: 12 }}>
+                  <button className="primary" onClick={analyzeCustomerMessage}>分析客户消息</button>
+                </div>
+
+                {messageAnalysisResult && (
+                  <>
+                    <div className="detail-grid" style={{ marginTop: 18, gap: 16 }}>
+                      <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                        <strong>客户需求</strong>
+                        <p>{messageAnalysisResult.requirementSummary}</p>
+                      </div>
+                      <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                        <strong>客户类型判断</strong>
+                        <p>{messageAnalysisResult.customerTypeSummary}</p>
+                      </div>
+                      <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                        <strong>关键信息缺失</strong>
+                        <div style={{ color: "#334155", lineHeight: 1.8, marginTop: 6 }}>
+                          {messageAnalysisResult.missingItems.map((item) => (
+                            <div key={item}>• {item}</div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                        <strong>下一步动作</strong>
+                        <p>{messageAnalysisResult.nextStep}</p>
+                      </div>
+                      <div
+                        className="detail-item"
+                        style={{
+                          borderRadius: 18,
+                          background: "#eff6ff",
+                          border: "1px solid #dbeafe",
+                          padding: 18,
+                          gridColumn: "1 / -1"
+                        }}
                       >
-                        复制英文回复
-                      </button>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+                          <strong>建议英文回复</strong>
+                          <button
+                            style={{ height: 36, padding: "0 12px", fontSize: 13, fontWeight: 500, background: "#fff", border: "1px solid #dbe5f1", color: "#1e293b", borderRadius: 10 }}
+                            onClick={copySuggestedReply}
+                          >
+                            复制英文回复
+                          </button>
+                        </div>
+                        <p style={{ margin: 0, color: "#0f172a", lineHeight: 1.7 }}>{messageAnalysisResult.suggestedReply}</p>
+                      </div>
                     </div>
-                    <p style={{ margin: 0, color: "#0f172a", lineHeight: 1.7 }}>{messageAnalysisResult.suggestedReply}</p>
-                  </div>
+                  </>
+                )}
+              </>
+            )}
+
+            {analysisInputMode === "screenshots" && (
+              <>
+                <div className="form-grid">
+                  <Field label="来源平台">
+                    <select value={screenshotPlatform} onChange={(event) => setScreenshotPlatform(event.target.value)}>
+                      {screenshotPlatformOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="我方名称 / 账号（可选）">
+                    <input
+                      value={salespersonNameHint}
+                      onChange={(event) => setSalespersonNameHint(event.target.value)}
+                      placeholder="例如：Jinyan、Prowish Energy、Kenneth、公司邮箱"
+                    />
+                  </Field>
+                  <Field label="我方气泡位置">
+                    <select value={salespersonBubbleSide} onChange={(event) => setSalespersonBubbleSide(event.target.value)}>
+                      {screenshotBubbleSideOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                    </select>
+                  </Field>
                 </div>
 
                 <div
+                  role="button"
+                  tabIndex={0}
+                  onDragEnter={(event) => {
+                    event.preventDefault();
+                    setDraggingScreenshotArea(true);
+                  }}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    setDraggingScreenshotArea(true);
+                  }}
+                  onDragLeave={(event) => {
+                    event.preventDefault();
+                    setDraggingScreenshotArea(false);
+                  }}
+                  onDrop={handleScreenshotDrop}
+                  onClick={() => screenshotFileInputRef.current?.click()}
                   style={{
-                    marginTop: 18,
-                    borderRadius: 18,
-                    border: "1px solid #dbe5f1",
-                    background: "#ffffff",
-                    padding: 18
+                    marginTop: 12,
+                    borderRadius: 20,
+                    border: draggingScreenshotArea ? "1px solid #155eef" : "1px dashed #cbd5e1",
+                    background: draggingScreenshotArea ? "#eff6ff" : "#f8fafc",
+                    padding: 20,
+                    display: "grid",
+                    gap: 8,
+                    cursor: "pointer"
                   }}
                 >
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
-                    <strong style={{ color: "#0f172a", fontSize: 16 }}>应用分析结果</strong>
-                    <span style={{ color: "#64748b", fontSize: 13 }}>按需把分析结果写入当前客户，不会自动更新任何数据。</span>
+                  <strong style={{ color: "#0f172a", fontSize: 16 }}>粘贴或上传聊天截图</strong>
+                  <span style={{ color: "#475569", fontSize: 14 }}>截图后可直接按 Command+V 或 Ctrl+V，也可以拖拽或选择图片。</span>
+                  <span style={{ color: "#64748b", fontSize: 12 }}>聊天截图仅用于本次分析，第一版不会永久保存原始图片。</span>
+                  <div className="actions compact" style={{ marginTop: 4 }}>
+                    <button type="button" onClick={(event) => { event.stopPropagation(); screenshotFileInputRef.current?.click(); }}>选择图片</button>
+                    <button type="button" onClick={(event) => { event.stopPropagation(); clearAllChatScreenshots(); }} disabled={!chatScreenshots.length}>清空截图</button>
                   </div>
+                  <input
+                    ref={screenshotFileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg,image/webp"
+                    multiple
+                    style={{ display: "none" }}
+                    onChange={handleChatScreenshotFileInput}
+                  />
+                </div>
 
-                  <div className="detail-grid" style={{ gap: 16 }}>
-                    <div className="detail-item" style={{ borderRadius: 16, background: "#f8fafc", padding: 16 }}>
-                      <strong>推进应用</strong>
-                      <p style={{ color: "#475569", marginTop: 6 }}>把分析得到的下一步动作写入当前推进。</p>
-                      <button className="primary" onClick={applyAnalysisNextAction} disabled={isSaving} style={{ marginTop: 10 }}>
-                        应用为下一步动作
-                      </button>
-                    </div>
+                <div style={{ marginTop: 12, color: "#64748b", fontSize: 13 }}>请按聊天时间从早到晚排列截图。</div>
 
-                    <div className="detail-item" style={{ borderRadius: 16, background: "#f8fafc", padding: 16 }}>
-                      <strong>记录保存</strong>
-                      <p style={{ color: "#475569", marginTop: 6 }}>将本次消息分析写入跟进记录时间线。</p>
-                      <button
-                        onClick={saveAnalysisAsInteraction}
-                        disabled={isSaving || savedAnalysisRecordKey === getMessageAnalysisSignature(messageAnalysisInput, messageAnalysisResult)}
-                        style={{ marginTop: 10 }}
+                {chatScreenshots.length > 0 && (
+                  <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+                    {chatScreenshots.map((item, index) => (
+                      <div
+                        key={item.id}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "48px 72px minmax(0, 1fr) auto",
+                          gap: 12,
+                          alignItems: "center",
+                          padding: "10px 12px",
+                          borderRadius: 14,
+                          border: "1px solid #e2e8f0",
+                          background: "#fff"
+                        }}
                       >
-                        保存为跟进记录
-                      </button>
-                    </div>
+                        <strong style={{ color: "#0f172a", textAlign: "center" }}>{index + 1}</strong>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewScreenshotUrl(item.previewUrl)}
+                          style={{ padding: 0, border: "none", background: "transparent", cursor: "pointer" }}
+                        >
+                          <img
+                            src={item.previewUrl}
+                            alt={item.fileName}
+                            style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 10, border: "1px solid #e2e8f0" }}
+                          />
+                        </button>
+                        <div style={{ display: "grid", gap: 4 }}>
+                          <strong style={{ color: "#0f172a", fontSize: 14 }}>{item.fileName || "粘贴的截图"}</strong>
+                          <span style={{ color: "#64748b", fontSize: 12 }}>
+                            {formatBytes(item.size)} · {item.width} × {item.height}
+                          </span>
+                          {getScreenshotStatusText(item) && (
+                            <span style={{ color: item.isLowResolution ? "#c2410c" : "#64748b", fontSize: 12 }}>
+                              {item.isLowResolution ? "截图分辨率可能过低，可能影响文字和说话方识别。" : getScreenshotStatusText(item)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="actions compact">
+                          <button type="button" onClick={() => moveChatScreenshot(index, "up")} disabled={index === 0}>上移</button>
+                          <button type="button" onClick={() => moveChatScreenshot(index, "down")} disabled={index === chatScreenshots.length - 1}>下移</button>
+                          <button type="button" onClick={() => removeChatScreenshot(index)}>删除</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
-                    <div
-                      className="detail-item"
-                      style={{
-                        borderRadius: 16,
-                        background: "#f8fafc",
-                        padding: 16,
-                        gridColumn: "1 / -1"
-                      }}
-                    >
-                      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
-                        <strong>资料应用</strong>
-                        <span style={{ color: "#64748b", fontSize: 13 }}>勾选要应用到客户资料的信息。有现有不同值时，默认不会覆盖。</span>
+                <div className="actions" style={{ marginTop: 14 }}>
+                  <button className="primary" onClick={analyzeChatScreenshots} disabled={isAnalyzingChatScreenshots || !chatScreenshots.length}>
+                    {isAnalyzingChatScreenshots ? `正在分析聊天截图……（当前共 ${chatScreenshots.length} 张）` : "分析聊天记录"}
+                  </button>
+                </div>
+
+                {chatScreenshotAnalysis && (
+                  <>
+                    <div className="detail-grid" style={{ marginTop: 18, gap: 16 }}>
+                      <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18, gridColumn: "1 / -1" }}>
+                        <strong>对话识别概览</strong>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12, marginTop: 10 }}>
+                          <span>截图数量：{chatScreenshots.length}</span>
+                          <span>识别消息数量：{chatScreenshotAnalysis.messageCount}</span>
+                          <span>客户消息数量：{chatScreenshotAnalysis.customerMessageCount}</span>
+                          <span>我方消息数量：{chatScreenshotAnalysis.salespersonMessageCount}</span>
+                          <span>最后发言方：{speakerLabel(chatScreenshotAnalysis.lastSpeaker)}</span>
+                          <span>对话时间范围：{chatScreenshotAnalysis.conversationTimeRange || "待确认"}</span>
+                        </div>
+                        <p style={{ marginTop: 12, color: "#334155" }}>{chatLastSpeakerHint}</p>
                       </div>
 
-                      {analysisFieldDefinitions.length > 0 ? (
-                        <div style={{ display: "grid", gap: 8 }}>
-                          {analysisFieldDefinitions.map((fieldDefinition) => {
-                            const field = messageAnalysisResult.detectedFields?.find((item) => item.key === fieldDefinition.key) || null;
-                            const currentValue = getCustomerFieldCurrentValue(customer, fieldDefinition.key);
-                            const hasCurrentValue = !isDisplayEmptyValue(currentValue);
-                            const hasConflict = field && hasCurrentValue && normalizeComparableText(currentValue) !== normalizeComparableText(field.value);
+                      <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18, gridColumn: "1 / -1" }}>
+                        <strong>沟通摘要</strong>
+                        <p>{chatScreenshotAnalysis.conversationSummary || "待补充"}</p>
+                      </div>
 
-                            if (!field) {
-                              return (
-                                <div
-                                  key={fieldDefinition.key}
-                                  style={{
-                                    display: "grid",
-                                    gridTemplateColumns: "40px 160px minmax(0, 1fr) minmax(0, 1fr)",
-                                    alignItems: "center",
-                                    columnGap: 12,
-                                    rowGap: 4,
-                                    padding: "12px 14px",
-                                    borderRadius: 12,
-                                    border: "1px solid #e2e8f0",
-                                    background: "#f8fafc"
-                                  }}
-                                >
-                                  <input type="checkbox" disabled style={{ margin: 0, justifySelf: "center" }} />
-                                  <strong style={{ color: "#334155", fontSize: 13, fontWeight: 600 }}>{fieldDefinition.label}</strong>
-                                  <span style={{ color: "#94a3b8", fontSize: 14 }}>未识别</span>
-                                  <span style={{ color: "#94a3b8", fontSize: 12 }}>暂无可应用值</span>
-                                </div>
-                              );
-                            }
+                      <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                        <strong>客户需求</strong>
+                        <p>{chatScreenshotAnalysis.customerNeed || "待判断"}</p>
+                      </div>
+                      <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                        <strong>当前卡点</strong>
+                        <p>{chatScreenshotAnalysis.currentBlocker || "待判断"}</p>
+                      </div>
+                      <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                        <strong>建议阶段</strong>
+                        <p>{chatScreenshotAnalysis.suggestedStage || "待判断"}</p>
+                      </div>
+                      <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                        <strong>下一步动作</strong>
+                        <p>{chatScreenshotAnalysis.nextAction || "待判断"}</p>
+                      </div>
 
+                      <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18, gridColumn: "1 / -1" }}>
+                        <strong>已确认信息</strong>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, marginTop: 10 }}>
+                          <span>国家：{chatScreenshotAnalysis.confirmedInformation?.country || "待确认"}</span>
+                          <span>数量：{chatScreenshotAnalysis.confirmedInformation?.quantity || "待确认"}</span>
+                          <span>容量：{chatScreenshotAnalysis.confirmedInformation?.targetCapacity || "待确认"}</span>
+                          <span>产品需求：{chatScreenshotAnalysis.confirmedInformation?.productNeed || "待确认"}</span>
+                          <span>贸易方式：{chatScreenshotAnalysis.confirmedInformation?.shippingTerm || "待确认"}</span>
+                          <span>客户类型：{chatScreenshotAnalysis.customerType || "待判断"}</span>
+                          <span>逆变器需求：{chatScreenshotAnalysis.confirmedInformation?.inverterRequirement || "待确认"}</span>
+                          <span>应用场景：{chatScreenshotAnalysis.confirmedInformation?.applicationScenario || "待确认"}</span>
+                          <span>认证要求：{chatScreenshotAnalysis.confirmedInformation?.certificationRequirement || "待确认"}</span>
+                          <span>交期：{chatScreenshotAnalysis.confirmedInformation?.deliveryTime || "待确认"}</span>
+                        </div>
+                      </div>
+
+                      <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                        <strong>仍缺信息</strong>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+                          {(chatScreenshotAnalysis.missingInformation || []).length > 0 ? chatScreenshotAnalysis.missingInformation.map((item) => (
+                            <span key={item} style={{ padding: "4px 10px", borderRadius: 999, border: "1px solid #e2e8f0", fontSize: 12, color: "#334155", background: "#fff" }}>{item}</span>
+                          )) : <span style={{ color: "#64748b", fontSize: 13 }}>暂无明显缺失信息</span>}
+                        </div>
+                      </div>
+
+                      <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                        <strong>客户异议 / 关注点</strong>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+                          {(chatScreenshotAnalysis.customerObjections || []).length > 0 ? chatScreenshotAnalysis.customerObjections.map((item) => (
+                            <span key={item} style={{ padding: "4px 10px", borderRadius: 999, border: "1px solid #e2e8f0", fontSize: 12, color: "#334155", background: "#fff" }}>{item}</span>
+                          )) : <span style={{ color: "#64748b", fontSize: 13 }}>暂无明显异议</span>}
+                        </div>
+                      </div>
+
+                      <div className="detail-item" style={{ borderRadius: 18, background: "#f8fafc", padding: 18 }}>
+                        <strong>已发送内容</strong>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+                          {(chatScreenshotAnalysis.sentMaterials || []).length > 0 ? chatScreenshotAnalysis.sentMaterials.map((item) => (
+                            <span key={item} style={{ padding: "4px 10px", borderRadius: 999, border: "1px solid #e2e8f0", fontSize: 12, color: "#334155", background: "#fff" }}>{item}</span>
+                          )) : <span style={{ color: "#64748b", fontSize: 13 }}>暂无已发送内容</span>}
+                        </div>
+                      </div>
+
+                      {(chatScreenshotAnalysis.warnings || []).length > 0 && (
+                        <div className="detail-item" style={{ borderRadius: 18, background: "#fff7ed", border: "1px solid #fdba74", padding: 18, gridColumn: "1 / -1" }}>
+                          <strong>提醒</strong>
+                          <div style={{ color: "#9a3412", lineHeight: 1.8, marginTop: 6 }}>
+                            {chatScreenshotAnalysis.warnings.map((item) => (
+                              <div key={item}>• {item}</div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div
+                        className="detail-item"
+                        style={{
+                          borderRadius: 18,
+                          background: "#eff6ff",
+                          border: "1px solid #dbeafe",
+                          padding: 18,
+                          gridColumn: "1 / -1"
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+                          <strong>建议英文回复</strong>
+                          <button
+                            style={{ height: 36, padding: "0 12px", fontSize: 13, fontWeight: 500, background: "#fff", border: "1px solid #dbe5f1", color: "#1e293b", borderRadius: 10 }}
+                            onClick={async () => {
+                              try {
+                                await navigator.clipboard.writeText(chatScreenshotAnalysis.englishReply || "");
+                                setSuccess("英文回复已复制。");
+                                setError("");
+                              } catch (copyError) {
+                                setError(copyError.message || "复制英文回复失败。");
+                              }
+                            }}
+                          >
+                            复制英文回复
+                          </button>
+                        </div>
+                        <p style={{ margin: 0, color: "#0f172a", lineHeight: 1.7 }}>{chatScreenshotAnalysis.englishReply || "待生成"}</p>
+                      </div>
+                    </div>
+
+                    <details style={{ marginTop: 18 }}>
+                      <summary style={{ cursor: "pointer", fontWeight: 600, color: "#0f172a" }}>对话明细与人工纠正</summary>
+                      <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
+                        <div className="actions compact">
+                          <button type="button" onClick={() => bulkAssignSpeakerByPosition("left", "customer")}>将左侧消息设为客户</button>
+                          <button type="button" onClick={() => bulkAssignSpeakerByPosition("right", "salesperson")}>将右侧消息设为我方</button>
+                          <button type="button" onClick={() => bulkAssignSpeakerByPosition("left", "salesperson")}>将左侧消息设为我方</button>
+                          <button type="button" onClick={() => bulkAssignSpeakerByPosition("right", "customer")}>将右侧消息设为客户</button>
+                          <button type="button" onClick={regenerateChatAnalysisFromEditedMessages} disabled={isAnalyzingChatScreenshots}>重新生成分析结果</button>
+                        </div>
+                        {(editableChatMessages || []).map((item, index) => (
+                          <div key={`${index}-${item.text}`} style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 14, background: "#fff", display: "grid", gap: 8 }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                              <select value={item.speaker} onChange={(event) => updateEditableChatMessageSpeaker(index, event.target.value)} style={{ maxWidth: 140 }}>
+                                <option value="customer">客户</option>
+                                <option value="salesperson">我方</option>
+                                <option value="unknown">未知</option>
+                              </select>
+                              <span style={{ color: "#64748b", fontSize: 12 }}>
+                                {item.time || "时间待判断"} · {sideLabel(item.position)} · 置信度 {Number(item.confidence || 0).toFixed(2)}
+                              </span>
+                            </div>
+                            <div style={{ color: "#0f172a", lineHeight: 1.7 }}>{item.text || "无内容"}</div>
+                            <div style={{ color: "#64748b", fontSize: 12 }}>判断依据：{item.speakerReason || "待补充"}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  </>
+                )}
+              </>
+            )}
+
+            {(analysisInputMode === "text" && messageAnalysisResult) || (analysisInputMode === "screenshots" && chatScreenshotAnalysis) ? (
+              <div
+                style={{
+                  marginTop: 18,
+                  borderRadius: 18,
+                  border: "1px solid #dbe5f1",
+                  background: "#ffffff",
+                  padding: 18
+                }}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+                  <strong style={{ color: "#0f172a", fontSize: 16 }}>应用分析结果</strong>
+                  <span style={{ color: "#64748b", fontSize: 13 }}>按需把分析结果写入当前客户，不会自动更新任何数据。</span>
+                </div>
+
+                <div className="detail-grid" style={{ gap: 16 }}>
+                  <div className="detail-item" style={{ borderRadius: 16, background: "#f8fafc", padding: 16 }}>
+                    <strong>推进应用</strong>
+                    <p style={{ color: "#475569", marginTop: 6 }}>把分析得到的下一步动作写入当前推进。</p>
+                    <button className="primary" onClick={applyAnalysisNextAction} disabled={isSaving} style={{ marginTop: 10 }}>
+                      应用为下一步动作
+                    </button>
+                  </div>
+
+                  <div className="detail-item" style={{ borderRadius: 16, background: "#f8fafc", padding: 16 }}>
+                    <strong>记录保存</strong>
+                    <p style={{ color: "#475569", marginTop: 6 }}>将本次分析写入跟进记录时间线。</p>
+                    <button
+                      onClick={saveAnalysisAsInteraction}
+                      disabled={isSaving || savedAnalysisRecordKey === getCurrentAnalysisSignature()}
+                      style={{ marginTop: 10 }}
+                    >
+                      {savedAnalysisRecordKey === getCurrentAnalysisSignature() ? "已保存为跟进记录" : "保存为跟进记录"}
+                    </button>
+                  </div>
+
+                  <div
+                    className="detail-item"
+                    style={{
+                      borderRadius: 16,
+                      background: "#f8fafc",
+                      padding: 16,
+                      gridColumn: "1 / -1"
+                    }}
+                  >
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+                      <strong>资料应用</strong>
+                      <span style={{ color: "#64748b", fontSize: 13 }}>勾选要更新到客户资料的信息。已有有效值不同时，默认不会覆盖。</span>
+                    </div>
+
+                    {analysisFieldDefinitions.length > 0 ? (
+                      <div style={{ display: "grid", gap: 8 }}>
+                        {analysisFieldDefinitions.map((fieldDefinition) => {
+                          const field = getCurrentAnalysisDetectedFields().find((item) => item.key === fieldDefinition.key) || null;
+                          const currentValue = getCustomerFieldCurrentValue(customer, fieldDefinition.key);
+                          const hasCurrentValue = !isDisplayEmptyValue(currentValue);
+                          const hasConflict = field && hasCurrentValue && normalizeComparableText(currentValue) !== normalizeComparableText(field.value);
+
+                          if (!field) {
                             return (
-                              <label
-                                key={`${fieldDefinition.key}-${field.value}`}
+                              <div
+                                key={fieldDefinition.key}
                                 style={{
                                   display: "grid",
                                   gridTemplateColumns: "40px 160px minmax(0, 1fr) minmax(0, 1fr)",
@@ -2767,49 +3579,72 @@ export default function CustomerDetailPage() {
                                   rowGap: 4,
                                   padding: "12px 14px",
                                   borderRadius: 12,
-                                  border: "1px solid #dbe5f1",
-                                  background: "#fff"
+                                  border: "1px solid #e2e8f0",
+                                  background: "#f8fafc"
                                 }}
                               >
-                                <input
-                                  type="checkbox"
-                                  checked={Boolean(selectedDetectedFields[field.key])}
-                                  onChange={() => toggleDetectedField(field.key)}
-                                  style={{ margin: 0, justifySelf: "center" }}
-                                />
+                                <input type="checkbox" disabled style={{ margin: 0, justifySelf: "center" }} />
                                 <strong style={{ color: "#334155", fontSize: 13, fontWeight: 600 }}>{fieldDefinition.label}</strong>
-                                <span style={{ color: "#0f172a", fontSize: 14, fontWeight: 500, lineHeight: 1.5 }}>{field.value}</span>
-                                {hasConflict ? (
-                                  <span style={{ color: "#c2410c", fontSize: 12, lineHeight: 1.5 }}>
-                                    当前值：{currentValue} · 默认不覆盖
-                                  </span>
-                                ) : hasCurrentValue ? (
-                                  <span style={{ color: "#64748b", fontSize: 12, lineHeight: 1.5 }}>
-                                    当前值：{currentValue}
-                                  </span>
-                                ) : (
-                                  <span style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.5 }}>
-                                    当前值为空
-                                  </span>
-                                )}
-                              </label>
+                                <span style={{ color: "#94a3b8", fontSize: 14 }}>未识别</span>
+                                <span style={{ color: "#94a3b8", fontSize: 12 }}>暂无可应用值</span>
+                              </div>
                             );
-                          })}
-                        </div>
-                      ) : (
-                        <p style={{ margin: 0, color: "#64748b" }}>当前消息没有识别到可直接写入客户资料的字段。</p>
-                      )}
+                          }
 
-                      <div className="actions" style={{ marginTop: 14 }}>
-                        <button onClick={applyDetectedFieldsToCustomer} disabled={isSaving}>
-                          应用到客户资料
-                        </button>
+                          return (
+                            <label
+                              key={`${fieldDefinition.key}-${field.value}`}
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: "40px 160px minmax(0, 1fr) minmax(0, 1fr)",
+                                alignItems: "center",
+                                columnGap: 12,
+                                rowGap: 4,
+                                padding: "12px 14px",
+                                borderRadius: 12,
+                                border: "1px solid #dbe5f1",
+                                background: "#fff"
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={Boolean(selectedDetectedFields[field.key])}
+                                onChange={() => toggleDetectedField(field.key)}
+                                style={{ margin: 0, justifySelf: "center" }}
+                                disabled={!field}
+                              />
+                              <strong style={{ color: "#334155", fontSize: 13, fontWeight: 600 }}>{fieldDefinition.label}</strong>
+                              <span style={{ color: "#0f172a", fontSize: 14, fontWeight: 500, lineHeight: 1.5 }}>{field.value}</span>
+                              {hasConflict ? (
+                                <span style={{ color: "#c2410c", fontSize: 12, lineHeight: 1.5 }}>
+                                  当前值：{currentValue} · 默认不覆盖
+                                </span>
+                              ) : hasCurrentValue ? (
+                                <span style={{ color: "#64748b", fontSize: 12, lineHeight: 1.5 }}>
+                                  当前值：{currentValue}
+                                </span>
+                              ) : (
+                                <span style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.5 }}>
+                                  当前值为空
+                                </span>
+                              )}
+                            </label>
+                          );
+                        })}
                       </div>
+                    ) : (
+                      <p style={{ margin: 0, color: "#64748b" }}>当前分析没有识别到可直接写入客户资料的字段。</p>
+                    )}
+
+                    <div className="actions" style={{ marginTop: 14 }}>
+                      <button onClick={applyDetectedFieldsToCustomer} disabled={isSaving}>
+                        应用到客户资料
+                      </button>
                     </div>
                   </div>
                 </div>
-              </>
-            )}
+              </div>
+            ) : null}
           </section>
 
           <section className="panel">
@@ -2976,6 +3811,22 @@ export default function CustomerDetailPage() {
               </button>
               <button onClick={() => setPlaybookSourceInteraction(null)}>取消</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {previewScreenshotUrl && (
+        <div className="modal-backdrop" onClick={() => setPreviewScreenshotUrl("")}>
+          <div className="modal wide-modal" onClick={(event) => event.stopPropagation()} style={{ maxWidth: 900 }}>
+            <div className="actions" style={{ justifyContent: "space-between", marginBottom: 12 }}>
+              <h2 style={{ margin: 0 }}>聊天截图预览</h2>
+              <button onClick={() => setPreviewScreenshotUrl("")}>关闭</button>
+            </div>
+            <img
+              src={previewScreenshotUrl}
+              alt="聊天截图预览"
+              style={{ width: "100%", maxHeight: "75vh", objectFit: "contain", borderRadius: 12, border: "1px solid #e2e8f0" }}
+            />
           </div>
         </div>
       )}
